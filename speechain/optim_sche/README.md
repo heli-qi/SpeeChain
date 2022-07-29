@@ -1,19 +1,19 @@
 # Parameter Optimization Part
 Parameter Optimization is done by only one class: *OptimScheduler*.
 
-[*OptimScheduler*]() combines the roles of traditional optimizers and schedulers together. 
+[*OptimScheduler*](https://github.com/ahclab/SpeeChain/blob/main/speechain/optim_sche/abs.py) combines the roles of traditional optimizers and schedulers together. 
 The job of updating the model parameters is done by the built-in `torch.optim.Optimizer` of this class. 
 *OptimScheduler* also defines the strategy of adjusting the learning rates of the built-in `torch.optim.Optimizer` during training. 
 
-👆[Back to the home page]()
+👆[Back to the home page](https://github.com/ahclab/SpeeChain#the-speechain-toolkit)
 
 ## Table of Contents
-1. [**Configuration File Format**]()
-2. [**Abstract Interfaces Description**]()
-    1. [OptimScheduler]()
-4. [**How to Construct Multiple Optimizers on Multiple Losses**]()
-5. [**How to Simulate Large Batch Training with Limited GPUs**]()
-6. [**How to Perform Fine-tuning**]()
+1. [**Configuration File Format**](https://github.com/ahclab/SpeeChain/tree/main/speechain/optim_sche#configuration-file-format)
+2. [**Abstract Interfaces Description**](https://github.com/ahclab/SpeeChain/tree/main/speechain/optim_sche#abstract-interfaces-description)
+    1. [OptimScheduler](https://github.com/ahclab/SpeeChain/tree/main/speechain/optim_sche#optimscheduler)
+4. [**How to Construct Multiple Optimizers on Multiple Losses**](https://github.com/ahclab/SpeeChain/tree/main/speechain/optim_sche#how-to-construct-multiple-optimizers-on-multiple-losses)
+5. [**How to Simulate Large Batch Training with Limited GPUs**](https://github.com/ahclab/SpeeChain/tree/main/speechain/optim_sche#how-to-simulate-large-batch-training-with-limited-gpus)
+6. [**How to Perform Fine-tuning**](https://github.com/ahclab/SpeeChain/tree/main/speechain/optim_sche#how-to-perform-fine-tuning)
 
 ## Configuration File Format
 The configuration of *OptimScheduler* is given in the *optim_sches* tag of *train_cfg*. 
@@ -52,7 +52,7 @@ The values of this key are as following:
     2. **optim_conf** contains all the configuration used to initialize the built-in optimizer.
     3. **optimscheduler general configuration**. 
     These configurations are used to initialize the general part shared by all optimschedulers. 
-    Please refer to the docstrings of [*OptimScheduler*]() for more details.
+    Please refer to the docstrings of [*OptimScheduler*](https://github.com/ahclab/SpeeChain/blob/main/speechain/optim_sche/abs.py) for more details.
     4. **optimscheduler customized configuration**. 
     These configurations are used to initialize the customized part of a specific optimscheduler. 
     This part defines the scheduling strategy to adjust the learning rates during training.
@@ -70,7 +70,7 @@ The function where the learning rate is adjusted by the strategy in the optimsch
 This function returns the string that describes the information of your optimscheduler. 
 Mainly used when logging the experiment information into the log file.
 
-For more details, please refer to [*OptimScheduler*]().
+For more details, please refer to [*OptimScheduler*](https://github.com/ahclab/SpeeChain/blob/main/speechain/optim_sche/abs.py).
 
 ## How to Construct Multiple Optimizers on Multiple Losses
 The cooperation of multiple optimizers is handled by 3 arguments: _optim_losses_, _updated_modules_, and _step_per_update_. 

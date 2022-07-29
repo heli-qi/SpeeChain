@@ -3,12 +3,12 @@ The recipes of the SpeeChain toolkit are grouped by the task.
 Each task has a sub-folder in */recipes/*. 
 In the sub-folder of each task, each dataset has a second-level sub-folder.
 
-👆[Back to the home page]()
+👆[Back to the home page](https://github.com/ahclab/SpeeChain#the-speechain-toolkit)
 
 ## Available Recipes
-### [Speech Recognition]()
-1. [LibriSpeech]()
-2. [LJSpeech]()
+### [Speech Recognition](https://github.com/ahclab/SpeeChain/tree/main/recipes/asr)
+1. [LibriSpeech](https://github.com/ahclab/SpeeChain/tree/main/recipes/asr/librispeech)
+2. [LJSpeech](https://github.com/ahclab/SpeeChain/tree/main/recipes/asr/ljspeech)
 
 ### [Speech Synthesis]()
 

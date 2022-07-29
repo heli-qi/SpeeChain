@@ -6,16 +6,16 @@ You can easily dump your target dataset to your machine by following the instruc
 Our file system is modified from the ESPNET style. 
 If you want to contribute a new dataset, we would appreciate it if you could follow our data formats and file systems.
 
-👆[Back to the dataset home page]()
+👆[Back to the dataset home page](https://github.com/ahclab/SpeeChain/tree/main/datasets#datasets-folder-of-the-speechain-toolkit)
 
 ## Table of Contents
-1. [**File System**]()
-2. [**Data Format**]()
-    1. [feat.scp]()
-    2. [feat_len.scp]()
-    3. [text]()
-    4. [metadata]()
-3. [**How to Contribute a New Dataset**]()
+1. [**File System**](https://github.com/ahclab/SpeeChain/tree/main/datasets/speech_text#file-system)
+2. [**Data Format**](https://github.com/ahclab/SpeeChain/tree/main/datasets/speech_text#data-format)
+    1. [feat.scp](https://github.com/ahclab/SpeeChain/tree/main/datasets/speech_text#featscp)
+    2. [feat_len.scp](https://github.com/ahclab/SpeeChain/tree/main/datasets/speech_text#feat_lenscp)
+    3. [text](https://github.com/ahclab/SpeeChain/tree/main/datasets/speech_text#text)
+    4. [metadata](https://github.com/ahclab/SpeeChain/tree/main/datasets/speech_text#metadata)
+3. [**How to Contribute a New Dataset**](https://github.com/ahclab/SpeeChain/tree/main/datasets/speech_text#how-to-contribute-a-new-dataset)
 
 ## File System
 ```

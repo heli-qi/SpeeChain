@@ -1,27 +1,27 @@
 # Model Calculation Part
 Model calculation is done by three classes: *Model*, *Module*, and *Criterion*.
 
-[*Model*]() is the framework of this part where different *Module* and *Criterion* can be freely assembled to create a new model.
+[*Model*](https://github.com/ahclab/SpeeChain/blob/main/speechain/model/abs.py) is the framework of this part where different *Module* and *Criterion* can be freely assembled to create a new model.
 This framework encapsulates the general model-related services and provides sufficient interfaces. 
 By overriding the interfaces, you can easily customize your own implementations to meet your specific research needs. 
 
-[*Module*]() is the unit of the main body of your model. It only has the function of forwarding the input data. 
+[*Module*](https://github.com/ahclab/SpeeChain/blob/main/speechain/module/abs.py) is the unit of the main body of your model. It only has the function of forwarding the input data. 
 The input batch is processed by all *Module* in a *Model* sequentially to become the model prediction.
 
-[*Criterion*]() serves the role of evaluating the model predictions. Its output can be either a training loss or a validation metric.
+[*Criterion*](https://github.com/ahclab/SpeeChain/blob/main/speechain/criterion/abs.py) serves the role of evaluating the model predictions. Its output can be either a training loss or a validation metric.
 
-👆[Back to the home page]()
+👆[Back to the home page](https://github.com/ahclab/SpeeChain#the-speechain-toolkit)
 
 ## Table of Contents
-1. [**Configuration File Format**]()
-2. [**Abstract Interfaces Description**]()
-    1. [Module]()
-    2. [Criterion]()
-    3. [Model]()
-3. [**How to Construct a Model by Available Modules**]()
-4. [**How to Freeze a Specific Part of your Model**]()
-5. [**How to Initialize your Model by the Pretrained Model**]()
-6. [**How to Perform Multi-Task Training**]()
+1. [**Configuration File Format**](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#configuration-file-format)
+2. [**Abstract Interfaces Description**](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#abstract-interfaces-description)
+    1. [Module](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#module)
+    2. [Criterion](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#criterion)
+    3. [Model](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#model)
+3. [**How to Construct a Model by Available Modules**](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#how-to-construct-a-model-by-available-modules)
+4. [**How to Freeze a Specific Part of your Model**](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#how-to-freeze-a-specific-part-of-your-model)
+5. [**How to Initialize your Model by the Pretrained Model**](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#how-to-initialize-your-model-by-the-pretrained-model)
+6. [**How to Perform Multi-Task Training**](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#how-to-perform-multi-task-training)
 
 ## Configuration File Format
 The configuration of your model is given in the *model* tag of *train_cfg*. 
@@ -105,7 +105,7 @@ The initialization function of your module implementation.
 2. **forward()**:
 This function decides how the input data is processed in the module.
 
-For more details, please refer to [*Module*]().
+For more details, please refer to [*Module*](https://github.com/ahclab/SpeeChain/blob/main/speechain/module/abs.py).
 
 ### Criterion
 1. **criterion_init()**:
@@ -114,7 +114,7 @@ For a criterion, *criterion_init()* is not mandatory to be overridden.
 2. **forward()**:
 This function decides how the input model prediction and the target label are used to calculate the evaluation metric.
 
-For more details, please refer to [*Criterion*]().
+For more details, please refer to [*Criterion*](https://github.com/ahclab/SpeeChain/blob/main/speechain/criterion/abs.py).
 
 ### Model
 1. **model_customize()**:
@@ -140,7 +140,7 @@ The function where you decide the way how your model outputs the inference resul
 The results are returned in the form of a *Dict* and everything in this *Dict* will be saved to the disk. 
 So, you can return any results you would like to see about the performance of your model.
 
-For more details, please refer to [*Model*]().
+For more details, please refer to [*Model*](https://github.com/ahclab/SpeeChain/blob/main/speechain/model/abs.py).
 
 ## How to Construct a Model by Available Modules
 We provide two granularity of modules for you to construct your model. 

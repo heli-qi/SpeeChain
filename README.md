@@ -39,9 +39,9 @@ Anytime you meet a problem when using our toolkit, please don't hesitate to leav
     2. [Usage](https://github.com/ahclab/SpeeChain#usage)
     3. [Customization](https://github.com/ahclab/SpeeChain#customization)
 7. [**Contribution**](https://github.com/ahclab/SpeeChain#contribution)
-    1. [Current Developers]()
-    2. [Development Documentation]()
-    3. [Development Specifications]()
+    1. [Current Developers](https://github.com/ahclab/SpeeChain#current-developers)
+    2. [Development Documentation](https://github.com/ahclab/SpeeChain#development-documentation)
+    3. [Development Specifications](https://github.com/ahclab/SpeeChain#development-specifications)
 
 ## Unique Characteristics
 ### Various data loading services
@@ -62,7 +62,7 @@ Off-the-shelf selection methods include:
     2. selection from the beginning or the end
     3. selection by metadata
       
-👆[Back to the table of contents]()
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain#table-of-contents)
 
 ### Various pseudo-labeling services
 For the research on semi-supervised learning and domain adaptation, technical work about processing unlabeled data is inevitable 
@@ -86,7 +86,7 @@ We provide some off-the-shelf correction functions to free our users from these 
         2. non-speech sound removal
         3. synthesized artifact removal
 
-👆[Back to the table of contents]()
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain#table-of-contents)
 
 ### Highly-modularized models
 The models in our toolkit are built with multiple independent modules. Independence offers the following merits:
@@ -97,7 +97,7 @@ Also, the mismatch between the parameter names of pretrained models and your mod
 3. **Flexible parameters freezing.** The parameter freezing can also be done independently for each module of your models. 
 The freezing granularity can be very fine (even to a specific neural layer) if you give the proper configuration.
 
-👆[Back to the table of contents]()
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain#table-of-contents)
 
 ### Various optimization services
 We provide various optimization services that offer users the possibilities for more advanced model training schemes:
@@ -110,16 +110,16 @@ It becomes possible for you to enjoy training the large models even though you a
 3. **Simple finetuing setting.** In our toolkit, the learning rates can be easily scaled down without changing the scheduling hyperparameters. 
 The troublesome jobs of making a new LR scheduler configuration have gone!
 
-👆[Back to the table of contents]()
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain#table-of-contents)
 
 ### User-friendly documents and interfaces
 We provide many interfaces for users to customize their experiment pipelines. 
 Most of the interfaces return a *Dict* where users can freely design the contents of the returned results.
 
 We also provide sufficient documents to explain the details of our toolkit. 
-Please refer to the [Documentation]() section for more details.
+Please refer to the [Documentation](https://github.com/ahclab/SpeeChain#development-documentation) section for more details.
 
-👆[Back to the table of contents]()
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain#table-of-contents)
 
 ## File System
 The description of the file system in this toolkit is shown below:
@@ -192,14 +192,14 @@ The description of the file system in this toolkit is shown below:
         ...
     ...
 ```
-👆[Back to the table of contents]()
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain#table-of-contents)
 ## Toolkit Architecture
 The architecture of this toolkit is shown in the figure below. Dashed lines indicate the holding relationship.
 
 ![image](architecture.png)
 Our toolkit can be divided into 4 parts: **user interaction part** (green), **data loading part** (blue), **model calculation part** (red), **parameter optimization part** (brown).
 
-👆[Back to the table of contents]()
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain#table-of-contents)
 
 ### User Interaction Part
 This part interacts with the user and disk. There are three members in this part: _Runner_, _Monitor_, and _Snapshooter_. 
@@ -214,18 +214,18 @@ Also, it keeps the connection with several _Snapshooter_ members and constantly 
 * **Snapshooter** does the job of model snapshotting. It doesn't runs in the main process of model training but another process. 
  It communicates with _Monitor_ by _multiprocessing.Process_ and _multiprocessing.Event_.
 
-👆[Back to the table of contents]()
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain#table-of-contents)
 
-### [Data Loading Part]()
+### [Data Loading Part](https://github.com/ahclab/SpeeChain/tree/main/speechain/iterator#data-loading-part)
 This part plays the role of fetching raw data from the disk and processing them into usable formats for the model.
 * **Dataset** stores the physical addresses of the training samples used to train your models. 
 It encapsulates the logic of loading the chosen sample from the disk and preprocessing it into a trainable vector. 
 
 * **Iterator** holds a _Dataset_ and produces a _Dataloader_ in each epoch that provide the built-in _Dataset_ with the sample indices and packages the trainable vectors into a batch.
 
-👆[Back to the table of contents]()
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain#table-of-contents)
 
-### [Model Calculation Part]()
+### [Model Calculation Part](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#model-calculation-part)
 This part receives the batch from the data loading part and outputs the training losses and evaluation metrics.
 * **Module** is the building block of the models. The model forward process is done by a series of module sub-forward. 
 Users can create their personal modules by overriding the initialization and forward interfaces.
@@ -237,35 +237,32 @@ Users can create their personal criteria by overriding its initialization and fo
 * **Model** encapsulates the general model services of model initialization, pretrained parameter loading, and parameter freezing.
 It holds several _Module_ members as the main body of the model to do the job of model forward and several _Criterion_ members for evaluating the model predictions.
 
-👆[Back to the table of contents]()
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain#table-of-contents)
 
-### [Parameter Optimization Part]()
+### [Parameter Optimization Part](https://github.com/ahclab/SpeeChain/tree/main/speechain/optim_sche#parameter-optimization-part)
 This part does the job of updating the model parameters by the received losses. 
 Unlike the traditional scheme of creating two separate objects (optimizer and scheduler), 
 parameter optimization and learning rate scheduling are simultaneously done by _OptimScheduler_ in this toolkit.
 * **OptimScheduler** encapsulates the logic of parameter optimization and scheduling learning rates. 
 It holds a `torch.optim.Optimizer` member and provides interfaces for users to determine their personal strategies to schedule the learning rates during training.
 
-👆[Back to the table of contents]()
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain#table-of-contents)
 
 ## Support Models
-### [Speech Recognition]()
-* [Listen, Attend, and Spell](https://research.google/pubs/pub44926.pdf)
+### [Speech Recognition](https://github.com/ahclab/SpeeChain/blob/main/speechain/model/asr.py)
 * [Speech-transformer](https://ieeexplore.ieee.org/abstract/document/8462506/)
 * [Conformer](https://arxiv.org/pdf/2005.08100)
 ### [Speech Synthesis]()
-* [Tacotron2](https://arxiv.org/pdf/1712.05884.pdf)
 * [Transformer-TTS](https://ojs.aaai.org/index.php/AAAI/article/view/4642/4520)
 * [FastSpeech2](https://arxiv.org/pdf/2006.04558.pdf)
 ### [Speaker Recognition]()
 * [DeepSpeaker](https://arxiv.org/pdf/1705.02304.pdf)
-* [Global Style Tokens](http://proceedings.mlr.press/v80/wang18h/wang18h.pdf)
 * [X-vector](https://danielpovey.com/files/2018_icassp_xvectors.pdf)
 
-👆[Back to the table of contents]()
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain#table-of-contents)
 
 ## Available Datasets
-### [Speech-Text]()
+### [Speech-Text](https://github.com/ahclab/SpeeChain/tree/main/datasets/speech_text#speech-text-datasets)
 * [LJSpeech](https://keithito.com/LJ-Speech-Dataset/)
 * [LibriSpeech](http://ecargo.mn/storage/app/uploads/public/5b6/fde/8ca/5b6fde8ca80b0041081405.pdf)
 * [LibriTTS](https://arxiv.org/pdf/1904.02882)
@@ -276,7 +273,7 @@ It holds a `torch.optim.Optimizer` member and provides interfaces for users to d
 * [VoxCeleb](https://arxiv.org/pdf/1706.08612)
 * [VoxCeleb2](https://arxiv.org/pdf/1806.05622)
 
-👆[Back to the table of contents]()
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain#table-of-contents)
 
 ## Get a quick start
 ### Installation
@@ -293,7 +290,7 @@ Then, a virtual conda environment named *speechain* will be created for you.
 ### Usage
 The usage of this toolkit has 3 steps:
 1. **Dataset Preparation**:
-    1. Read [_./datasets/README.md_]() and familiarize yourself with how to dump the datasets.
+    1. Read [_./datasets/README.md_](https://github.com/ahclab/SpeeChain/tree/main/datasets#datasets-folder-of-the-speechain-toolkit) and familiarize yourself with how to dump the datasets.
     2. Move to the sub-folder of your target dataset in *./datasets/*.
     3. Run the processing scripts to dump the dataset on your machine by the command `./run.sh` in the sub-folder.
 2. **Configuration Preparation**:
@@ -311,7 +308,7 @@ The usage of this toolkit has 3 steps:
 Customization can be easily done by overriding the abstract interfaces of each base class. 
 Please refer to the *README.md* in each sub-folder and the docstrings of *abs.py* in each sub-folder for more details.
 
-👆[Back to the table of contents]()
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain#table-of-contents)
 
 ## Contribution
 ### Current Developers
@@ -381,4 +378,4 @@ We have some specifications for you to standardize your contribution:
     * For the temporary variables only used to register data for a short period, please add an underline at the beginning of the name to notify other users.
     For example, '*_tmp_feat_dim*' means the temporary variable used to register the intermediate value of the feature dimension. 
 
-👆[Back to the table of contents]()
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain#table-of-contents)
