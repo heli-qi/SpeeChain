@@ -1,0 +1,28 @@
+from setuptools import find_packages, setup
+
+setup(name="speechain",
+      version="0.1",
+      description="The SpeeChain toolkit.",
+      author="Heli Qi (original codes are from Andros Tjandra & Sashi Novitasari)",
+      author_email='qi.heli.qi9@is.naist.jp',
+      platforms=["any"],  # or more specific, e.g. "win32", "cygwin", "osx"
+      license="BSD",
+      url="",
+      packages=find_packages(),
+      install_requires=['numpy',
+                        'scipy',
+                        'torch',
+                        'pytest',
+                        'tabulate',
+                        'tqdm',
+                        'pathos',
+                        'librosa',
+                        'tensorboardX',
+                        'pandas',
+                        'tables',
+                        'python-speech-features',
+                        'soundfile',
+                        'psutil',
+                        'tensorboard',
+                        'pyyaml',
+                        'torchaudio']);
