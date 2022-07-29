@@ -1,0 +1,59 @@
+train:
+    sup:
+        type: block.BlockIterator
+        conf:
+            dataset_type: speech.speech_text.SpeechTextDataset
+            dataset_conf:
+                feat_type: raw
+                src_data: /ahc/work4/heli-qi/euterpe-heli-qi/datasets/speech_text/librispeech/data/raw/train_clean_100/feat.scp
+                tgt_label: /ahc/work4/heli-qi/euterpe-heli-qi/datasets/speech_text/librispeech/data/raw/train_clean_100/text
+
+            shuffle: True
+            is_descending: True
+            batches_per_epoch: 50
+            batch_frames: 1000000 # 4000000 = 20000 * 200 (16000 * 0.0125)
+            data_len: /ahc/work4/heli-qi/euterpe-heli-qi/datasets/speech_text/librispeech/data/raw/train_clean_100/feat_len.scp
+
+
+valid:
+    dev:
+        type: block.BlockIterator
+        conf:
+            dataset_type: speech.speech_text.SpeechTextDataset
+            dataset_conf:
+                feat_type: raw
+                src_data: /ahc/work4/heli-qi/euterpe-heli-qi/datasets/speech_text/librispeech/data/raw/dev_clean/feat.scp
+                tgt_label: /ahc/work4/heli-qi/euterpe-heli-qi/datasets/speech_text/librispeech/data/raw/dev_clean/text
+
+            shuffle: False
+            is_descending: True
+            batch_frames: 1000000 # 4000000 = 20000 * 200 (16000 * 0.0125)
+            data_len: /ahc/work4/heli-qi/euterpe-heli-qi/datasets/speech_text/librispeech/data/raw/dev_clean/feat_len.scp
+
+
+test:
+    clean:
+        type: piece.PieceIterator
+        conf:
+            dataset_type: speech.speech_text.SpeechTextDataset
+            dataset_conf:
+                feat_type: raw
+                src_data: /ahc/work4/heli-qi/euterpe-heli-qi/datasets/speech_text/librispeech/data/raw/test_clean/feat.scp
+                tgt_label: /ahc/work4/heli-qi/euterpe-heli-qi/datasets/speech_text/librispeech/data/raw/test_clean/text
+
+            shuffle: False
+            batch_size: 1
+            data_len: /ahc/work4/heli-qi/euterpe-heli-qi/datasets/speech_text/librispeech/data/raw/test_clean/feat_len.scp
+
+    other:
+        type: piece.PieceIterator
+        conf:
+            dataset_type: speech.speech_text.SpeechTextDataset
+            dataset_conf:
+                feat_type: raw
+                src_data: /ahc/work4/heli-qi/euterpe-heli-qi/datasets/speech_text/librispeech/data/raw/test_other/feat.scp
+                tgt_label: /ahc/work4/heli-qi/euterpe-heli-qi/datasets/speech_text/librispeech/data/raw/test_other/text
+
+            shuffle: False
+            batch_size: 1
+            data_len: /ahc/work4/heli-qi/euterpe-heli-qi/datasets/speech_text/librispeech/data/raw/test_other/feat_len.scp

@@ -1,0 +1,15 @@
+{
+    "pkg":"rosa",
+    "sample_rate": 16000,
+    "preemphasis":0.97,
+    "type":"logmelfbank",
+    "n_fft": 2048,
+    "hop_length": 200,
+    "win_length": 800,
+    "power": 1,
+    "n_mels": 80,
+    "fmin": 125,
+    "fmax": 7600,
+    "mel_clip": 1e-5,
+    "log_base": 10
+}

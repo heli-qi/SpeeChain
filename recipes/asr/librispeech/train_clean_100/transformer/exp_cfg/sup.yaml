@@ -1,0 +1,27 @@
+# Experiment environment
+seed: 0
+ngpu: 1
+gpus: 3
+num_workers: 1
+pin_memory: False
+non_blocking: False
+
+# Training monitoring
+train: False
+test: True
+resume: False
+#dry_run: True
+#no_optim: True
+num_epochs: 100
+report_per_steps: 50
+
+best_model_num: 5
+best_model_mode: max
+best_model_metric: accuracy
+early_stopping_patience: 10
+test_model: epoch_66
+
+# Experiment configurations
+data_cfg: "/ahc/work4/heli-qi/euterpe-heli-qi/recipes/asr/librispeech/train_clean_100/data_cfg/sup_frame2w_batch1k.yaml"
+train_cfg: "/ahc/work4/heli-qi/euterpe-heli-qi/recipes/asr/librispeech/train_clean_100/transformer/train_cfg/8head_512dim_warmup4k.yaml"
+test_cfg: "/ahc/work4/heli-qi/euterpe-heli-qi/config/infer/beam_search/beam_size=16_maxlen_ratio=1.0.yaml"

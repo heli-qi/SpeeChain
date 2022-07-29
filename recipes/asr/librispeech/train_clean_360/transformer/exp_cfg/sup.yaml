@@ -1,0 +1,28 @@
+# Experiment environment
+seed: 0
+ngpu: 1
+num_workers: 0
+pin_memory: False
+non_blocking: False
+
+# gradient descent related
+grad_clip: 1.0
+accum_grad: 1
+
+# Training monitoring
+train_flag: False
+resume: True
+result_path: "/ahc/work4/heli-qi/euterpe-heli-qi/results/asr/transformer/librispeech_360"
+num_epochs: 100
+valid_per_epochs: 1
+report_per_steps: 100
+best_model_num: 5
+best_model_mode: max
+best_model_metric: accuracy
+early_stopping_patience: 10
+test_model: best
+
+# Experiment configurations
+data_cfg: "/ahc/work4/heli-qi/euterpe-heli-qi/config/data/librispeech_360.yaml"
+train_cfg: "/ahc/work4/heli-qi/euterpe-heli-qi/config/train/asr/transformer_warmup12k.yaml"
+test_cfg: "/ahc/work4/heli-qi/euterpe-heli-qi/config/test/beam_search/beam_size=16_maxlen_ratio=1.0.yaml"

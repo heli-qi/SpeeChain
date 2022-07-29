@@ -1,0 +1,244 @@
+# Data Loading Part
+Data loading is done by two classes: *Dataset* and *Iterator*.
+
+[*Dataset*]() loads the raw data from the disk and transforms them into model-friendly vectors. 
+Data preprocessing is also done in this class before feeding data to the model.
+
+[*Iterator*]() defines the strategy of forming batches. 
+It holds a built-in *Dataset* and generates a `torch.utils.data.DataLoader` on its dataset in each epoch.
+The iterators are divided into 3 groups: *train*, *valid*, and *test*. 
+In each group, more than 1 iterator can be constructed so that there could be multiple data pairs in a single batch.
+
+👆[Back to the home page]()
+
+## Table of Contents
+1. [**Configuration File Format**]()
+2. [**Abstract Interfaces Description**]()
+    1. [Dataset]()
+    2. [Iterator]()
+3. [**How to Construct Multiple Dataloaders**]()
+4. [**How to Mix Multiple Datasets in a Single Dataloader**]()
+5. [**How to Perform Data Selection in a Single Dataloader**]()
+
+## Configuration File Format
+The configuration of *Dataset* and *Iterator* is given in *data_cfg*. 
+The configuration format is shown below. If you would like to see some examples, please go to the following sections.
+```
+train:
+    iterator1_name:
+        type: file_name.class_name
+        conf:
+            dataset_type: datatype_name.file_name.class_name
+            dataset_conf:
+                src_data: data_file_path
+                tgt_label: label_file_path
+                ...
+            ...
+    ...
+valid:
+    iterator2_name:
+        type: file_name.class_name
+        conf:
+            dataset_type: datatype_name.file_name.class_name
+            dataset_conf:
+                src_data: data_file_path
+                tgt_label: label_file_path
+                ...
+            ...
+    ...
+test:
+    iterator3_name:
+        type: file_name.class_name
+        conf:
+            dataset_type: datatype_name.file_name.class_name
+            dataset_conf:
+                src_data: data_file_path
+                tgt_label: label_file_path
+                ...
+            ...
+    ...
+```
+
+1. The first-level keys must be one of ***train***, ***valid***, and ***test***. 
+The combination of your first-level keys must be one of 
+    1. *train, valid, test* (for training and testing)
+    2. *train, valid* (for training only)
+    3. *test* (for testing only).
+2. **iterator_name** is the second-level key used for distinguishing the loaded data of your iterators. 
+If you have more than 1 iterator, these second-level keys will be used as the names of loaded data to make them identifiable with each other. 
+There is no restriction on the iterator names, so you can create them in the way you would like your iterators to be named.
+3. **type** is the third-level key that indicates the type of the corresponding iterator. 
+The value of this key acts as the query to pick up the target *Iterator* class in this toolkit. 
+Your given query should be in the form of `file_name.class_name` to indicate the place and name of your target class. 
+For example, `block.BlockIterator` means the class `BlockIterator` in `./speechain/iterator/block.py`.
+4. **conf** is the third-level key that indicates your iterator configuration. The contents have the following 4 parts:
+    1. **dataset_type** indicates the type of the built-in *Dataset* in this iterator. 
+    This value will be used as the query to pick up the target *Dataset* class. 
+    Your given query should be in the form of `datatype_name.file_name.class_name` to indicate the place of your target class. 
+    For example, `speech.speech_text.SpeechTextDataset` means the class `SpeechTextDataset` in `./speechain/dataset/speech/speech_text.py`.
+    2. **dataset_conf** contains all the configuration used to initialize the built-in *Dataset*. 
+    The _src_data_ and _tgt_label_ arguments indicate the data samples used in this *Dataset*.
+    3. **Iterator general configuration**. These configurations are used to initialize the general part shared by all types of iterators in this toolkit. 
+    Please refer to the docstrings of [*Iterator*]() for more details.
+    4. **Iterator customized configuration**. This part is used to initialize the customized part of your chosen iterator. 
+    Please refer to the docstrings of your target *Iterator* class for more details.
+
+## Abstract Interfaces Description
+### Dataset
+1. **dataset_init()**: 
+The initialization function of the customized part of your dataset implementation. 
+2. **read_data_label_files()**:
+This function reads the contents of your given data files and labels files into memory.
+3. **\__getitem\__()**: 
+This function should return the corresponding data sample in the dataset by the given index.
+4. **collate_fn()**:
+This function does some preprocessing operations to the current batch of data samples, 
+such as length mismatch unification, data precision adjustment, and so on.
+
+For more details, please refer to [*Dataset*]().
+
+### Iterator
+1. **iter_init()**: 
+The initialization function of the customized part of your iterator. 
+Your implementation of this interface should return the list of batches generated by your batching strategy.
+
+For more details, please refer to [*Iterator*]().
+
+## How to Construct Multiple Dataloaders
+Multiple Dataloaders can be easily constructed by giving the configuration of multiple iterators. 
+Each iterator creates an independent Dataloader that contributes a data-label pair in the batch. 
+
+An example of semi-supervised ASR training is shown below. There are two iterators in the _train_ group: _sup_ and _unsup_ (the iterator names are given by users based on their preferences). 
+These two iterators are in the same type and have built-in datasets with the same type.
+```
+train:
+    sup:
+        type: block.BlockIterator
+        conf:
+            dataset_type: speech.speech_text.SpeechTextDataset
+            dataset_conf:
+                ...
+            ...
+    unsup:
+        type: block.BlockIterator
+        conf:
+            dataset_type: speech.speech_text.SpeechTextDataset
+            dataset_conf:
+                ...
+            ...
+```
+If there are multiple Dataloaders used to load data, each Dataloader will contribute a sub-Dict in the batch Dict _train_batch_ as shown below. 
+The name of each sub-Dict is the one users give as the name of the corresponding iterator.
+```
+train_batch:
+    sup:
+        feat: torch.Tensor
+        feat_len: torch.Tensor
+        text: torch.Tensor
+        text_len: torch.Tensor
+    unsup:
+        feat: torch.Tensor
+        feat_len: torch.Tensor
+        text: torch.Tensor
+        text_len: torch.Tensor
+```
+If you have only one iterator like the configuration below, your _train_batch_ will not have any sub-Dict but only the data-label pair from that iterator. 
+In this case, the name of your iterator will not be used.
+```
+train:
+    sup:
+        type: block.BlockIterator
+        conf:
+            dataset_type: speech.speech_text.SpeechTextDataset
+            dataset_conf:
+                ...
+            ...
+```
+```
+train_batch:
+    feat: torch.Tensor
+    feat_len: torch.Tensor
+    text: torch.Tensor
+    text_len: torch.Tensor
+```
+
+
+## How to Mix Multiple Datasets in a Single Dataloader
+If you want to initialize your iterator with multiple datasets and want your dataloader to pick up batches from the mixed dataset, 
+you can simply give a list of file paths to the _src_data_ and _tgt_label_ arguments to initialize the built-in dataset of your iterator like the example below.
+```
+train:
+    sup:
+        type: block.BlockIterator
+        conf:
+            dataset_type: speech.speech_text.SpeechTextDataset
+            dataset_conf:
+                src_data:
+                    - ./datasets/speech/librispeech/data/raw/train_clean_100/feat.scp
+                    - ./datasets/speech/librispeech/data/raw/train_clean_360/feat.scp
+                    - ./datasets/speech/librispeech/data/raw/train_other_500/feat.scp
+                tgt_label:
+                    - ./datasets/speech/librispeech/data/raw/train_clean_100/text
+                    - ./datasets/speech/librispeech/data/raw/train_clean_100/text
+                    - ./datasets/speech/librispeech/data/raw/train_other_500/text
+            ...
+```
+
+## How to Perform Data Selection in a Single Dataloader
+If you only need to load a part of the data samples from the built-in dataset, 
+you can use the arguments _selection_mode_ and _selection_num_. 
+_selection_mode_ specifies the selection method and _selection_num_ specifies the number of selected samples. 
+_selection_num_ can be given as a positive float number or a negative integer number. 
+The positive float number means the ratio of the dataset. In the example below, the first 50% of *LibriSpeech-train_clean_100* will be selected. 
+```
+train:
+    sup:
+        type: block.BlockIterator
+        conf:
+            dataset_type: speech.speech_text.SpeechTextDataset
+            dataset_conf:
+                src_data: ./datasets/speech/librispeech/data/raw/train_clean_100/feat.scp
+                tgt_label: ./datasets/speech/librispeech/data/raw/train_clean_100/text
+
+            selection_mode: order
+            selection_num: 0.5
+            ...
+```
+The negative integer number means the absolute number of the selected samples. 
+In the example below, 1000 data samples of *LibriSpeech-train_clean_100* will be randomly selected. 
+```
+train:
+    sup:
+        type: block.BlockIterator
+        conf:
+            dataset_type: speech.speech_text.SpeechTextDataset
+            dataset_conf:
+                src_data: ./datasets/speech/librispeech/data/raw/train_clean_100/feat.scp
+                tgt_label: ./datasets/speech/librispeech/data/raw/train_clean_100/text
+
+            selection_mode: random
+            selection_num: -1000
+            ...
+```
+Moreover, data selection and datasets mixing can be used in a single iterator but they will be done sequentially. 
+In the example below, _train_clean_100_, _train_clean_360_, and _train_other_500_ datasets of the _LibriSpeech_ corpus will be first mixed into a large dataset, and then the last 50% of the large dataset will be selected.
+```
+train:
+    sup:
+        type: block.BlockIterator
+        conf:
+            dataset_type: speech.speech_text.SpeechTextDataset
+            dataset_conf:
+                src_data:
+                    - ./datasets/speech/librispeech/data/raw/train_clean_100/feat.scp
+                    - ./datasets/speech/librispeech/data/raw/train_clean_360/feat.scp
+                    - ./datasets/speech/librispeech/data/raw/train_other_500/feat.scp
+                tgt_label:
+                    - ./datasets/speech/librispeech/data/raw/train_clean_100/text
+                    - ./datasets/speech/librispeech/data/raw/train_clean_100/text
+                    - ./datasets/speech/librispeech/data/raw/train_other_500/text
+            
+            selection_mode: rev_order
+            selection_num: 0.5
+            ...
+```

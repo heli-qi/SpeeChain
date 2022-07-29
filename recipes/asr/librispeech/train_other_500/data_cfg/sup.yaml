@@ -1,0 +1,39 @@
+train:
+    sup:
+        type: block.EuterpeBlockIterator
+        conf:
+            dataset_type: speech.speech_text.EuterpeSpeechTextDataset
+            dataset_conf:
+                feat_type: raw
+                sample_rate: 16000
+                feat_scp: /ahc/work4/heli-qi/euterpe-heli-qi/datasets/speech/librispeech/data/raw/train_other_500/feat.scp
+                text: /ahc/work4/heli-qi/euterpe-heli-qi/datasets/speech/librispeech/data/raw/train_other_500/text
+                token_type: char
+                token_dict: /ahc/work4/heli-qi/euterpe-heli-qi/datasets/speech/librispeech/data/char/train_other_500/dict
+
+            batch_frames: 4000000 # 4000000 = 20000 * 200 (16000 * 0.0125)
+            shuffle: True
+            is_descending: True
+            batches_per_epoch: 5000
+            data_len: /ahc/work4/heli-qi/euterpe-heli-qi/datasets/speech/librispeech/data/raw/train_other_500/feat_len.scp
+
+
+
+valid:
+    clean:
+        type: block.EuterpeBlockIterator
+        conf:
+            dataset_type: speech.speech_text.EuterpeSpeechTextDataset
+            dataset_conf:
+                feat_type: raw
+                sample_rate: 16000
+                feat_scp: /ahc/work4/heli-qi/euterpe-heli-qi/datasets/speech/librispeech/data/raw/dev_other/feat.scp
+                text: /ahc/work4/heli-qi/euterpe-heli-qi/datasets/speech/librispeech/data/raw/dev_other/text
+                token_type: char
+                token_dict: /ahc/work4/heli-qi/euterpe-heli-qi/datasets/speech/librispeech/data/char/dev_other/dict
+
+            batch_frames: 4000000 # 4000000 = 20000 * 200 (16000 * 0.0125)
+            shuffle: False
+            is_descending: True
+            data_len: /ahc/work4/heli-qi/euterpe-heli-qi/datasets/speech/librispeech/data/raw/dev_other/feat_len.scp
+
