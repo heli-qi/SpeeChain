@@ -12,9 +12,8 @@ from scipy.io import wavfile
 import python_speech_features as pyspfeat
 import librosa
 import librosa.filters
-from euterpe.common.helper import TacotronHelper
 from tqdm import tqdm
-from euterpe.utilbox import signal_util
+from speechain.utilbox import signal_util
 
 
 ############

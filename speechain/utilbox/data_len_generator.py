@@ -10,7 +10,7 @@ import numpy as np
 from multiprocessing import Pool
 from functools import partial
 
-from euterpe.utilbox.regex_util import regex_key_val
+from speechain.utilbox.regex_util import regex_key_val
 
 
 def get_feat_length(path, args):
