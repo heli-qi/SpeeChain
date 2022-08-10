@@ -1,0 +1,67 @@
+train:
+    sup:
+        type: block.BlockIterator
+        conf:
+            dataset_type: speech.speech_text.SpeechTextDataset
+            dataset_conf:
+                feat_type: raw
+                src_data: /ahc/work4/heli-qi/euterpe-heli-qi/datasets/speech_text/librispeech/data/raw/train_clean_360/feat.scp
+                tgt_label: /ahc/work4/heli-qi/euterpe-heli-qi/datasets/speech_text/librispeech/data/raw/train_clean_360/text
+
+            shuffle: True
+            is_descending: True
+            batches_per_epoch: 2000
+            batch_frames: 10000000
+            data_len: /ahc/work4/heli-qi/euterpe-heli-qi/datasets/speech_text/librispeech/data/raw/train_clean_360/feat_len.scp
+
+
+valid:
+    dev:
+        type: block.BlockIterator
+        conf:
+            dataset_type: speech.speech_text.SpeechTextDataset
+            dataset_conf:
+                feat_type: raw
+                src_data: /ahc/work4/heli-qi/euterpe-heli-qi/datasets/speech_text/librispeech/data/raw/dev_clean/feat.scp
+                tgt_label: /ahc/work4/heli-qi/euterpe-heli-qi/datasets/speech_text/librispeech/data/raw/dev_clean/text
+
+            shuffle: False
+            is_descending: True
+            batch_frames: 10000000
+            data_len: /ahc/work4/heli-qi/euterpe-heli-qi/datasets/speech_text/librispeech/data/raw/dev_clean/feat_len.scp
+
+
+test:
+    clean:
+        type: block.BlockIterator
+        conf:
+            dataset_type: speech.speech_text.SpeechTextDataset
+            dataset_conf:
+                feat_type: raw
+                src_data: /ahc/work4/heli-qi/euterpe-heli-qi/datasets/speech_text/librispeech/data/raw/test_clean/feat.scp
+                tgt_label: /ahc/work4/heli-qi/euterpe-heli-qi/datasets/speech_text/librispeech/data/raw/test_clean/text
+                meta_info:
+                    speaker: /ahc/work4/heli-qi/euterpe-heli-qi/datasets/speech_text/librispeech/data/raw/test_clean/utt2spk
+                    gender: /ahc/work4/heli-qi/euterpe-heli-qi/datasets/speech_text/librispeech/data/raw/test_clean/utt2gen
+
+            shuffle: False
+            is_descending: True
+            batch_frames: 500000
+            data_len: /ahc/work4/heli-qi/euterpe-heli-qi/datasets/speech_text/librispeech/data/raw/test_clean/feat_len.scp
+
+    other:
+        type: block.BlockIterator
+        conf:
+            dataset_type: speech.speech_text.SpeechTextDataset
+            dataset_conf:
+                feat_type: raw
+                src_data: /ahc/work4/heli-qi/euterpe-heli-qi/datasets/speech_text/librispeech/data/raw/test_other/feat.scp
+                tgt_label: /ahc/work4/heli-qi/euterpe-heli-qi/datasets/speech_text/librispeech/data/raw/test_other/text
+                meta_info:
+                    speaker: /ahc/work4/heli-qi/euterpe-heli-qi/datasets/speech_text/librispeech/data/raw/test_other/utt2spk
+                    gender: /ahc/work4/heli-qi/euterpe-heli-qi/datasets/speech_text/librispeech/data/raw/test_other/utt2gen
+
+            shuffle: False
+            is_descending: True
+            batch_frames: 500000
+            data_len: /ahc/work4/heli-qi/euterpe-heli-qi/datasets/speech_text/librispeech/data/raw/test_other/feat_len.scp

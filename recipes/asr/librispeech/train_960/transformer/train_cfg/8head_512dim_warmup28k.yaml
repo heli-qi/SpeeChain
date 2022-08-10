@@ -8,7 +8,7 @@ model:
       teacher_forcing: True
     customize_conf:
       token_type: char
-      token_dict: /ahc/work4/heli-qi/euterpe-heli-qi/datasets/speech_text/librispeech/data/char/train_clean_100/dict
+      token_dict: /ahc/work4/heli-qi/euterpe-heli-qi/datasets/speech_text/librispeech/data/char/train_960/dict
 
   module_conf:
     encoder:
