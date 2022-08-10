@@ -13,6 +13,8 @@ from speechain.model.abs import Model
 from speechain.tokenizer.char import CharTokenizer
 from speechain.infer_func.beam_search import beam_searching
 from speechain.utilbox.tensor_util import to_cpu
+from speechain.utilbox.eval_util import get_word_edit_alignment
+from speechain.utilbox.md_util import get_list_strings
 
 
 class ASR(Model):
@@ -27,8 +29,7 @@ class ASR(Model):
                         audio_format: str = 'wav',
                         return_att: bool = False,
                         return_hidden: bool = False,
-                        return_enc: bool = False,
-                        aver_required_metrics: List = None):
+                        return_enc: bool = False):
         """
         Initialize the token dictionary for ASR evaluation, i.e. turn the token sequence into string.
 
@@ -39,7 +40,6 @@ class ASR(Model):
             return_att:
             return_hidden:
             return_enc:
-            aver_required_metrics:
 
         """
         # initialize the tokenizer
@@ -57,11 +57,6 @@ class ASR(Model):
         self.return_hidden = return_hidden
         self.return_enc = return_enc
 
-        # testing metrics requried to calculate the average
-        if aver_required_metrics is None:
-            self.aver_required_metrics = ['cer', 'wer', 'hypo_time']
-
-
     def batch_preprocess(self, batch_data: Dict):
         """
 
@@ -72,7 +67,7 @@ class ASR(Model):
 
         """
 
-        def transform_text(data_dict: Dict):
+        def process_strings(data_dict: Dict):
             """
             turn the text strings into tensors and get their lengths
 
@@ -82,34 +77,38 @@ class ASR(Model):
             Returns:
 
             """
-            assert 'text' in data_dict.keys()
-            if isinstance(data_dict['text'], List):
-                for i in range(len(data_dict['text'])):
-                    data_dict['text'][i] = self.tokenizer.text2tensor(data_dict['text'][i])
+            # --- Process the Text String and its Length --- #
+            assert 'text' in data_dict.keys() and isinstance(data_dict['text'], List)
+            for i in range(len(data_dict['text'])):
+                data_dict['text'][i] = self.tokenizer.text2tensor(data_dict['text'][i])
+            text_len = torch.LongTensor([t.size(0) for t in data_dict['text']])
+            text = torch.full((text_len.size(0), text_len.max().item()), self.tokenizer.ignore_idx,
+                              dtype=text_len.dtype)
+            for i in range(text_len.size(0)):
+                text[i][:text_len[i]] = data_dict['text'][i]
 
-                text_len = torch.LongTensor([t.size(0) for t in data_dict['text']])
-                text = torch.full((text_len.size(0), text_len.max().item()), self.tokenizer.ignore_idx,
-                                  dtype=text_len.dtype)
-                for i in range(text_len.size(0)):
-                    text[i][:text_len[i]] = data_dict['text'][i]
+            data_dict['text'] = text
+            data_dict['text_len'] = text_len
 
-                data_dict['text'] = text
-                data_dict.update(text_len=text_len)
+            # --- Process the Speaker ID String --- #
+            if 'speaker' in data_dict.keys():
+                assert isinstance(data_dict['speaker'], List)
+                # turn the speaker id strings into the trainable tensors
+
             return data_dict
 
         batch_keys = list(batch_data.keys())
         # if the elements are still Dict (multiple dataloaders)
         if isinstance(batch_data[batch_keys[0]], Dict):
             for key in batch_keys:
-                batch_data[key] = transform_text(batch_data[key])
+                batch_data[key] = process_strings(batch_data[key])
         # if the elements are tensors (single dataloader)
         elif isinstance(batch_data[batch_keys[0]], torch.Tensor):
-            batch_data = transform_text(batch_data)
+            batch_data = process_strings(batch_data)
         else:
             raise ValueError
 
         return batch_data
-
 
     def model_forward(self,
                       feat: torch.Tensor,
@@ -204,7 +203,6 @@ class ASR(Model):
             )
         return outputs
 
-
     def loss_calculation(self,
                          logits: torch.Tensor,
                          text: torch.Tensor,
@@ -230,7 +228,6 @@ class ASR(Model):
         metrics = dict(loss=loss.detach(), accuracy=accuracy.detach())
         return losses, metrics
 
-
     def metrics_calculation(self,
                             logits: torch.Tensor,
                             text: torch.Tensor,
@@ -254,7 +251,6 @@ class ASR(Model):
             loss=loss.detach(),
             accuracy=accuracy.detach()
         )
-
 
     def matrix_snapshot(self, vis_logs: List, hypo_attention: Dict, subfolder_names: List[str] or str, epoch: int):
         """
@@ -286,7 +282,6 @@ class ASR(Model):
                 )
             )
 
-
     def attention_reshape(self, hypo_attention: Dict, prefix_list: List = None) -> Dict:
         """
 
@@ -316,7 +311,6 @@ class ASR(Model):
                         for index, element in enumerate(hypo_attention)}
             else:
                 raise RuntimeError
-
 
     def visualize(self,
                   epoch: int,
@@ -352,7 +346,7 @@ class ASR(Model):
             # store each target metric into materials
             if metric not in epoch_records[sample_index].keys():
                 epoch_records[sample_index][metric] = []
-            epoch_records[sample_index][metric].append(infer_results[metric])
+            epoch_records[sample_index][metric].append(infer_results[metric][0])
             materials[metric] = epoch_records[sample_index][metric]
         # save the visualization log
         vis_logs.append(
@@ -383,7 +377,7 @@ class ASR(Model):
         # hypothesis text
         if 'hypo_text' not in epoch_records[sample_index].keys():
             epoch_records[sample_index]['hypo_text'] = []
-        epoch_records[sample_index]['hypo_text'].append(infer_results['hypo_text'])
+        epoch_records[sample_index]['hypo_text'].append(infer_results['hypo_text'][0])
         # snapshot the information in the materials
         vis_logs.append(
             dict(
@@ -400,7 +394,6 @@ class ASR(Model):
 
         return vis_logs
 
-
     def inference(self,
                   feat: torch.Tensor,
                   feat_len: torch.Tensor,
@@ -411,22 +404,30 @@ class ASR(Model):
                   length_penalty: float = 1.0,
                   sent_per_beam: int = 1,
                   return_att: bool = False,
-                  teacher_forcing: bool = False) -> Dict[str, Any]:
+                  decode_only: bool = False,
+                  teacher_forcing: bool = False,
+                  **meta_info) -> Dict[str, Any]:
         """
 
         Args:
+            # testing data arguments
             feat:
             feat_len:
             text:
             text_len:
+            # beam searching arguments
             beam_size:
             maxlen_ratio:
+            length_penalty:
+            sent_per_beam:
+            # general inference arguments
+            return_att:
+            decode_only:
+            teacher_forcing:
 
         Returns:
 
         """
-        start_time = time.time()
-
         # go through beam searching process
         if not teacher_forcing:
             # copy the input data in advance for data safety
@@ -452,6 +453,7 @@ class ASR(Model):
             hypo_text_len = infer_results['hypo_text_len']
             hypo_text_prob = infer_results['hypo_text_prob']
 
+        # calculate the attention matrix
         if teacher_forcing or return_att:
             infer_results = self.model_forward(feat=feat, feat_len=feat_len,
                                                text=text if teacher_forcing else hypo_text,
@@ -468,43 +470,81 @@ class ASR(Model):
                 hypo_text_prob, hypo_text = torch.max(infer_results['logits'], dim=-1)
                 # the original text contains both sos at the beginning and eos at the end
                 hypo_text_len = text_len - 2
-                hypo_text_prob = to_cpu(torch.sum(hypo_text_prob, dim=-1)) / (to_cpu(hypo_text_len) ** length_penalty)
+                hypo_text_prob = torch.sum(hypo_text_prob, dim=-1) / (hypo_text_len ** length_penalty)
 
-        # the overall time = speech encoding time + beam searching time + string converting time
-        hypo_time = time.time() - start_time
+        # check the data
+        assert hypo_text.size(0) == text.size(0), \
+            f"The first dimension of text and hypo_text doesn't match! " \
+            f"Got text.size(0)={text.size(0)} and hypo_text.size(0)={hypo_text.size(0)}."
 
-        # recover the string of the hypothesis text
-        assert hypo_text.dim() <= 2, \
-            f"The dimension of the hypothesis sequence generated in the testing stage must be less than 2, " \
-            f"but got {hypo_text.dim()}!!"
-        assert hypo_text.dim() == 2 and hypo_text.size(0) == 1, \
-            f"The evaluation of ASR models can only be done one sentence a time, " \
-            f"so the first dim of hypo_text must be 1!! Got {hypo_text.size()}."
-
-        # calculate the error rate (CER & WER)
-        assert text.dim() <= 2, \
-            f"The dimension of the hypothesis sequence generated in the testing stage must be less than 2, " \
-            f"but got {text.dim()}!!"
-        assert text.dim() == 2 and text.size(0) == 1, \
-            f"The evaluation of ASR models can only be done one sentence a time, " \
-            f"so the first dim of text must be 1!! Got {text.size()}."
-        # remove the sos and eos in the real text
-        text = text[:, 1:-1]
+        # obtain the cer and wer metrics
         cer_wer = self.error_rate(hypo_text=hypo_text, real_text=text, tokenizer=self.tokenizer)
-        hypo_text = self.tokenizer.tensor2text(hypo_text[0])
 
+        # recover the text tensors back to text strings (removing the padding and sos/eos tokens)
+        hypo_text = [self.tokenizer.tensor2text(hypo[torch.logical_and(hypo != self.tokenizer.ignore_idx,
+                                                                       hypo != self.tokenizer.sos_eos_idx)])
+                     for hypo in hypo_text]
+        text = [self.tokenizer.tensor2text(real[torch.logical_and(real != self.tokenizer.ignore_idx,
+                                                                  real != self.tokenizer.sos_eos_idx)])
+                for real in text]
+        # text has sos/eos attached at the beginning and the end
+        text_len -= 2
+
+        # make sure that all the values in the returned Dict is in the form of List
         outputs = dict(
+            hypo_text=hypo_text,
+            hypo_text_prob=to_cpu(hypo_text_prob),
+        )
+        # text and text_len will not be used in the decoding-only mode
+        if decode_only:
+            return outputs
+
+        # return the metrics calculated by text and text_len in the normal mode
+        outputs.update(
             cer=cer_wer['cer'],
             wer=cer_wer['wer'],
-            hypo_time=hypo_time,
-            hypo_text_prob=hypo_text_prob[0],
-            hypo_text=hypo_text,
-            hypo_text_len=hypo_text_len
+            hypo_len_offset=to_cpu(hypo_text_len - text_len)
         )
+        # add the attention matrix into the output Dict (mainly for model visualization during training)
         if return_att:
             outputs.update(
                 hypo_att=hypo_att
             )
+
+        # evaluation reports for all the testing samples
+        sample_reports, insertion, deletion, substitution = [], [], [], []
+        for i in range(len(text)):
+            i_num, d_num, s_num, align_table = \
+                get_word_edit_alignment(outputs['hypo_text'][i], text[i])
+            md_list = get_list_strings(
+                {
+                    'CER': f"{outputs['cer'][i]:.2%}",
+                    'WER': f"{outputs['wer'][i]:.2%}",
+                    'Hypothesis Score': f"{outputs['hypo_text_prob'][i]:.6f}",
+                    'Length Offset': f"{'+' if outputs['hypo_len_offset'][i] >= 0 else ''}{outputs['hypo_len_offset'][i]:d}",
+                    'Word Insertion': f"{i_num}",
+                    'Word Deletion': f"{d_num}",
+                    'Word Substitution': f"{s_num}"
+                }
+            )
+
+            sample_reports.append(
+                '\n\n' +
+                md_list +
+                '\n' +
+                align_table +
+                '\n'
+            )
+            insertion.append(i_num)
+            deletion.append(d_num)
+            substitution.append(s_num)
+
+        outputs['sample_reports.md'] = sample_reports
+        outputs.update(
+            word_insertion=insertion,
+            word_deletion=deletion,
+            word_substitution=substitution
+        )
         return outputs
 
 

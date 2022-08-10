@@ -3,13 +3,13 @@
     Affiliation: NAIST
     Date: 2022.07
 """
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple
 
-from torch.utils.data import Dataset
+import torch
 from abc import ABC, abstractmethod
 
 
-class Dataset(Dataset, ABC):
+class Dataset(torch.utils.data.Dataset, ABC):
     """
     Dataset is the base class for all dataset classes in this toolkit. The main job of the dataset is loading
     the raw data from the disk into the pipeline.
@@ -18,7 +18,8 @@ class Dataset(Dataset, ABC):
     class.
 
     """
-    def __init__(self, src_data: str or List[str], tgt_label: str or List[str], **dataset_conf):
+    def __init__(self, src_data: str or List[str], tgt_label: str or List[str],
+                 meta_info: Dict[str, str or List[str]] = None, **dataset_conf):
         """
         If we want to initialize some member variables in our implementations, it's mandatory for us to first write
         the code 'super(Dataset, self).__init__()'.
@@ -36,11 +37,14 @@ class Dataset(Dataset, ABC):
                 The name of the target label files that contain the ourput labels for model training. This argument can
                 be given in either a single string or a list of strings. If a list is given, all the given text files
                 will be mixed into a single dictionary.
+            meta_info: Dict[str, str or List[str]]
+
             **dataset_conf:
                 The configuration for initializing your dataset implementation.
         """
         super(Dataset, self).__init__()
 
+        # --- Source Data and Target Label Reading and Processing --- #
         # source data init, make sure that self.src_data is a list of str where each str corresponds to a file
         assert isinstance(src_data, (str, list)), \
             f"src_data must be given in str or List[str], but got type(src_data)={type(src_data)}"
@@ -51,30 +55,58 @@ class Dataset(Dataset, ABC):
             f"tgt_label must be given in str or List[str], but got type(tgt_label)={type(tgt_label)}"
         self.tgt_label = [tgt_label] if isinstance(tgt_label, str) else tgt_label
 
-        # the number of src_data files should equal to that of tgt_label files.
-        assert len(self.src_data) == len(self.tgt_label), \
-            f"The number of src_data files should equal to that of tgt_label files, " \
-            f"but got len(self.src_data)={len(self.src_data)} and len(self.tgt_label)={len(self.tgt_label)}."
-
-        # read the files in self.src_data and self.tgt_label and turn them into Dict
-        for i, (data_file, label_file) in enumerate(zip(self.src_data, self.tgt_label)):
-            self.src_data[i], self.tgt_label[i] = self.read_data_label_files(data_file, label_file)
-            assert isinstance(self.src_data[i], Dict) and isinstance(self.tgt_label[i], Dict), \
-                f"After self.read_data_and_label(), the elements of self.src_data and self.tgt_label must be Dict, " \
-                f"but got type(self.src_data[{i}])={type(self.src_data[i])} and type(self.tgt_label[{i}])={type(self.tgt_label[i])}."
-
         # transform self.src_data and self.tgt_label into a single dictionary
+        # data file reading, List[str] -> List[Dict[str, str]]
+        self.src_data = [self.read_data_file(_data_file) for _data_file in self.src_data]
+        # data Dict combination, List[Dict[str, str]] -> Dict[str, str]
         self.src_data = {key: value for _data_dict in self.src_data for key, value in _data_dict.items()}
+        # label file reading, List[str] -> List[Dict[str, str]]
+        self.tgt_label = [self.read_label_file(_label_file) for _label_file in self.tgt_label]
+        # label Dict combination, List[Dict[str, str]] -> Dict[str, str]
         self.tgt_label = {key: value for _label_dict in self.tgt_label for key, value in _label_dict.items()}
 
-        # check whether the keys of self.src_data and self.tgt_label match with each other
+        # --- Extra Information Reading and Processing --- #
+        self.meta_info = None
+        if meta_info is not None:
+            # extra information initialization
+            # make sure that self.meta_info is a Dict of List and each List corresponds to a kind of information
+            assert isinstance(meta_info, Dict), \
+                f"meta_info must be given in Dict, but got type(meta_info)={type(meta_info)}"
+            self.meta_info = {key: [value] if isinstance(value, str) else value for key, value in meta_info.items()}
+
+            # loop each kind of information
+            for meta_type in self.meta_info.keys():
+                # information file reading, List[str] -> List[Dict[str, str]]
+                self.meta_info[meta_type] = [self.read_meta_file(_meta_file, meta_type=meta_type) for _meta_file in self.meta_info[meta_type]]
+                # information Dict combination, List[Dict[str, str]] -> Dict[str, str]
+                self.meta_info[meta_type] = {key: value for _meta_dict in self.meta_info[meta_type] for key, value in _meta_dict.items()}
+
+        # --- Dict keys mismatch checking of self.src_data, self.tgt_label, and self.meta_info --- #
+        # combine the key lists of all data sources
         src_data_keys, tgt_label_keys = set(self.src_data.keys()), set(self.tgt_label.keys())
-        # remove the redundant key-value pairs that are in self.src_data but not in self.tgt_label
-        for redundant_key in src_data_keys.difference(tgt_label_keys):
+        dict_keys = [src_data_keys, tgt_label_keys]
+        if self.meta_info is not None:
+            meta_info_keys = {key: set(value.keys()) for key, value in self.meta_info.items()}
+            dict_keys += list(meta_info_keys.values())
+
+        # get the intersection of the key lists of all data sources
+        key_intersection = dict_keys[0]
+        for i in range(1, len(dict_keys)):
+            key_intersection &= dict_keys[i]
+
+        # remove the redundant key-value pairs that are in self.src_data but not in the intersection
+        for redundant_key in src_data_keys.difference(key_intersection):
             self.src_data.pop(redundant_key)
-        # remove the redundant key-value pairs that are in self.tgt_label but not in self.src_data
-        for redundant_key in tgt_label_keys.difference(src_data_keys):
+        # remove the redundant key-value pairs that are in self.tgt_label but not in the intersection
+        for redundant_key in tgt_label_keys.difference(key_intersection):
             self.tgt_label.pop(redundant_key)
+
+        if self.meta_info is not None:
+            # loop each type of extra information
+            for meta_type in self.meta_info.keys():
+                # remove the redundant key-value pairs that are in self.tgt_label but not in the intersection
+                for redundant_key in meta_info_keys[meta_type].difference(key_intersection):
+                    self.meta_info[meta_type].pop(redundant_key)
 
         # initialize the customized part of the dataset
         self.dataset_init(**dataset_conf)
@@ -93,42 +125,108 @@ class Dataset(Dataset, ABC):
 
 
     @abstractmethod
-    def read_data_label_files(self, data_file: str, label_file: str) -> (Dict[str, Any], Dict[str, Any]):
+    def read_data_file(self, data_file: str) -> Dict[str, str]:
         """
-        In this function, you need to read the data and label files you give in 'src_data' and 'tgt_label' into
-        memory.
+        In this function, you need to read the data files you give in 'src_data' into memory.
 
-        The input of this function is two strings that indicate the absolute paths of a data file and a label file.
-        You need to first read the contents of each file into memory, and then transform the contents into a Dict.
+        The input of this function is one string that indicate the absolute paths of a data file.
+        You need to first read the contents of the file into memory, and then transform the contents into a Dict.
 
-        Finally, these two Dict are returned. Note that the Dict of the data file is in the first place and the Dict
-        of the label file is in the second place.
+        Finally, this Dict will be returned.
 
         Here is an implementation example:
         >>> from speechain.dataset.abs import Dataset
         >>> class MyDataset(Dataset):
-        ...     def read_data_label_files(self, data_file: str, label_file: str):
+        ...     def read_data_file(self, data_file: str):
         ...         # read the content of the data file
         ...         data = read_func(data_file)
         ...         # transform the read information into a Dict
         ...         data = dict(transform(data))
-        ...         # read the content of the label file
-        ...         label = read_func(label_file)
-        ...         # transform the read information into a Dict
-        ...         label = dict(transform(label))
-        ...         # make sure the order of your return values are as below
-        ...         return data, label
+        ...         return data
 
         For more details, please refer to the SpeechTextDataset in ./speechain/dataset/speech/speech_text.py as an example.
 
         Args:
             data_file: str
                 The absolute path of a data file.
+
+        Returns:
+            The Dict of the contents of the input data file.
+
+        """
+        raise NotImplementedError
+
+
+    @abstractmethod
+    def read_label_file(self, label_file: str) -> Dict[str, str]:
+        """
+        In this function, you need to read the label files you give in 'tgt_label' into memory.
+
+        The input of this function is one strings that indicate the absolute paths of a label file.
+        You need to first read the contents of the file into memory, and then transform the contents into a Dict.
+
+        Finally, this Dict will be returned.
+
+        Here is an implementation example:
+        >>> from speechain.dataset.abs import Dataset
+        >>> class MyDataset(Dataset):
+        ...     def read_label_file(self, label_file: str):
+        ...         # read the content of the label file
+        ...         label = read_func(label_file)
+        ...         # transform the read information into a Dict
+        ...         label = dict(transform(label))
+        ...         return label
+
+        For more details, please refer to the SpeechTextDataset in ./speechain/dataset/speech/speech_text.py as an example.
+
+        Args:
             label_file: str
                 The absolute path of a label file.
 
         Returns:
-            The Dict of the contents of the input data file, The Dict of the contents of the input label file.
+            The Dict of the contents of the input label file.
+
+        """
+        raise NotImplementedError
+
+
+    def read_meta_file(self, meta_file: str, meta_type: str) -> Dict[str, str]:
+        """
+        In this function, you need to read the info  files you give in 'meta_info' into memory.
+
+        The input of this function is one string that indicate the absolute paths of a info file.
+        You need to first read the contents of the file into memory, and then transform the contents into a Dict.
+
+        Finally, this Dict will be returned.
+
+        This interface is not mandatory to be overridden unless you would like to introduce meta information in your batches.
+
+        Here is an implementation example:
+        >>> from speechain.dataset.abs import Dataset
+        >>> class MyDataset(Dataset):
+        ...     def read_meta_file(self, meta_file: str, meta_type: str):
+        ...         if meta_type == 'type1':
+        ...             # read the content of the meta file
+        ...             meta = read_func1(meta_file)
+        ...             # transform the read information into a Dict
+        ...             meta = dict(transform1(meta))
+        ...         elif meta_type == 'type2':
+        ...             # read the content of the meta file
+        ...             meta = read_func2(meta_file)
+        ...             # transform the read information into a Dict
+        ...             meta = dict(transform2(meta))
+        ...         return meta
+
+        For more details, please refer to the SpeechTextDataset in ./speechain/dataset/speech/speech_text.py as an example.
+
+        Args:
+            meta_file: str
+                The absolute path of a info file.
+            meta_type: str
+                The type of the information in the current input info file.
+
+        Returns:
+            The Dict of the contents of the input info file.
 
         """
         raise NotImplementedError
@@ -147,15 +245,20 @@ class Dataset(Dataset, ABC):
     def remove_data_by_index(self, index: str):
         """
         This function removes the corresponding data sample from the dataset by the given index. Mainly used for
-        solving the index mismatch of data samples during training.
+        solving the index mismatch of data samples with the iterator during training.
 
         """
         self.src_data.pop(index)
         self.tgt_label.pop(index)
 
+        if self.meta_info is not None:
+            for meta_type in self.meta_info.keys():
+                if index in self.meta_info[meta_type].keys():
+                    self.meta_info[meta_type].pop(index)
+
 
     @abstractmethod
-    def __getitem__(self, index):
+    def __getitem__(self, index) -> Dict[str, Any]:
         """
         This function decides how to load the raw data from the disk by the given index from the Dataloader.
 
@@ -164,7 +267,7 @@ class Dataset(Dataset, ABC):
 
 
     @abstractmethod
-    def collate_fn(self, batch) -> Dict[str, Any]:
+    def collate_fn(self, batch: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
         This function decides how to preprocess a batch of data generated by the Dataloader before giving it to the model.
 

@@ -149,13 +149,13 @@ class OptimScheduler(ABC):
             real_step = (step_num - 1) // self.accum_grad + 1
             # do something only when the real step number meets the updating interval
             if real_step % self.step_per_update == 0:
+                # update the learning rate for the current step (scaled by the finetuning factor)
+                curr_lr = self.update_lr(real_step=real_step)
+                for param_group in self.optimizer.param_groups:
+                    param_group['lr'] = self.ft_factor * curr_lr
+
                 # update the model parameters if the accumulation interval is met
                 if step_num % self.accum_grad == 0:
-                    # update the learning rate for the current step (scaled by the finetuning factor)
-                    curr_lr = self.update_lr(real_step=real_step)
-                    for param_group in self.optimizer.param_groups:
-                        param_group['lr'] = self.ft_factor * curr_lr
-
                     # load the stored gradients to the model if we have
                     if self.tmp_grads is not None:
                         for name, params in self.model.named_parameters():

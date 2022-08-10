@@ -16,8 +16,8 @@ def to_native(x):
     if isinstance(x, torch.Tensor):
         if len(x.shape) == 0:
             x = x.item()
-        elif hasattr(x, 'numpy'):
-            x = x.numpy()
+        elif hasattr(x, 'tolist'):
+            x = x.tolist()
 
     return x
 

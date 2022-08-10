@@ -1,6 +1,6 @@
 """
     Author: Heli Qi
-    Affiliation: Nara Institute of Science and Technology
+    Affiliation: NAIST
     Date: 2022.07
 
     Modified from
@@ -112,9 +112,9 @@ def beam_searching(enc_feat: torch.Tensor,
                    sent_per_beam: int = 1):
     """
     Batch version of beam searching to enable parallel computation.
-    The basic idea is reshaping batch_size sentences into batch_size*beam_size sentences.
+    The basic idea is reshaping batch_size sentences into (batch_size * beam_size) sentences.
 
-    batch_size>1 is mainly used to speed up the pseudo text generation during training.
+    batch_size > 1 is mainly used to speed up the pseudo text generation during training.
     For testing, usually set batch_size=1 for evaluating the processing time to mimic real-world application.
 
     Args:
@@ -286,7 +286,7 @@ def beam_searching(enc_feat: torch.Tensor,
 
     # --- Length Calculation --- #
     hypo_text_len = hypo_text_len.new(batch_size * sent_per_beam)
-    _hypo_text_list = []
+    hypo_text_list = []
     hypo_text_prob = []
     # looping each sentence
     for i, hypotheses in enumerate(generated_hyps):
@@ -299,7 +299,7 @@ def beam_searching(enc_feat: torch.Tensor,
             # remove the sos tokens at the beginning of hyp
             best_hyp = _hypo[1][1:]
             hypo_text_len[effective_batch_idx] = len(best_hyp)
-            _hypo_text_list.append(best_hyp)
+            hypo_text_list.append(best_hyp)
             hypo_text_prob.append(_hypo[0])
 
     # --- Padding --- #
@@ -308,18 +308,17 @@ def beam_searching(enc_feat: torch.Tensor,
         sent_max_len = min(hypo_text_len.max().item(), hypo_maxlen)
         hypo_text = torch.full((batch_size * sent_per_beam, sent_max_len), padding_idx,
                                dtype=torch.long, device=cuda_device)
-        for i in range(len(_hypo_text_list)):
+        for i in range(len(hypo_text_list)):
             # padding pseudo transcripts
-            hypo_text[i, :hypo_text_len[i]] = _hypo_text_list[i]
-
+            hypo_text[i, :hypo_text_len[i]] = hypo_text_list[i]
     # all the sentences are equally long
     elif batch_size > 1:
-        hypo_text = torch.stack(hypo_text).to(cuda_device)
+        hypo_text = torch.stack(hypo_text_list).to(cuda_device)
     else:
         raise RuntimeError
 
     return dict(
         hypo_text=hypo_text,
         hypo_text_len=hypo_text_len,
-        hypo_text_prob=np.array(hypo_text_prob)
+        hypo_text_prob=torch.Tensor(hypo_text_prob)
     )

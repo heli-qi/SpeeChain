@@ -80,7 +80,7 @@ class Runner(object):
         parser.add_argument(
             "--config",
             type=str,
-            default='/ahc/work4/heli-qi/euterpe-heli-qi/recipes/asr/librispeech/train_960/transformer/exp_cfg/sup.yaml',
+            default='/ahc/work4/heli-qi/euterpe-heli-qi/recipes/asr/librispeech/train_clean_100/transformer/exp_cfg/sup_debug.yaml',
             help="All-in-one argument setting file. "
                  "You can write all the arguments in this file instead of giving them by command lines."
         )
@@ -260,11 +260,10 @@ class Runner(object):
         )
         group.add_argument(
             '--resume',
-            type=bool,
-            default=False,
-            help="Whether continue your unfinished experiment in the result_path. "
-                 "If True, there must be the checkpoint file of your last experiment "
-                 "in your result_path folder. (default: False)"
+            action='store_true',
+            help="Whether continue your unfinished training and testing jobs. "
+                 "If True, there must be the checkpoint file of your last experiment. "
+                 "This argument is shared by the training and testing branches. (default: False)"
         )
         group.add_argument(
             '--start_epoch',
@@ -322,12 +321,12 @@ class Runner(object):
         group.add_argument(
             '--early_stopping_threshold',
             type=float,
-            default=0.001,
-            help="The threshold to refresh early stopping in the monitor. "
-                 "Positive values in (0.0, 1.0) mean the relative threshold over the current best results, "
-                 "negative values mean the absolute threshold over the current best results. "
+            default=0.01,
+            help="The threshold to refresh early-stopping in the monitor. "
+                 "Positive values in (0.0, 1.0) represent the relative threshold over the current best results, "
+                 "negative values represent the absolute threshold over the current best results. "
                  "0 means no threshold is applied in the monitor."
-                 "(default: 0.001)"
+                 "(default: 0.01)"
         )
 
         # Training Snapshotting
@@ -355,7 +354,7 @@ class Runner(object):
             default=5,
             help="The snapshotting interval of your model during validation. "
                  "This argument determines how frequently the snapshots are updated (unit: epoch). "
-                 "(default: 1)"
+                 "(default: 5)"
         )
 
         # Testing
@@ -370,15 +369,18 @@ class Runner(object):
             '--test_model',
             type=str,
             default=None,
-            help="The model used to initialize the model in the testing phase. "
-                 "Must be either 'best' or 'average'."
+            help="The names of the model you want to evaluate in the testing phase. "
+                 "Multiple model names can be given as a list. "
+                 "If you only want to evaluate one model, directly giving the string of its name is OK. (default: None)"
         )
         group.add_argument(
-            '--aver_required_metrics',
+            '--bad_cases_selection',
             type=list,
             default=None,
-            help="The testing metrics that you would like to take the average for all testing samples. "
-                 "This argument should be given as a list. (default: None)"
+            help="The selection method of the top-n bad cases. "
+                 "This argument should be given as a tri-tuple ('metric', 'max' or 'min', N). "
+                 "For example, ('wer', 'max', 10) means the testing samples with top-10 largest wer will be selected. "
+                 "Multiple tuples can be given to present different sets of top-n bad cases. (default: None)"
         )
 
         # Experiment configuration
@@ -399,7 +401,9 @@ class Runner(object):
             '--test_cfg',
             type=str,
             default=None,
-            help="The configuration file of the testing hyperparameters."
+            help="The configuration file of the testing hyperparameters. "
+                 "Multiple testing configuration files can be given as a list. "
+                 "If you only want to use one file, directly giving the string of its name is OK. (default: None)"
         )
 
         # Add customized arguments if needed
@@ -586,20 +590,24 @@ class Runner(object):
         # start the training from the existing checkpoint
         if args.resume:
             # load the existing checkpoint
-            checkpoint_path = os.path.join(args.result_path, "checkpoint.pth")
-            if not os.path.exists(checkpoint_path):
-                raise RuntimeError(f"No checkpoint.pth found in your input result_path {args.result_path}!")
-            else:
-                checkpoint = torch.load(checkpoint_path, map_location=model.device)
+            try:
+                checkpoint = torch.load(os.path.join(args.result_path, "checkpoint.pth"), map_location=model.device)
+                # load the checkpoint information into the current experiment
+                start_epoch = checkpoint['start_epoch']
+                model.load_state_dict(checkpoint['latest_model'])
+                if train_monitor is not None and valid_monitor is not None:
+                    train_monitor.load_state_dict(checkpoint['train_monitor'])
+                    valid_monitor.load_state_dict(checkpoint['valid_monitor'])
+                for name, optim_sche in optim_sches.items():
+                    optim_sche.load_state_dict(checkpoint['optim_sches'][name])
+                # info logging
+                train_monitor.logger.info(f"The training process resumes from the epoch no.{start_epoch}.")
 
-            # load the checkpoint information into the current experiment
-            start_epoch = checkpoint['start_epoch']
-            model.load_state_dict(checkpoint['latest_model'])
-            if train_monitor is not None and valid_monitor is not None:
-                train_monitor.load_state_dict(checkpoint['train_monitor'])
-                valid_monitor.load_state_dict(checkpoint['valid_monitor'])
-            for name, optim_sche in optim_sches.items():
-                optim_sche.load_state_dict(checkpoint['optim_sches'][name])
+            # checkpoint does not exist
+            except FileNotFoundError:
+                start_epoch = 1
+                train_monitor.logger.info(f"No checkpoint is found in {args.result_path}. "
+                                          f"The training process will start from scratch.")
 
         # start the training from scratch
         else:
@@ -707,6 +715,18 @@ class Runner(object):
             logger.info(f"Your validation iterators have different batch numbers: {valid_batch_nums}. "
                         f"The real batch number during validation is set to {min_valid_batch_num}!")
 
+        # synchronize the batch numbers across all the distributed processes
+        if args.distributed:
+            # make sure that all processes have the same number of training steps
+            _batch_num_list = [torch.LongTensor([0]).cuda(model.device)
+                               for _ in range(torch.distributed.get_world_size())]
+            torch.distributed.all_gather(_batch_num_list, torch.LongTensor([min_train_batch_num]).cuda(model.device))
+            min_train_batch_num = min([batch_num.item() for batch_num in _batch_num_list])
+
+            # make sure that all processes have the same number of validation steps
+            torch.distributed.all_gather(_batch_num_list, torch.LongTensor([min_valid_batch_num]).cuda(model.device))
+            min_valid_batch_num = min([batch_num.item() for batch_num in _batch_num_list])
+
         # Initialize the gradient scaler for AMP training
         scaler = GradScaler() if args.use_amp else None
 
@@ -807,7 +827,7 @@ class Runner(object):
                 torch.save(
                     {
                         "start_epoch": epoch + 1,
-                        "latest_model": model.state_dict(),
+                        "latest_model": model.state_dict() if not args.distributed else model.module.state_dict(),
                         "train_monitor": train_monitor.state_dict(),
                         "valid_monitor": valid_monitor.state_dict(),
                         "optim_sches": {name: o.state_dict() for name, o in optim_sches.items()}
@@ -854,43 +874,66 @@ class Runner(object):
         assert 'test_cfg' in args and args.test_cfg is not None, "Please specify at least one test configuration file!"
         if isinstance(args.test_cfg, str):
             args.test_cfg = [args.test_cfg]
-
-        test_cfg_dict = dict()
-        for cfg_path in args.test_cfg:
-            test_cfg = yaml.load(open(cfg_path))
-            test_cfg_name = cfg_path.split("/")[-1].split(".")[0]
-            test_cfg_dict[test_cfg_name] = test_cfg
+        test_cfg_dict = {cfg.split("/")[-1].split(".")[0]: cfg for cfg in args.test_cfg}
 
         # loop each test configuration
         for test_cfg_name, test_cfg in test_cfg_dict.items():
-            # configuration-specfic result path
+            # configuration-specific result path
             test_result_path = os.path.join(args.result_path, test_cfg_name)
             os.makedirs(test_result_path, exist_ok=True)
+
+            # load the existing testing configuration for resuming
+            test_cfg_path = os.path.join(test_result_path, "test_cfg.yaml")
+            test_cfg = yaml.load(open(test_cfg_path)) if args.resume else yaml.load(open(test_cfg))
+
             # save the testing configuration file to result_path
-            with open(os.path.join(test_result_path, "test_cfg.yaml"), 'w', encoding="utf-8") as f:
-                yaml.dump(test_cfg, f, sort_keys=False)
+            if not args.distributed or args.rank == 0:
+                with open(test_cfg_path, 'w', encoding="utf-8") as f:
+                    yaml.dump(test_cfg, f, sort_keys=False)
 
             # unlike training and validation, the testing iterators are looped one by one
             for name, iterator in iterators['test'].items():
                 test_loader = iterator.build_loader()
-                test_indices = iterator.batches
+                test_indices = iterator.get_sample_indices()
 
-                test_dset_path = os.path.join(test_result_path, args.test_model, name)
+                # add the identity symbol to the path for multi-GPU testing
+                test_dset_path = os.path.join(test_result_path, args.test_model, name + f'.{args.rank}')
                 logger = logger_stdout_file(test_dset_path, file_name='test')
-                monitor = TestMonitor(logger=logger, args=args, result_path=test_dset_path, model=model)
-                monitor.start_epoch(total_step_num=len(test_indices))
+                monitor = TestMonitor(logger=logger, args=args, result_path=test_dset_path)
+
+                if args.resume:
+                    # loading the existed checkpoint
+                    try:
+                        test_checkpoint = torch.load(os.path.join(test_dset_path, 'checkpoint.pth'))
+                        monitor.load_state_dict(test_checkpoint['monitor'])
+                        start_step = test_checkpoint['start_step']
+                        logger.info(f"The testing process resumes from the step no.{start_step}.")
+                    # checkpoint does not exist
+                    except FileNotFoundError:
+                        start_step = 0
+                        logger.info(f"No checkpoint is found in {test_dset_path}. "
+                                    f"The testing process will start from scratch.")
+                else:
+                    start_step = 0
 
                 # make sure that no gradient appears during testing
                 model.eval()
                 with torch.no_grad():
+                    monitor.start_epoch(total_step_num=len(iterator))
                     # iterate the testing batches
                     for i, test_batch in enumerate(test_loader):
-                        # Since there is only one test loader, we can directly unzip the data and feed them into evaluate()
+                        if i < start_step:
+                            continue
                         test_results = model.evaluate(test_batch=test_batch, **test_cfg)
-                        monitor.step(step_num=i + 1, test_results=test_results, test_index=test_indices[i][0])
+                        monitor.step(step_num=i + 1, test_results=test_results, test_index=test_indices[i])
 
-                # finish the evaluation and store the results to the disk
-                monitor.finish_epoch()
+                # make sure that all the processes finish all the testing steps at the same time
+                if args.distributed:
+                    torch.distributed.barrier()
+
+                if not args.distributed or args.rank == 0:
+                    # finish the evaluation and store the results to the disk
+                    monitor.finish_epoch(meta_info=iterator.get_meta_info())
 
 
     @classmethod
@@ -953,7 +996,7 @@ class Runner(object):
         # logging the beginning info of the experiment
         logger.info(f"Current script command: {' '.join([xi for xi in sys.argv])}")
         if args.distributed:
-            logger.info(f"Multi-GPU distributed training: "
+            logger.info(f"Multi-GPU distribution information: "
                         f"backend={args.dist_backend}, init_method={args.dist_url}, "
                         f"nnode={int(args.world_size / args.ngpu)}, ngpu_per_node={args.ngpu}, "
                         f"used_gpus={args.gpus}.")
@@ -965,17 +1008,11 @@ class Runner(object):
         torch.cuda.device(device)
         logger.info(f"Used GPU in the master process: {device}")
 
-        # loading all the configurations for the current experiment
-        # resume from an existing experiment folder
+        # resume from an existing checkpoint, loading the old data and train configurations
         if args.resume:
-            # loading the experiment environment after setting the GPUs (GPU configuration is given by the new config)
-            exp_cfg = yaml.load(open(os.path.join(args.result_path, "exp_cfg.yaml")))
-            for key, value in exp_cfg.items():
-                setattr(args, key, value)
             # loading the existing data and train configurations
             data_cfg = yaml.load(open(os.path.join(args.result_path, "data_cfg.yaml")))
             train_cfg = yaml.load(open(os.path.join(args.result_path, "train_cfg.yaml")))
-
         # start from scratch, loading the new data and train configurations
         else:
             assert args.data_cfg is not None and args.train_cfg is not None, \
@@ -1074,11 +1111,6 @@ class Runner(object):
                            map_location=model.device)
             )
 
-            # DDP Wrapping of the model must be done after model loading
-            if args.distributed:
-                # SyncBatchNorm.convert_sync_batchnorm() is not necessary for testing
-                model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], output_device=args.gpu)
-
             # start the testing process
             cls.test(args=args, iterators=iterators, model=model)
 
@@ -1115,7 +1147,7 @@ class Runner(object):
         # automatically generate available GPUs
         else:
             args.gpus = sorted(GPUtil.getGPUs(), key=lambda g: g.memoryUtil)[:args.ngpu]
-            # make sure that GPU no.0 is the first GPU if selected
+            # make sure that GPU no.0 is the first GPU if it is selected
             args.gpus = sorted([gpu.id for gpu in args.gpus])
 
         # check the GPU configuration
@@ -1131,15 +1163,15 @@ class Runner(object):
         # distributed is set to true if multiple GPUs are specified or multiple nodes are specified
         args.distributed = args.world_size > 1 or args.ngpu > 1
 
-        # multi-GPU distributed training
-        if args.train and args.ngpu > 1:
+        # multi-GPU distributed training and testing
+        if args.ngpu > 1:
             # check whether the input number of GPUs is valid
             ngpus_per_node = torch.cuda.device_count()
             if args.ngpu > ngpus_per_node:
-                warnings.warn("Your input ngpu is larger than the GPUs you have on your machine. "
-                              f"Currently, the real ngpu is {ngpus_per_node}.")
+                warnings.warn(f"Your input args.ngpu {args.ngpu} is larger than the GPUs you have on your machine {ngpus_per_node}. "
+                              f"Currently, the real args.ngpu becomes {ngpus_per_node}.")
                 args.ngpu = ngpus_per_node
-            # here, world_size becomes the number of processes on all nodes
+            # here world_size becomes the number of processes on all nodes
             args.world_size = args.ngpu * args.world_size
 
             # automatic port selection if no specified port (only one ':' in args.dist_url)
@@ -1153,9 +1185,13 @@ class Runner(object):
         elif args.ngpu == 1:
             cls.main_worker(args.gpus, args)
 
-        # multi-GPU testing
+        # CPU testing with the multiprocessing strategy
+        elif args.test:
+            raise NotImplementedError("Multiprocessing CPU testing function has not been implemented yet......")
+
+        # CPU training is not supported
         else:
-            raise NotImplementedError("Multi-GPU model testing has not been implemented yet /(ToT)/~~.")
+            raise RuntimeError("Our toolkit doesn't support CPU training. Please specify a number of GPUs......")
 
 
     @classmethod
@@ -1175,19 +1211,13 @@ class Runner(object):
             for c in config:
                 setattr(args, c, config[c])
 
-        # register the training and testing flag
-        train_flag = args.train
-        test_flag = args.test
+        # ToDo(heli-qi): The configuration should be refreshed by the new arguments entered in the terminal
 
-        # go through the training process. Only one of args.train and args.test can be True
-        if train_flag:
-            args.train, args.test = True, False
-            cls.main(copy.deepcopy(args))
-
-        # go through the testing process. testing and training are not exclusive in one job.
-        if test_flag:
-            args.train, args.test = False, True
-            cls.main(copy.deepcopy(args))
+        # start the experiment pipeline
+        assert (args.train and args.test) is False, \
+            "A runner job can only deal with either training or testing. " \
+            "If you want to conduct training and testing sequentially, please use two runner jobs."
+        cls.main(args)
 
 
 if __name__ == '__main__':

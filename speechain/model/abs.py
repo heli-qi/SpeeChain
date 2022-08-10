@@ -271,11 +271,8 @@ class Model(torch.nn.Module, ABC):
         The function that puts the processed batch data onto GPUs
 
         Args:
-            batch: Dict
+            data: Dict or torch.Tensor
                 The input batch data. Each element is a Dict where each key-value pair represents an input.
-            non_blocking: bool
-                Whether to use the non-blocking technique to load the data onto GPU. This technique will make the
-                training faster but a strong machine is necessary.
 
         Returns:
             A Dict that contains the GPU data.
@@ -287,9 +284,9 @@ class Model(torch.nn.Module, ABC):
         # if the data is in the form of tensor, put it on GPUs by .cuda()
         elif isinstance(data, torch.Tensor):
             return data.cuda(device=self.device, non_blocking=self.non_blocking)
-        # data cannot be in any other formats
+        # do nothing for other types of data
         else:
-            raise TypeError(f"The data you give to the model must be a Dict of torch.Tensor, but got {type(data)}.")
+            return data
 
 
     def forward(self, batch_data: Dict, **kwargs):
@@ -316,24 +313,22 @@ class Model(torch.nn.Module, ABC):
 
         # Feed the input batch into the model and get the outputs.
         # copy.deepcopy() here is for the data safety
-        _mode = 'train' if self.training else 'valid'
         model_outputs = self.model_forward(**copy.deepcopy(batch_data))
 
         # copy.deepcopy() cannot receive the non-leaf nodes in the computation graph (model_outputs).
         # Since model_outputs cannot be detached from the graph (gradients necessary), copy.deepcopy() is not used below.
-        def combine_input_output(batch_data: Dict, model_outputs: Dict):
+        def combine_input_output(_batch_data: Dict, _model_outputs: Dict):
             combination = dict()
-            input_keys = list(batch_data.keys())
-            # if the input and output data are in the form of Dict, it means there are multiple iterators
-            if isinstance(batch_data[input_keys[0]], Dict):
+            # if the input batch and mode outputs are in the form of Dict, it means there are multiple iterators
+            if isinstance(_batch_data[list(_batch_data.keys())[0]], Dict):
                 combination.update(
-                    batch_data=batch_data,
-                    model_outputs=model_outputs
+                    batch_data=_batch_data,
+                    model_outputs=_model_outputs
                 )
-            # if the input and output data are in the form of Tensor, it means there is only one iterator.
+            # if the input batch and mode outputs are in the form of Tensor, it means there is only one iterator.
             else:
-                combination.update(batch_data)
-                combination.update(model_outputs)
+                combination.update(_batch_data)
+                combination.update(_model_outputs)
             return combination
 
         if self.training:

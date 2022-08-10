@@ -19,6 +19,7 @@ In each group, more than 1 iterator can be constructed so that there could be mu
 3. [**How to Construct Multiple Dataloaders**](https://github.com/ahclab/SpeeChain/tree/main/speechain/iterator#how-to-construct-multiple-dataloaders)
 4. [**How to Mix Multiple Datasets in a Single Dataloader**](https://github.com/ahclab/SpeeChain/tree/main/speechain/iterator#how-to-mix-multiple-datasets-in-a-single-dataloader)
 5. [**How to Perform Data Selection in a Single Dataloader**](https://github.com/ahclab/SpeeChain/tree/main/speechain/iterator#how-to-perform-data-selection-in-a-single-dataloader)
+6. [**How to introduce Meta Information to your batches**](https://github.com/ahclab/SpeeChain/tree/main/speechain/iterator#how-to-introduce-meta-information-to-your-batches)
 
 ## Configuration File Format
 The configuration of *Dataset* and *Iterator* is given in *data_cfg*. 
@@ -32,6 +33,10 @@ train:
             dataset_conf:
                 src_data: data_file_path
                 tgt_label: label_file_path
+                meta_info:
+                    meta_name1: meta_file_path
+                    meta_name2: meta_file_path
+                    ...
                 ...
             ...
     ...
@@ -77,7 +82,7 @@ For example, `block.BlockIterator` means the class `BlockIterator` in `./speecha
     Your given query should be in the form of `datatype_name.file_name.class_name` to indicate the place of your target class. 
     For example, `speech.speech_text.SpeechTextDataset` means the class `SpeechTextDataset` in `./speechain/dataset/speech/speech_text.py`.
     2. **dataset_conf** contains all the configuration used to initialize the built-in *Dataset*. 
-    The _src_data_ and _tgt_label_ arguments indicate the data samples used in this *Dataset*.
+    The _src_data_, _tgt_label_, _meta_info_ arguments indicate the data samples used in this *Dataset*.
     3. **Iterator general configuration**. These configurations are used to initialize the general part shared by all types of iterators in this toolkit. 
     Please refer to the docstrings of [*Iterator*](https://github.com/ahclab/SpeeChain/blob/main/speechain/iterator/abs.py) for more details.
     4. **Iterator customized configuration**. This part is used to initialize the customized part of your chosen iterator. 
@@ -87,11 +92,19 @@ For example, `block.BlockIterator` means the class `BlockIterator` in `./speecha
 ### Dataset
 1. **dataset_init()**: 
 The initialization function of the customized part of your dataset implementation. 
-2. **read_data_label_files()**:
-This function reads the contents of your given data files and labels files into memory.
-3. **\__getitem\__()**: 
+2. **read_data_file()**:
+This function reads the contents of your given data files into memory. 
+These files contain the source data of the training samples.
+3. **read_label_file()**:
+This function reads the contents of your given label files into memory. 
+These files contain the target labels of the training samples.
+4. **read_meta_file()**:
+This function reads the contents of your given data files into memory. 
+These files contain the meta information of the training samples. 
+This interface is not mandatory to be overridden unless you would like to introduce meta information in your batches.
+5. **\__getitem\__()**: 
 This function should return the corresponding data sample in the dataset by the given index.
-4. **collate_fn()**:
+6. **collate_fn()**:
 This function does some preprocessing operations to the current batch of data samples, 
 such as length mismatch unification, data precision adjustment, and so on.
 
@@ -235,10 +248,38 @@ train:
                     - ./datasets/speech/librispeech/data/raw/train_other_500/feat.scp
                 tgt_label:
                     - ./datasets/speech/librispeech/data/raw/train_clean_100/text
-                    - ./datasets/speech/librispeech/data/raw/train_clean_100/text
+                    - ./datasets/speech/librispeech/data/raw/train_clean_360/text
                     - ./datasets/speech/librispeech/data/raw/train_other_500/text
             
             selection_mode: rev_order
             selection_num: 0.5
             ...
 ```
+
+## How to introduce Meta Information to your batches
+Our toolkit enables our users to include the information beyond the source data and target label of a training sample into their batches. 
+This information is called meta information that describes various characteristic of the source data. 
+For example, for an utterance, besides the transcript, we may also need to know its speaker information (speaker ID or speaker gender). 
+
+The introduction of the meta information is very simple. First, please override the interface _read_meta_file()_ if you are making a new _speechain.abs.Dataset_ class. 
+Then, giving the data loading configuration as follows:
+```
+train:
+    sup:
+        type: block.BlockIterator
+        conf:
+            dataset_type: speech.speech_text.SpeechTextDataset
+            dataset_conf:
+                src_data: ./datasets/speech/librispeech/data/raw/train_clean_100/feat.scp
+                tgt_label: ./datasets/speech/librispeech/data/raw/train_clean_100/text
+                meta_info:
+                    speaker: ./datasets/speech/librispeech/data/raw/train_clean_100/utt2spk
+                    gender: ./datasets/speech/librispeech/data/raw/train_clean_100/utt2gen
+            
+            selection_mode: rev_order
+            selection_num: 0.5
+            ...
+```
+Different from _src_data_ and _tgt_label_, _meta_info_ is given in the form of a _Dict_. 
+So, multiple types of meta information can be included and each one corresponds to a key-value pair in this _Dict_. 
+The key name acts as the 

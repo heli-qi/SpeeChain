@@ -45,9 +45,7 @@ class CurvePlotter(Plotter):
 
     """
 
-    def __init__(self,
-                 plot_conf: Dict = None,
-                 grid_conf: Dict = None):
+    def __init__(self, plot_conf: Dict = None, grid_conf: Dict = None):
         """
 
         Args:
@@ -215,6 +213,74 @@ class MatrixPlotter(Plotter):
         np.savez(os.path.join(save_path, f'epoch{epoch}.npz'), **materials)
 
 
+class HistPlotter(Plotter):
+    """
+
+    """
+    def __init__(self, plot_conf: Dict = None, grid_conf: Dict = None):
+        """
+
+        Args:
+            plot_conf:
+            grid_conf:
+        """
+        # default arguments of the plot_conf
+        self.plot_conf = dict(
+            bins=50,
+            edgecolor='k'
+        )
+        # overwrite the plot_conf by the input arguments
+        if plot_conf is not None:
+            for key, value in plot_conf.items():
+                self.plot_conf[key] = value
+
+        # default arguments of the plot_conf
+        self.grid_conf = dict(
+            linestyle='--',
+            linewidth=1,
+            color='black',
+            alpha=0.3
+        )
+        # overwrite the plot_conf by the input arguments
+        if grid_conf is not None:
+            for key, value in grid_conf.items():
+                self.grid_conf[key] = value
+
+
+    def plot(self, ax, material: List, fig_name: str, xlabel: str, ylabel: str, **kwargs):
+        """
+
+        Args:
+            ax:
+            material:
+            fig_name:
+            xlabel:
+            ylabel:
+            **kwargs:
+
+        Returns:
+
+        """
+        # set up the figure label of x and y axes
+        ax.set_xlabel(xlabel if xlabel is not None else fig_name)
+        ax.set_ylabel(ylabel if ylabel is not None else None)
+
+        # set the figure title
+        fig_title = f"{xlabel}" if xlabel is not None else f"{fig_name}"
+        ax.set_title(fig_title, fontweight='bold', color='black', verticalalignment="baseline")
+
+        # set the figure grid
+        ax.grid(**self.grid_conf)
+
+        # plot the histogram
+        ax.hist(material, **self.plot_conf)
+
+
+    def save(self, save_path: str, **kwargs):
+        pass
+
+
+
 def snapshot_logs(logs_queue: Queue, event: Event, snapshooter_conf: Dict):
     """
 
@@ -248,11 +314,12 @@ class SnapShooter:
 
     def __init__(self,
                  result_path: str,
-                 snap_mode: str = None,
+                 snap_mode: str,
                  fig_width: float = 6.4,
                  fig_height: float = 4.8,
                  curve_plotter_conf: Dict = None,
-                 matrix_plotter_conf: Dict = None):
+                 matrix_plotter_conf: Dict = None,
+                 hist_plotter_conf: Dict = None):
         """
 
         Args:
@@ -261,13 +328,16 @@ class SnapShooter:
             fig_height:
             curve_plotter_conf:
             matrix_plotter_conf:
+            hist_plotter_conf:
 
         """
-        if snap_mode is None:
-            return
-
-        # initialize the figure plotters
-        self.figure_path = os.path.join(result_path, 'figures', snap_mode)
+        # initialize the figure plotters and the tensorboard writer
+        if snap_mode is not None:
+            self.figure_path = os.path.join(result_path, 'figures', snap_mode)
+            self.tb_writer = SummaryWriter(log_dir=os.path.join(result_path, 'tensorboard', snap_mode))
+        else:
+            self.figure_path = os.path.join(result_path, 'figures')
+            self.tb_writer = None
 
         # initialize the default values of the figure width and height
         self.fig_width = fig_width
@@ -280,9 +350,9 @@ class SnapShooter:
         # matrix plotter
         matrix_plotter_conf = dict() if matrix_plotter_conf is None else matrix_plotter_conf
         self.matrix_plotter = MatrixPlotter(**matrix_plotter_conf)
-
-        # initialize the tensorboard writer
-        self.tb_writer = SummaryWriter(log_dir=os.path.join(result_path, 'tensorboard', snap_mode))
+        # histogram plotter
+        hist_plotter_conf = dict() if hist_plotter_conf is None else hist_plotter_conf
+        self.hist_plotter = HistPlotter(**hist_plotter_conf)
 
 
     def snapshot(self,
@@ -319,7 +389,10 @@ class SnapShooter:
         subfolder_names = [subfolder_names] if isinstance(subfolder_names, str) else subfolder_names
 
         # initialize the figure saving path
-        save_path = os.path.join(self.figure_path, *subfolder_names)
+        if subfolder_names is not None:
+            save_path = os.path.join(self.figure_path, *subfolder_names)
+        else:
+            save_path = self.figure_path
         os.makedirs(save_path, exist_ok=True)
 
         # go through different branches based on the data type
@@ -327,14 +400,18 @@ class SnapShooter:
             self.curve_snapshot(save_path=save_path, subfolder_names=subfolder_names,
                                 materials=materials, epoch=epoch,
                                 xlabel=xlabel, ylabel=ylabel,
-                                sep_save=sep_save, sum_save=sum_save, tb_write=tb_write, data_save=data_save,
+                                sep_save=sep_save, sum_save=sum_save,
+                                tb_write=tb_write, data_save=data_save,
                                 col_num=col_num, row_num=row_num, **kwargs)
         elif plot_type == 'matrix':
             self.matrix_snapshot(save_path=save_path, subfolder_names=subfolder_names,
                                  materials=materials, epoch=epoch,
                                  xlabel=xlabel, ylabel=ylabel,
-                                 sep_save=sep_save, sum_save=sum_save, tb_write=tb_write, data_save=data_save,
+                                 sep_save=sep_save, sum_save=sum_save,
+                                 tb_write=tb_write, data_save=data_save,
                                  col_num=col_num, row_num=row_num, **kwargs)
+        elif plot_type == 'hist':
+            self.hist_snapshot(save_path=save_path,  materials=materials, xlabel=xlabel, ylabel=ylabel)
         elif plot_type == 'text':
             self.text_snapshot(save_path=save_path, subfolder_names=subfolder_names,
                                materials=materials, epoch=epoch, data_save=data_save, **kwargs)
@@ -344,7 +421,8 @@ class SnapShooter:
         else:
             raise ValueError
 
-        self.tb_writer.flush()
+        if self.tb_writer is not None:
+            self.tb_writer.flush()
 
 
     @contextmanager
@@ -479,7 +557,7 @@ class SnapShooter:
                             pass
 
         # write to the tensorboard
-        if tb_write:
+        if tb_write and self.tb_writer is not None:
             for fig_name, material in materials.items():
                 if isinstance(material, List):
                     self.tb_writer.add_scalar(tag=os.path.join(*subfolder_names, fig_name),
@@ -493,6 +571,7 @@ class SnapShooter:
         # save all the information into files on disk for future usage
         if data_save:
             self.curve_plotter.save(materials=materials, save_path=save_path, x_stride=x_stride)
+
 
     def matrix_snapshot(self,
                         save_path: str, subfolder_names: List[str],
@@ -546,13 +625,34 @@ class SnapShooter:
                             pass
 
         # write the figure to the tensorboard
-        if tb_write:
+        if tb_write and self.tb_writer is not None:
             img = torchvision.io.read_image(os.path.join(save_path, f"epoch{epoch}.png"))
             self.tb_writer.add_image(tag=os.path.join(*subfolder_names), img_tensor=img, global_step=epoch)
 
         # save all the matrices into a single .npz file on disk for future usage
         if data_save:
             self.matrix_plotter.save(materials=materials, epoch=epoch, save_path=save_path)
+
+
+    def hist_snapshot(self, save_path: str, materials: Dict, xlabel: str, ylabel: str):
+        """
+
+        Args:
+            save_path:
+            materials:
+            xlabel:
+            ylabel:
+
+        Returns:
+
+        """
+        # loop each file in the given material Dict
+        for fig_name in materials.keys():
+            with self.sep_figure_context(fig_name, save_path) as ax:
+                # plot the current material into a figure
+                self.hist_plotter.plot(ax=ax, material=materials[fig_name], fig_name=fig_name,
+                                       xlabel=xlabel, ylabel=ylabel)
+
 
     def text_snapshot(self,
                       save_path: str, subfolder_names: List[str],
@@ -581,6 +681,7 @@ class SnapShooter:
 
                 # save each material into a specific .txt file for easy visualization
                 np.savetxt(f"{os.path.join(save_path, file_name)}.txt", save_data, fmt='%s')
+
 
     def audio_snapshot(self,
                        save_path: str, subfolder_names: List[str],

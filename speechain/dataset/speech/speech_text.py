@@ -3,6 +3,8 @@
     Affiliation: NAIST
     Date: 2022.07
 """
+from typing import Dict, Any, List
+
 import torchaudio
 import numpy as np
 import torch
@@ -29,21 +31,13 @@ class SpeechTextDataset(Dataset):
         self.feat_type = feat_type
 
 
-    def read_data_label_files(self, data_file: str, label_file: str):
+    def read_data_file(self, data_file: str) -> Dict[str, str]:
         """
-        In SpeechTextDataset:
-
-        1. self.src_data is the dictionary of the speech data. Each key-value pair corresponds to an utterance where
+        self.src_data is the dictionary of the speech data. Each key-value pair corresponds to an utterance where
         the key is its index and the value is the absolution path of the audio file.
-
-        2. self.tgt_label is the dictionary of the text data. Each key-value pair corresponds to an sentence where the key
-        is its index and the value is the string of the sentence.
-
-        Here, numpy.loadtxt() is used to read the file contents.
 
         Args:
             data_file:
-            label_file:
 
         Returns:
 
@@ -51,52 +45,86 @@ class SpeechTextDataset(Dataset):
         # read feat_scp file that contains the absolute paths of audio files
         # str -> np.ndarray
         feat_scp = np.loadtxt(data_file, dtype=str, delimiter=" ")
-        # np.ndarray -> Dict
-        feat_scp = dict(zip(feat_scp[:, 0], feat_scp[:, 1]))
+        # ToDo(heli-qi): add duplicated keys checking codes
+        # np.ndarray -> Dict[str, str]
+        return dict(zip(feat_scp[:, 0], feat_scp[:, 1]))
 
+
+    def read_label_file(self, label_file: str) -> Dict[str, str]:
+        """
+        self.tgt_label is the dictionary of the text data. Each key-value pair corresponds to an sentence where the key
+        is its index and the value is the string of the sentence.
+
+        Args:
+            label_file:
+
+        Returns:
+
+        """
         # read text file that contains strings of transcripts
         # str -> np.ndarray. Since there are blanks between words, the segmentation is first done by '\n'.
         text = np.loadtxt(label_file, dtype=str, delimiter="\n")
         # Then, the index and sentence are separated by the first blank
         text = np.stack(np.chararray.split(text, maxsplit=1))
-        # np.ndarray -> Dict
-        text = dict(zip(text[:, 0], text[:, 1]))
+        # ToDo(heli-qi): add duplicated keys checking codes
+        # np.ndarray -> Dict[str, str]
+        return dict(zip(text[:, 0], text[:, 1]))
 
-        return feat_scp, text
+
+    def read_meta_file(self, meta_file: str, meta_type: str) -> Dict[str, str]:
+        """
+
+        Args:
+            meta_file:
+            meta_type:
+
+        Returns:
+
+        """
+        if meta_type in ['speaker', 'gender']:
+            # read feat_scp file that contains the absolute paths of audio files
+            # str -> np.ndarray
+            meta = np.loadtxt(meta_file, dtype=str, delimiter=" ")
+            # ToDo(heli-qi): add duplicated keys checking codes
+            # np.ndarray -> Dict[str, str]
+            return dict(zip(meta[:, 0], meta[:, 1]))
+        else:
+            raise NotImplementedError
 
 
-    def collate_fn(self, batch):
+    def collate_fn(self, batch: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
         The loaded feature vectors will be arranged into a single matrix with 0 padding at the end of short vectors.
         Text data remains unprocessed strings and the tokenization will be done later in the model.
 
         """
         # para init
-        batch_size, feat_dim = len(batch), batch[0][0].shape[-1]
+        batch_size, feat_dim = len(batch), batch[0]['feat'].shape[-1]
 
         # acoustic feature padding, feat.dtype needs to match the type of model parameters (torch.float32)
-        feat_len = torch.LongTensor([ele[1] for ele in batch])
+        feat_len = torch.LongTensor([ele['feat_len'] for ele in batch])
         feat = torch.zeros((batch_size, feat_len.max().item(), feat_dim), dtype=torch.float32)
 
         # overwrite the padding matrix with each feat vector
         for i in range(batch_size):
             # process feat data based on data type
-            if isinstance(batch[i][0], np.ndarray):
-                feat[i][:feat_len[i]] = torch.from_numpy(batch[i][0])
-            elif isinstance(batch[i][0], torch.Tensor):
-                feat[i][:feat_len[i]] = batch[i][0]
+            if isinstance(batch[i]['feat'], np.ndarray):
+                feat[i][:feat_len[i]] = torch.from_numpy(batch[i]['feat'])
+            elif isinstance(batch[i]['feat'], torch.Tensor):
+                feat[i][:feat_len[i]] = batch[i]['feat']
             # only support np.ndarray and torch.Tensor now
             else:
                 raise TypeError
 
-        # return the data as a dictionary, text data remains unprocessed strings
+        # return the data as a dictionary, text data and meta data remains unprocessed
         return dict(
             feat=feat, feat_len=feat_len,
-            text=[ele[2] for ele in batch]
+            text=[ele['text'] for ele in batch],
+            **{key: [ele[key] for ele in batch] for key in batch[0].keys() if key not in ['feat', 'feat_len', 'text']}
         )
 
 
-    def __getitem__(self, index):
+    def __getitem__(self, index) -> Dict[str, Any]:
         """
         The function that loads speech-text data from the disk. If the speech is in the form of raw waveforms,
         the last dimension should be expanded to 1 of raw speech for compatibility with acoustic feature
@@ -127,4 +155,15 @@ class SpeechTextDataset(Dataset):
         text = self.tgt_label[index]
 
         # return the feat length for padding, the text length is not returned
-        return feat, feat.shape[0], text
+        outputs = dict(
+            feat=feat,
+            feat_len=feat.shape[0],
+            text=text
+        )
+
+        # return the meta information if given
+        if self.meta_info is not None:
+            outputs.update(
+                {key: value[index] for key, value in self.meta_info.items()}
+            )
+        return outputs

@@ -143,15 +143,6 @@ class Iterator(ABC):
         # initialize the customized part of the iterator and get the batches of data indices
         self.batches = self.iter_init(**iter_conf)
 
-
-
-        # remove the batches shorter than the minimal length
-        min_batch_size = torch.distributed.get_world_size() if self.distributed else 1
-        len_flags = np.array([len(batch) < min_batch_size for batch in self.batches], dtype=np.bool)
-        if True in len_flags:
-            self.batches = np.array(self.batches)[~len_flags].tolist()
-
-
         # clip the batches for distributed training
         if self.distributed:
             # set stride to the number of processes
@@ -161,6 +152,10 @@ class Iterator(ABC):
             start_point = stride - torch.distributed.get_rank() - 1 if self.is_descending \
                 else torch.distributed.get_rank()
             self.batches = [batch[start_point::stride] for batch in self.batches]
+
+            # delete all the empty elements in the multi-GPU distributed mode
+            while [] in self.batches:
+                self.batches.remove([])
 
 
     @abstractmethod
@@ -242,7 +237,25 @@ class Iterator(ABC):
             return len(self.batches)
 
 
-    def build_loader(self, epoch: int = 0):
+    def get_sample_indices(self):
+        """
+
+        Returns:
+
+        """
+        return self.batches
+
+
+    def get_meta_info(self):
+        """
+
+        Returns:
+
+        """
+        return self.dataset.meta_info if hasattr(self.dataset, 'meta_info') else None
+
+
+    def build_loader(self, epoch: int = 1):
         """
         cut a segment of batches off from self.batches and generate a DataLoader based on this segment of batches in
         each epoch.
