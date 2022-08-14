@@ -818,9 +818,24 @@ class Runner(object):
                         if valid_monitor is not None:
                             valid_monitor.step(valid_metrics=valid_metrics)
 
-                # early-stopping checking and log the information of the current validation epoch
-                if valid_monitor is not None and valid_monitor.finish_epoch():
+                # early-stopping checking for single-GPU
+                if not args.distributed and valid_monitor.finish_epoch():
                     break
+
+                # early-stopping checking for multi-GPU
+                if args.distributed:
+                    stop_flag = torch.BoolTensor([False]).cuda(model.device)
+                    flag_list = None
+
+                    if args.rank == 0:
+                        if valid_monitor.finish_epoch():
+                            stop_flag = torch.BoolTensor([True]).cuda(model.device)
+                        flag_list = [stop_flag for _ in range(torch.distributed.get_world_size())]
+
+                    torch.distributed.scatter(stop_flag, flag_list)
+                    if stop_flag.item():
+                        break
+
 
             # store the checkpoint of the current epoch for resuming later
             if not args.distributed or args.rank == 0:

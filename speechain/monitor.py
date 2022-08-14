@@ -697,7 +697,7 @@ class ValidMonitor(Monitor):
         early_stopping_flag = False
         if self.early_stopping_epochs > self.early_stopping_patience:
             epoch_message += f"The early-stopping patience {self.early_stopping_patience} is reached, " \
-                             f"so the training process stops here."
+                             f"so the training process stops here.\n"
             early_stopping_flag = True
 
         return epoch_message, early_stopping_flag, worst_pop_flag
