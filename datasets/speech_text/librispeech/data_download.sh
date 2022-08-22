@@ -18,5 +18,5 @@ for set in ${subsets}; do
   rm data/${subsets}.tar.gz
 done
 
-echo "Rename ./data/LibriSpeech to ./data/raw"
-mv data/LibriSpeech data/raw
+echo "Rename ./data/LibriSpeech to ./data/wav"
+mv data/LibriSpeech data/wav

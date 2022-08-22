@@ -25,10 +25,10 @@ class Iterator(ABC):
                  dataset_type: str,
                  dataset_conf: Dict,
                  batches_per_epoch: int = None,
-                 is_descending: bool = None,
                  data_len: str or List[str] = None,
                  selection_mode: str = None,
                  selection_num: float or int = None,
+                 is_descending: bool = True,
                  shuffle: bool = True,
                  seed: int = 0,
                  num_workers: int = 1,
@@ -52,7 +52,6 @@ class Iterator(ABC):
                 If not given (None), all batches will be used in each epoch.
             is_descending: bool
                 Whether the batches are sorted in the descending order by the length (True) or in the ascending order (False).
-                Note that if not given (None), the batches will remain the original order (no sorting is performed).
             data_len: str
                 The absolute path of the data length file.
             selection_mode: str
@@ -132,7 +131,7 @@ class Iterator(ABC):
             self.sorted_data = self.data_selection(selection_num, selection_mode)
 
         # sorting the data indices by their lengths if specified
-        if self.is_descending is not None and self.data_len is not None:
+        if self.data_len is not None:
             # shrink the data_len by sorted_data if necessary
             self.data_len = {index: self.data_len[index] for index in self.sorted_data}
             self.data_len = dict(sorted(self.data_len.items(), key=lambda x: x[1], reverse=self.is_descending))

@@ -193,12 +193,12 @@ def beam_searching(enc_feat: torch.Tensor,
         # (batch_size × beam_size, vocab_size) -> (batch_size, beam_size × vocab_size)
         next_scores = next_scores.view(batch_size, -1)
 
-        # Pick up (beam_size × beam_size) tokens from (beam_size * vocab_size) candidates for algorithm robustness
+        # Pick up beam_size × (beam_size + 1) tokens from (beam_size * vocab_size) candidates for algorithm robustness
         # mainly two usage:
         #   1. for different tokens of each beam in the first time step
         #   2. when meeting an eos token, complement the beams with the rest predictions
-        assert beam_size <= vocab_size, "beam_size cannot be larger than vocab_size!"
-        next_scores, next_tokens = torch.topk(next_scores, beam_size * beam_size, dim=1, largest=True, sorted=True)
+        assert beam_size + 1 <= vocab_size, "beam_size cannot be larger than vocab_size - 1 (exclude <sos/eos>)!"
+        next_scores, next_tokens = torch.topk(next_scores, beam_size * (beam_size + 1), dim=1, largest=True, sorted=True)
 
         # batch-level beam results for all sentence, each element is a tri-tuple (score, token_id, effective_beam_id)
         next_batch_beam = []

@@ -13,17 +13,18 @@ from functools import partial
 from speechain.utilbox.regex_util import regex_key_val
 
 
-def get_feat_length(path, args):
-    feat = sf.read(path)[0] if args.feat_type == 'raw' else np.load(path)['feat']
-    return feat.shape[0]
-
 def parse():
     parser = argparse.ArgumentParser(description='params')
     parser.add_argument('--feat_type', type=str, required=True)
     parser.add_argument('--data_path', type=str, required=True)
-    parser.add_argument('--ncpu', type=int, default=16)
+    parser.add_argument('--ncpu', type=int, default=8)
     return parser.parse_args()
-    pass
+
+
+def get_feat_length(path, args):
+    feat = sf.read(path)[0] if args.feat_type == 'wav' else np.load(path)['feat']
+    return feat.shape[0]
+
 
 if __name__ == '__main__':
     args = parse()
@@ -38,4 +39,5 @@ if __name__ == '__main__':
         output_result = executor.map(get_feat_length_args, v_list)
 
     output_result = np.concatenate((np.array(k_list).reshape(-1, 1), np.array(output_result).reshape(-1, 1)), axis=1)
-    np.savetxt('{}_len{}'.format(*os.path.splitext(args.data_path)), output_result, fmt="%s")
+    file_name = 'idx2wav_len' if args.feat_type == 'wav' else 'idx2feat_len'
+    np.savetxt(os.path.join(folder, file_name), output_result, fmt="%s")

@@ -1,0 +1,2 @@
+beam_size: 8
+maxlen_ratio: 1.0

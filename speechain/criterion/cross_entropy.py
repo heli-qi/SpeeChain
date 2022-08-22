@@ -23,7 +23,7 @@ class CrossEntropy(Criterion):
     def criterion_init(self,
                        is_normalized: bool = False,
                        label_smoothing: float = 0.0,
-                       token_dict: str = None,
+                       token_vocab: str = None,
                        new_weights: Dict = None):
         """
 
@@ -32,8 +32,8 @@ class CrossEntropy(Criterion):
                 Controls whether the sentence normalization is performed.
             label_smoothing: float
                 Controls the scale of label smoothing. 0 means no smoothing.
-            token_dict: str
-                The path of the given token dictionary. Necessary if new_weights is not None.
+            token_vocab: str
+                The path of the given token vocabulary list. Necessary if new_weights is not None.
             new_weights: Dict
                 The customized token weights to calculate the cross entropy. Must be given in the format below:
                 'new_weights:
@@ -53,10 +53,10 @@ class CrossEntropy(Criterion):
 
         # update the token weights if new_weights is given
         if new_weights is not None:
-            assert token_dict is not None, \
+            assert token_vocab is not None, \
                 "Please specify a token dictionary if you want to customize the token weights."
 
-            token_dict = np.loadtxt(token_dict, dtype=str, delimiter="\n")
+            token_dict = np.loadtxt(token_vocab, dtype=str, delimiter="\n")
             token_dict = dict(zip(token_dict, np.arange(0, token_dict.shape[0])))
             self.token_weights = torch.ones(len(token_dict)).cuda().detach()
 

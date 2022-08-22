@@ -6,7 +6,7 @@ This framework encapsulates the general model-related services and provides suff
 By overriding the interfaces, you can easily customize your own implementations to meet your specific research needs. 
 
 [*Module*](https://github.com/ahclab/SpeeChain/blob/main/speechain/module/abs.py) is the unit of the main body of your model. It only has the function of forwarding the input data. 
-The input batch is processed by all *Module* in a *Model* sequentially to become the model prediction.
+The input batch is processed by all *Module* in a *Model* sequentially to become the model output.
 
 [*Criterion*](https://github.com/ahclab/SpeeChain/blob/main/speechain/criterion/abs.py) serves the role of evaluating the model predictions. Its output can be either a training loss or a validation metric.
 
@@ -120,25 +120,32 @@ For more details, please refer to [*Criterion*](https://github.com/ahclab/SpeeCh
 1. **model_customize()**:
 The customized part of your model is initialized in this function.  
 Note: *model_customize()* is not mandatory to be overridden.
+
 2. **batch_preprocess()**: 
 This function preprocesses the input batch before feeding it to the built-in modules. 
 *batch_preprocess()* is not mandatory to be overridden.
+
 3. **model_forward()**: 
 The function where you decide how your model outputs the prediction. 
 The prediction is returned in the form of *Dict*, so multiple predictions can be included and each one corresponds to a key-value pair.
+
 4. **loss_calculation()**: 
 The function where you decide how the training losses are calculated based on the target labels and the model predictions. 
 The losses are returned in the form of a *Dict*, so multiple losses can be included and each one corresponds to a key-value pair.
+
 5. **metrics_calculation()**: 
 The function where you decide how the evaluation metrics are calculated based on the target labels and the model predictions. 
 The metrics are returned in the form of a *Dict*, so multiple metrics can be included and each one corresponds to a key-value pair.
+
 6. **aver_metrics_across_procs()**:
 This function averages the input metrics across all processes in the multi-GPU distributed training setting.  
-Note: *aver_metrics_across_procs()* doesn't need to be overridden if you are doing single-dataloader supervised training.
+
+    **Note**: *aver_metrics_across_procs()* doesn't need to be overridden if you are doing single-dataloader supervised training.
+
 7. **inference()**:
-The function where you decide the way how your model outputs the inference results based on the input test data. 
-The results are returned in the form of a *Dict* and everything in this *Dict* will be saved to the disk. 
-So, you can return any results you would like to see about the performance of your model.
+The function where you decide how your model outputs the inference results based on the input test data. 
+The results should be returned in the form of *Dict[str, Dict]* and everything in this *Dict* will be saved to the disk. 
+Each key-value pair in the _Dict_ corresponds to a file where the key is the file name and the value is the file content.
 
 For more details, please refer to [*Model*](https://github.com/ahclab/SpeeChain/blob/main/speechain/model/abs.py).
 

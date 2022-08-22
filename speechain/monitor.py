@@ -13,6 +13,10 @@ from contextlib import contextmanager
 
 import torch
 import numpy as np
+try:
+    import soundfile as sf
+except OSError:
+    pass
 
 from typing import Dict, List
 from abc import ABC, abstractmethod
@@ -38,7 +42,7 @@ class Monitor(ABC):
         """
         # shared members of all the monitors
         self.logger = logger
-        self.result_path = args.result_path if result_path is None else result_path
+        self.result_path = os.path.abspath(args.result_path) if result_path is None else os.path.abspath(result_path)
         self.gpus = args.gpus if isinstance(args.gpus, List) else [args.gpus]
 
         # shared record information for all monitors
@@ -877,10 +881,37 @@ class TestMonitor(Monitor):
         # --- Write the testing results of the current step to the testing files --- #
         # loop each result list in the returned Dict
         for name, result in test_results.items():
-            # register the numerical result lists into this monitor
-            if name not in self.step_info.keys():
-                self.step_info[name] = dict()
-            self.step_info[name].update(dict(zip(test_index, result)))
+            # for .txt file, register the result contents into self.step_info. text data doesn't occupy too much memory
+            if result['format'].lower() == 'txt':
+                if name not in self.step_info.keys():
+                    self.step_info[name] = dict()
+                self.step_info[name].update(dict(zip(test_index, result['content'])))
+
+            # for other files, data needs to be saved to the disk in real time to reduce the memory burden
+            else:
+                # create the file folder
+                folder_path = os.path.join(self.result_path, name)
+                os.makedirs(folder_path, exist_ok=True)
+
+                # save the feature vectors as .npz files
+                if result['format'].lower() == 'npz':
+                    for index, feat in zip(test_index, result['content']):
+                        feat = feat.astype(np.float32)
+                        np.savez(os.path.join(folder_path, f'{index}.npz'), feat=feat, index=index)
+                # save the waveforms as .wav files, sampling rate needs to be given in the result Dict as 'sample_rate'
+                elif result['format'].lower() == 'wav':
+                    for index, wav in zip(test_index, result['content']):
+                        sf.write(file=os.path.join(folder_path, f'{index}.wav'), data=wav,
+                                 samplerate=result['sample_rate'], format='WAV', subtype=sf.default_subtype('WAV'))
+                # save the waveforms as .flac files, sampling rate needs to be given in the result Dict as 'sample_rate'
+                elif result['format'].lower() == 'flac':
+                    for index, wav in zip(test_index, result['content']):
+                        sf.write(file=os.path.join(folder_path, f'{index}.flac'), data=wav,
+                                 samplerate=result['sample_rate'], format='FLAC', subtype=sf.default_subtype('FLAC'))
+
+                # other file formats are not supported now
+                else:
+                    raise NotImplementedError
 
         # save the checkpoint of the current step for both resuming and multi-GPU evaluation
         torch.save(dict(start_step=step_num, monitor=self.state_dict()),
@@ -953,10 +984,10 @@ class TestMonitor(Monitor):
 
 
         # --- Gather the checkpoint information of all the processes --- #
-        final_path = os.path.join(*self.result_path.split('.')[:-1])
+        final_path = '.'.join(self.result_path.split('.')[:-1])
         os.makedirs(final_path, exist_ok=True)
 
-        # load the checkpoint of rank0 and delete non-metric information
+        # load the checkpoint of rank0 and delete testing time information
         self.load_state_dict(torch.load(os.path.join(final_path + '.0', 'checkpoint.pth'))['monitor'])
         self.step_info.pop('group_time')
         self.step_info.pop('total_time')
@@ -970,7 +1001,51 @@ class TestMonitor(Monitor):
         # make sure that all the samples are sorted by their indices
         for key in self.step_info.keys():
             self.step_info[key] = dict(sorted(self.step_info[key].items(), key=lambda x: x[0]))
-            np.savetxt(os.path.join(final_path, key), list(self.step_info[key].items()), fmt="%s")
+            # .md files remain their original names
+            if key.endswith('.md'):
+                np.savetxt(os.path.join(final_path, key), list(self.step_info[key].items()), fmt="%s")
+            # normal .txt files have the prefix 'idx2' attached at the beginning of their names
+            else:
+                np.savetxt(os.path.join(final_path, f'idx2{key}'), list(self.step_info[key].items()), fmt="%s")
+
+
+        # --- Gather all the save-during-testing files & Generate their path files --- #
+        for file_name in os.listdir(self.result_path):
+            # only consider the folders not named as 'figures'
+            if os.path.isdir(os.path.join(self.result_path, file_name)) and file_name != 'figures':
+                os.makedirs(os.path.join(final_path, file_name), exist_ok=True)
+
+                # move all the files to the final_path once a time (shutil.move doesn't work)
+                for data_file in os.listdir(os.path.join(self.result_path, file_name)):
+                    os.rename(src=os.path.join(self.result_path, file_name, data_file),
+                              dst=os.path.join(final_path, file_name, data_file))
+
+        # copy the files from the other ranks in the distributed setting
+        if self.distributed:
+            for rank in range(1, torch.distributed.get_world_size()):
+                for file_name in os.listdir(final_path + f'.{rank}'):
+                    # only consider the folders not named as 'figures'
+                    if os.path.isdir(os.path.join(final_path + f'.{rank}', file_name)) and file_name != 'figures':
+                        # move all the files to the final_path once a time (shutil.move doesn't work)
+                        for data_file in os.listdir(os.path.join(final_path + f'.{rank}', file_name)):
+                            os.rename(src=os.path.join(final_path + f'.{rank}', file_name, data_file),
+                                      dst=os.path.join(final_path, file_name, data_file))
+
+        # generate the data path files
+        for file_name in os.listdir(final_path):
+            # only consider the folders not named as 'figures'
+            if os.path.isdir(os.path.join(final_path, file_name)) and file_name != 'figures':
+                idx2path = []
+                for data_file in os.listdir(os.path.join(final_path, file_name)):
+                    data_index = '.'.join(data_file.split('.')[:-1])
+                    if data_index == '':
+                        continue
+
+                    data_path = os.path.join(final_path, file_name, data_file)
+                    idx2path.append([data_index, data_path])
+
+                idx2path = list(sorted(idx2path, key=lambda x: x[0]))
+                np.savetxt(os.path.join(final_path, f'idx2{file_name}'), idx2path, fmt="%s")
 
 
         # --- Portion-level Evaluation Report Production --- #
@@ -1045,7 +1120,7 @@ class TestMonitor(Monitor):
             self.logger.info("The snapshooter is still snapshotting. Waiting for 1 minute......")
             time.sleep(60)
 
-        # transfer the plotted figures into final_path
+        # copy the plotted figures into final_path
         shutil.move(src=os.path.join(self.result_path, 'figures'),
                     dst=os.path.join(final_path, 'figures'))
 

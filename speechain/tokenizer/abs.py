@@ -12,16 +12,16 @@ class Tokenizer(ABC, object):
     """
 
     """
-    def __init__(self, token_dict: str, **kwargs):
+    def __init__(self, token_vocab: str, **kwargs):
         """
 
         Args:
             token_dict:
             **kwargs:
         """
-        token_dict = np.loadtxt(token_dict, dtype=str, delimiter="\n")
-        self.token2idx = dict(map(reversed, enumerate(token_dict)))
-        self.idx2token = dict(enumerate(token_dict))
+        token_vocab = np.loadtxt(token_vocab, dtype=str, delimiter="\n").tolist()
+        self.token2idx = dict(map(reversed, enumerate(token_vocab)))
+        self.idx2token = dict(enumerate(token_vocab))
         self.vocab_size = len(self.idx2token)
 
         self.sos_eos_idx = self.token2idx['<sos/eos>']

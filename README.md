@@ -1,4 +1,4 @@
-# The SpeeChain Toolkit
+# The SpeeChain Toolkit: A PyTorch-based Toolkit designed for ASR-TTS Joint Research
 **_SpeeChain_** is an open-source PyTorch-based deep learning toolkit made by the [**_AHC lab_**](https://ahcweb01.naist.jp/en/) at Nara Institute of Science and Technology (NAIST). 
 This toolkit is designed for simplifying the joint research on speech recognition and speech synthesis models. 
 
@@ -15,12 +15,13 @@ If you find our toolkit helpful for your research, we would appreciate it a lot 
 Anytime you meet a problem when using our toolkit, please don't hesitate to leave us an issue!
 
 ## Table of Contents
-1. [**Unique Characteristics**](https://github.com/ahclab/SpeeChain#unique-characteristics)
-    1. [Various data loading services](https://github.com/ahclab/SpeeChain#various-data-loading-services)
-    2. [Various pseudo-labeling services](https://github.com/ahclab/SpeeChain#various-pseudo-labeling-services)
-    3. [Highly-modularized models](https://github.com/ahclab/SpeeChain#highly-modularized-models)
-    4. [Various optimization services](https://github.com/ahclab/SpeeChain#various-optimization-services)
-    5. [User-friendly documents and interfaces](https://github.com/ahclab/SpeeChain#user-friendly-documents-and-interfaces)
+1. [**Toolkit Characteristics**](https://github.com/ahclab/SpeeChain#toolkit-characteristics)
+    1. [General services](https://github.com/ahclab/SpeeChain#general-services)
+    2. [Data loading services](https://github.com/ahclab/SpeeChain#data-loading-services)
+    3. [Pseudo labeling services](https://github.com/ahclab/SpeeChain#pseudo-labeling-services)
+    4. [Model services](https://github.com/ahclab/SpeeChain#model-services)
+    5. [Optimization services](https://github.com/ahclab/SpeeChain#optimization-services)
+    6. [User-friendly documents and interfaces](https://github.com/ahclab/SpeeChain#user-friendly-documents-and-interfaces)
 2. [**File System**](https://github.com/ahclab/SpeeChain#file-system)
 3. [**Toolkit Architecture**](https://github.com/ahclab/SpeeChain#toolkit-architecture)
     1. [User Interaction Part](https://github.com/ahclab/SpeeChain#user-interaction-part)
@@ -42,21 +43,34 @@ Anytime you meet a problem when using our toolkit, please don't hesitate to leav
     1. [Current Developers](https://github.com/ahclab/SpeeChain#current-developers)
     2. [Development Documentation](https://github.com/ahclab/SpeeChain#development-documentation)
     3. [Development Specifications](https://github.com/ahclab/SpeeChain#development-specifications)
+8. [**Common Q&A**](https://github.com/ahclab/SpeeChain#common-q&a)
 
-## Unique Characteristics
-### Various data loading services
+## Toolkit Characteristics
+### General services
+1. **On-the-fly acoustic feature extraction**
+2. **On-the-fly SpecAugment**
+3. **Single-node multi-GPU model distribution based on DDP (Distributed Data Parallel)**
+4. **Tensorboard real-time model visualization**
+5. **Model inference during training**
+6. **Detailed model diagnosing during testing**
+
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain#table-of-contents)
+
+### Data loading services
 We provide various data loading services that enable users to easily conduct experiments across different datasets: 
 1. **Customized combinations of training, validation, and testing datasets**.
 The datasets used for model training, validation, and testing can be easily changed by your configuration. 
 They don't have to come from the same data source.
-By this, some advanced experiments can be easily conducted, such as semi-supervised learning, multimodal learning, and domain adaptation.
+This customization enables us to easily conduct some advanced experiments, such as semi-supervised learning, multimodal learning, and domain adaptation.
 2. **Multiple dataloaders can be initialized for training your model.** 
-Data samples from multiple datasets can be included in a single batch for training your models.
-These dataloaders are independent of each other, so they may have specific datasets and batch generation strategies.
-3. **Multiple datasets can be mixed up in a single dataloader.** 
-The dataloader uniformly fetches data-label pairs from the mixed dataset.
-4. **Data selection can be done in the dataset of each dataloader.** Sometimes we may only want to use a part of the dataset to train our models. 
-With data selection, we can be freed from the annoying work of segmenting and dumping partial datasets. 
+This means that data samples from multiple datasets can be fetched into a single batch for training and validating your models.
+These dataloaders are independent of each other, so they could hold their specific datasets and batch generation strategies.
+3. **Multiple datasets can be used to initialize a single dataloader.** 
+These datasets are mixed up to form a mixed dataset and the dataloader uniformly fetches data-label pairs from the mixed dataset.
+4. **Data selection can be done in the dataset of each dataloader.** 
+Sometimes we may only want to use a part of the dataset to train our models. 
+Data selection enables us to dynamically initialize our dataloader with a part of data samples in its dataset. 
+With data selection, we can be freed from the annoying work of segmenting and dumping partial datasets before model training. 
 Off-the-shelf selection methods include: 
     1. random selection
     2. selection from the beginning or the end
@@ -64,23 +78,26 @@ Off-the-shelf selection methods include:
       
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain#table-of-contents)
 
-### Various pseudo-labeling services
+### Pseudo labeling services
 For the research on semi-supervised learning and domain adaptation, technical work about processing unlabeled data is inevitable 
 (e.g. hypothesis transcripts for untranscribed speech or synthetic utterances for unspoken text).
 We provide various pseudo-labeling services for unlabeled data to help researchers save more energy for their research:
 1. **GPU-aid batch-level pseudo data generation.** 
 As a necessary part of semi-supervised ASR and TTS models, pseudo data generation often consumes plenty of time for large-scale datasets (such as _LibriSpeech_ or _GigaSpeech_). 
-The faster we get pseudo data, the more experiments we can conduct to test our ideas. 
-In our toolkit, this job can be done at the batch level with the aid of multi-GPUs.
+The faster we get pseudo data, the more experiments we can conduct to realize our ideas. 
+In our toolkit, this job is done at the batch level with the aid of multi-GPUs.
 2. **Off-the-shelf correction functions for pseudo labels.** 
 Pseudo-labeled data usually need to go through some corrections before being used to train our models. 
 We provide some off-the-shelf correction functions to free our users from these annoying dirty jobs:
     1. Pseudo text correction:
-        1. language model hypothesis reweighting
-        2. inference early-stopping prevention
-        3. endless inference detection
-        4. n-gram looping phrase detection
-        5. lexicon calibration
+        1. During-inference correction:
+            1. language model joint decoding
+            2. hypothesis length adjustment
+            3. lexicon-restricted decoding
+        2. After-inference correction:
+            1. language model hypothesis reweighing
+            2. n-gram looping phrase removal
+            3. lexicon calibration
     2. Pseudo speech correction:
         1. silence removal
         2. non-speech sound removal
@@ -88,27 +105,34 @@ We provide some off-the-shelf correction functions to free our users from these 
 
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain#table-of-contents)
 
-### Highly-modularized models
+### Model services
 The models in our toolkit are built with multiple independent modules. Independence offers the following merits:
-1. **Simple model construction.** Users can easily build their models by assembling different modules like playing with LEGO bricks. 
+1. **Simple model construction.** 
+Users can easily build their models by assembling different modules. 
 Since our toolkit supports dynamic class importing, model construction can be easily done merely by the model configuration file.
-2. **Flexible pretrained model loading.** Multiple pretrained models can be used to initialize different modules of your models. 
+2. **Flexible pretrained model loading.** 
+Multiple pretrained models can be used to initialize different parts of your models. 
 Also, the mismatch between the parameter names of pretrained models and your models can be easily solved by the configuration.
-3. **Flexible parameters freezing.** The parameter freezing can also be done independently for each module of your models. 
+3. **Flexible parameters freezing.** 
+The parameter freezing can also be done independently for different parts of your models. 
 The freezing granularity can be very fine (even to a specific neural layer) if you give the proper configuration.
+
+Moreover, our toolkit enables our users to **perform model inference during training**, which visualizes the evolution of the model during training.
 
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain#table-of-contents)
 
-### Various optimization services
+### Optimization services
 We provide various optimization services that offer users the possibilities for more advanced model training schemes:
-1. **Multi-losses training with multiple optimizers.** Multiple optimizers can be used to train your models. 
+1. **Multi-losses training with multiple optimizers.** 
+Multiple optimizers can be used to train your models. 
 Each optimizer has specific target losses, target model parameters, learning rate scheduling strategy, and optimization interval. 
 2. **Gradient accumulation for large-batch training by limited computing resources.** 
-Our toolkit enables users to accumulate the gradients from multiple small batches to mimic the one calculated by a large batch. 
+Our toolkit enables our users to accumulate the gradients from multiple small batches to mimic the one calculated by a large batch. 
 The parameter optimization can be done after several steps of gradient accumulation. 
-It becomes possible for you to enjoy training the large models even though you are suffering from the lack of GPUs! 
-3. **Simple finetuing setting.** In our toolkit, the learning rates can be easily scaled down without changing the scheduling hyperparameters. 
-The troublesome jobs of making a new LR scheduler configuration have gone!
+It becomes possible for you to enjoy training the large-batch models even though you are suffering from the lack of GPUs! 
+3. **Simple finetuing setting.** 
+In our toolkit, the learning rates can be easily scaled down without changing the scheduling hyperparameters. 
+The troublesome jobs of making a new learning rate scheduler configuration have gone!
 
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain#table-of-contents)
 
@@ -192,86 +216,112 @@ The description of the file system in this toolkit is shown below:
         ...
     ...
 ```
-👆[Back to the table of contents](https://github.com/ahclab/SpeeChain#table-of-contents)
-## Toolkit Architecture
-The architecture of this toolkit is shown in the figure below. Dashed lines indicate the holding relationship.
 
-![image](architecture.png)
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain#table-of-contents)
+
+## Toolkit Architecture
 Our toolkit can be divided into 4 parts: **user interaction part** (green), **data loading part** (blue), **model calculation part** (red), **parameter optimization part** (brown).
 
-👆[Back to the table of contents](https://github.com/ahclab/SpeeChain#table-of-contents)
-
 ### User Interaction Part
-This part interacts with the user and disk. There are three members in this part: _Runner_, _Monitor_, and _Snapshooter_. 
-* **Runner** is the entry of this toolkit where the research pipeline starts. 
-It encapsulates the overall procedure of training a deep learning model, shows the logging information during training, and saves the experimental results to the disk after training. 
-_Runner_ holds the connections with all other members in the toolkit.
+The different architectures of this part in train-valid and test branches are shown in the figures below.  
+**Train-valid branch:**
+![image](user_interaction_arch_train.png)
+**Test branch:**
+![image](user_interaction_arch_test.png)
 
-* **Monitor** encapsulates the logic of monitoring the training process, such as information logging, best model recording, early stopping checking, and so on. 
-It determines what kinds of logs _Runner_ shows to users and when _Runner_ stops the training. 
-Also, it keeps the connection with several _Snapshooter_ members and constantly sends snapshotting materials for them to capture the intermediate performance.
+This part interacts with the user and disk. There are three members in this part: _Runner_, _Monitor_, and _Snapshooter_:
+* **Runner** is the entry of this toolkit where the experiment pipeline starts. 
+It receives all the necessary experiment configurations from the user and distributes these configurations to the other parts of this toolkit like a hub. 
+In each step, the runner receives the model calculation results from the model calculation part and passes the results to the monitors for later use.
 
-* **Snapshooter** does the job of model snapshotting. It doesn't runs in the main process of model training but another process. 
- It communicates with _Monitor_ by _multiprocessing.Process_ and _multiprocessing.Event_.
+* **Monitor** is the converter of the model calculation results received from the runner. 
+The raw results are processed into human-readable logs and disk-savable data files. 
+_ValidMonitor_ also encapsulates the logic of monitoring the training process, such as best model recording, early-stopping checking, and so on. 
+Also, a monitor keeps the connection with a _Snapshooter_ and constantly packages snapshotting materials for it to capture the intermediate information.
+
+* **Snapshooter** possesses a queue and constantly receives snapshotting materials by dequeuing the queue elements. 
+For the program efficiency, it doesn't run in the main process of model training but a new process. 
+It communicates with _Monitor_ by _multiprocessing.Queue_ and _multiprocessing.Event_.
 
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain#table-of-contents)
 
 ### [Data Loading Part](https://github.com/ahclab/SpeeChain/tree/main/speechain/iterator#data-loading-part)
-This part plays the role of fetching raw data from the disk and processing them into usable formats for the model.
-* **Dataset** stores the physical addresses of the training samples used to train your models. 
-It encapsulates the logic of loading the chosen sample from the disk and preprocessing it into a trainable vector. 
+The architecture of the data loading part of this toolkit is shown in the figure below.
+![image](data_loading_arch.png)
+This part plays the role of processing the raw data on the disk and providing the model with trainable batches. 
+There are two members in this part: _Iterator_, _Dataset_:
+* **Iterator** is the hub of this part. 
+It holds a built-in _Dataset_ and batch views that decide its visible samples. 
+In each epoch, it produces a _Dataloader_ that provides the built-in _Dataset_ with the sample indices to be extracted from the disk. 
+After receiving the preprocessed vectors of all the data samples, the _Dataloader_ packages them into a trainable batch.
 
-* **Iterator** holds a _Dataset_ and produces a _Dataloader_ in each epoch that provide the built-in _Dataset_ with the sample indices and packages the trainable vectors into a batch.
+* **Dataset** is the frontend that can access the data files on the disk. 
+It stores the necessary information of the data samples of the specified dataset (e.g. physical addresses for the waveform files, strings for the text files). 
+After receiving the sample index from the _Dataloader_, it loads the chosen data sample from the disk and preprocesses it into a machine-friendly vector. 
 
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain#table-of-contents)
 
 ### [Model Calculation Part](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#model-calculation-part)
-This part receives the batch from the data loading part and outputs the training losses and evaluation metrics.
-* **Module** is the building block of the models. The model forward process is done by a series of module sub-forward. 
-Users can create their personal modules by overriding the initialization and forward interfaces.
+The architecture of the model calculation part of this toolkit is shown in the figure below.
+![image](model_calculation_arch.png)
+This part receives the batch from the data loading part and outputs the training losses and evaluation metrics. 
+There are three members in this part: _Model_, _Module_, _Criterion_:
+* **Model** is the wrapper of all the model-related operations. 
+It encapsulates the general model services such as model initialization, pretrained parameter loading, parameter freezing, and so on. 
+It holds several built-in _Module_ members and several built-in _Criterion_ members.
+After receiving the batches from the data loading part, users can choose to do some _Model_ preprocessing to fit the model's customized requirements. 
+Then, the processed batches will be forwarded through multiple _Module_ members to obtain the model outputs. 
+Finally, the model outputs will go through different branches for different usage.
 
-* **Criterion**: There are two types of criteria: loss functions used for training and evaluation metrics used for validation. 
-The criterion and module are independent of each other, which allows any combinations of models and criteria.
-Users can create their personal criteria by overriding its initialization and forward interfaces.
+* **Module** is the unit of model forward. 
+The job of model forward is actually done by a series of module sub-forward. 
+It inherits `torch.nn.Module` and allows users to override its initialization and forward interfaces for customization usage.
 
-* **Model** encapsulates the general model services of model initialization, pretrained parameter loading, and parameter freezing.
-It holds several _Module_ members as the main body of the model to do the job of model forward and several _Criterion_ members for evaluating the model predictions.
+* **Criterion** does the job of converting the model output into a scalar. 
+There are two kinds of criteria: _Train Criterion_ as the loss functions for model training and _Valid Criterion_ as the validation metrics used for model validation. 
+The criterion and module are independent of each other, which allows any combinations of criteria in a single model.
+Users can create their customized criteria by overriding its initialization and forward interfaces.
 
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain#table-of-contents)
 
 ### [Parameter Optimization Part](https://github.com/ahclab/SpeeChain/tree/main/speechain/optim_sche#parameter-optimization-part)
+The architecture of the parameter optimization part of this toolkit is shown in the figure below.
+![image](parameter_optimization_arch.png)
+
 This part does the job of updating the model parameters by the received losses. 
-Unlike the traditional scheme of creating two separate objects (optimizer and scheduler), 
+Unlike the traditional scheme of two separate objects (optimizer and scheduler), 
 parameter optimization and learning rate scheduling are simultaneously done by _OptimScheduler_ in this toolkit.
-* **OptimScheduler** encapsulates the logic of parameter optimization and scheduling learning rates. 
-It holds a `torch.optim.Optimizer` member and provides interfaces for users to determine their personal strategies to schedule the learning rates during training.
+
+* **OptimScheduler** is the hub of this part which encapsulates the logic of scheduling learning rates. 
+It holds a built-in `torch.optim.Optimizer` member and provides the learning rate for the optimizer member in each training step. 
+Users can override its interfaces to customize their personal strategies of scheduling the learning rates during training.
 
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain#table-of-contents)
 
 ## Support Models
 ### [Speech Recognition](https://github.com/ahclab/SpeeChain/blob/main/speechain/model/asr.py)
-* [Speech-transformer](https://ieeexplore.ieee.org/abstract/document/8462506/)
-* [Conformer](https://arxiv.org/pdf/2005.08100)
+* Speech-transformer ([**paper**](https://ieeexplore.ieee.org/abstract/document/8462506/))
+* Conformer ([**paper**](https://arxiv.org/pdf/2005.08100))
 ### [Speech Synthesis]()
-* [Transformer-TTS](https://ojs.aaai.org/index.php/AAAI/article/view/4642/4520)
-* [FastSpeech2](https://arxiv.org/pdf/2006.04558.pdf)
+* Transformer-TTS ([**paper**](https://ojs.aaai.org/index.php/AAAI/article/view/4642/4520))
+* FastSpeech2 ([**paper**](https://arxiv.org/pdf/2006.04558.pdf))
 ### [Speaker Recognition]()
-* [DeepSpeaker](https://arxiv.org/pdf/1705.02304.pdf)
-* [X-vector](https://danielpovey.com/files/2018_icassp_xvectors.pdf)
+* DeepSpeaker ([**paper**](https://arxiv.org/pdf/1705.02304.pdf))
+* X-vector ([**paper**](https://danielpovey.com/files/2018_icassp_xvectors.pdf))
 
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain#table-of-contents)
 
 ## Available Datasets
 ### [Speech-Text](https://github.com/ahclab/SpeeChain/tree/main/datasets/speech_text#speech-text-datasets)
-* [LJSpeech](https://keithito.com/LJ-Speech-Dataset/)
-* [LibriSpeech](http://ecargo.mn/storage/app/uploads/public/5b6/fde/8ca/5b6fde8ca80b0041081405.pdf)
-* [LibriTTS](https://arxiv.org/pdf/1904.02882)
-* [Libri-Light](https://arxiv.org/pdf/1912.07875)
-* [Libri-Adapt](https://arxiv.org/pdf/2009.02814)
-* [GigaSpeech](https://arxiv.org/pdf/2106.06909)
+* LJSpeech ([**folder**](https://github.com/ahclab/SpeeChain/tree/main/datasets/speech_text/ljspeech), [**paper**](https://keithito.com/LJ-Speech-Dataset/))
+* LibriSpeech ([**folder**](https://github.com/ahclab/SpeeChain/tree/main/datasets/speech_text/librispeech), [**paper**](http://ecargo.mn/storage/app/uploads/public/5b6/fde/8ca/5b6fde8ca80b0041081405.pdf))
+* LibriTTS ([**paper**](https://arxiv.org/pdf/1904.02882))
+* Libri-Light ([**paper**](https://arxiv.org/pdf/1912.07875))
+* Libri-Adapt ([**paper**](https://arxiv.org/pdf/2009.02814))
+* GigaSpeech ([**paper**](https://arxiv.org/pdf/2106.06909))
 ### [Speech-Speaker]()
-* [VoxCeleb](https://arxiv.org/pdf/1706.08612)
-* [VoxCeleb2](https://arxiv.org/pdf/1806.05622)
+* VoxCeleb ([**paper**](https://arxiv.org/pdf/1706.08612))
+* VoxCeleb2 ([**paper**](https://arxiv.org/pdf/1806.05622))
 
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain#table-of-contents)
 
@@ -379,3 +429,5 @@ We have some specifications for you to standardize your contribution:
     For example, '*_tmp_feat_dim*' means the temporary variable used to register the intermediate value of the feature dimension. 
 
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain#table-of-contents)
+
+## Common Q&A

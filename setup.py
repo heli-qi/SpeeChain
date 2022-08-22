@@ -25,4 +25,5 @@ setup(name="speechain",
                         'psutil',
                         'tensorboard',
                         'pyyaml',
-                        'torchaudio']);
+                        'torchaudio',
+                        'sentencepiece'])

@@ -7,7 +7,7 @@ import torch
 import numpy as np
 
 
-def to_native(x):
+def to_native(x, tgt: str):
     if hasattr(x, 'detach'):
         x = x.detach()
     if hasattr(x, 'cpu'):
@@ -16,9 +16,13 @@ def to_native(x):
     if isinstance(x, torch.Tensor):
         if len(x.shape) == 0:
             x = x.item()
-        elif hasattr(x, 'tolist'):
-            x = x.tolist()
-
+        else:
+            if tgt == 'list':
+                assert hasattr(x, 'tolist')
+                x = x.tolist()
+            elif tgt == 'numpy':
+                assert hasattr(x, 'numpy')
+                x = x.numpy()
     return x
 
 
@@ -52,7 +56,7 @@ def to_cuda(inputs, rank=0):
     return inputs
 
 
-def to_cpu(inputs, batch_idx=None):
+def to_cpu(inputs, tgt: str = 'list', batch_idx: int = None):
     if isinstance(inputs, tuple) or isinstance(inputs, list):
         inputs = tuple([to_cpu(x, batch_idx) for x in inputs])
     elif isinstance(inputs, dict):
@@ -60,7 +64,7 @@ def to_cpu(inputs, batch_idx=None):
     elif isinstance(inputs, torch.Tensor):
         if batch_idx is not None and len(inputs.shape) > 0:
             inputs = inputs[batch_idx]
-        inputs = to_native(inputs)
+        inputs = to_native(inputs, tgt.lower())
     return inputs
 
 

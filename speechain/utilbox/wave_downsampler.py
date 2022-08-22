@@ -14,6 +14,14 @@ from functools import partial
 
 from speechain.utilbox.regex_util import regex_key_val
 
+def parse() :
+    parser = argparse.ArgumentParser(description='params')
+    parser.add_argument('--sample_rate', type=int, default=16000)
+    parser.add_argument('--src_file', type=str, default="/ahc/work4/heli-qi/euterpe-heli-qi/datasets/speech/ljspeech/data/raw/train/feat.scp")
+    parser.add_argument('--tgt_path', type=str, default="/ahc/work4/heli-qi/euterpe-heli-qi/datasets/speech/ljspeech/data/raw16000/train")
+    parser.add_argument('--ncpu', type=int, default=16)
+    return parser.parse_args()
+
 
 def waveform_downsample(path, args):
     """
@@ -27,21 +35,11 @@ def waveform_downsample(path, args):
     Returns:
 
     """
-    wave = librosa.core.load(path, sr=args.sample_rate)[0]
+    wav = librosa.core.load(path, sr=args.sample_rate)[0]
     file_name = path.split('/')[-1]
     file_format = file_name.split('.')[-1].upper()
-    sf.write(args.tgt_path + "/" + file_name, wave, args.sample_rate,
+    sf.write(file=os.path.join(args.tgt_path, file_name), data=wav, samplerate=args.sample_rate,
              format=file_format, subtype=sf.default_subtype(file_format))
-
-
-def parse() :
-    parser = argparse.ArgumentParser(description='params')
-    parser.add_argument('--sample_rate', type=int, default=16000)
-    parser.add_argument('--src_file', type=str, default="/ahc/work4/heli-qi/euterpe-heli-qi/datasets/speech/ljspeech/data/raw/train/feat.scp")
-    parser.add_argument('--tgt_path', type=str, default="/ahc/work4/heli-qi/euterpe-heli-qi/datasets/speech/ljspeech/data/raw16000/train")
-    parser.add_argument('--ncpu', type=int, default=16)
-    return parser.parse_args()
-    pass
 
 
 if __name__ == '__main__' :
@@ -57,13 +55,12 @@ if __name__ == '__main__' :
         waveform_downsample_args = partial(waveform_downsample, args=args)
         executor.map(waveform_downsample_args, v_list)
 
-    feat_scp = []
+    idx2wav = []
     for file in os.listdir(args.tgt_path):
         file_path = args.tgt_path + '/' + file
-        feat_scp.append([file.split('.')[0], os.path.abspath(file_path)])
+        idx2wav.append([file.split('.')[0], os.path.abspath(file_path)])
 
-    print(f"Saving statistic information of subset train to {args.tgt_path}")
-    feat_scp = np.array(feat_scp, dtype=str)
-    feat_scp = feat_scp[feat_scp[:, 0].argsort()]
-    np.savetxt(os.path.abspath(args.tgt_path) + "/feat.scp", feat_scp, fmt='%s')
+    print(f"Copying statistic information from {os.path.dirname(args.src_file)} to {args.tgt_path}")
+    np.savetxt(os.path.abspath(args.tgt_path) + "/idx2wav", sorted(idx2wav, key=lambda x: x[0]), fmt='%s')
+    shutil.copy(os.path.dirname(args.src_file) + "/idx2sent", args.tgt_path)
     shutil.copy(os.path.dirname(args.src_file) + "/text", args.tgt_path)

@@ -28,6 +28,7 @@ from speechain.optim_sche.abs import OptimScheduler
 
 from speechain.utilbox.log_util import logger_stdout_file, model_summary, distributed_zero_first
 from speechain.utilbox.import_util import import_class, get_port
+from speechain.utilbox.type_util import str2bool
 
 
 class Runner(object):
@@ -80,7 +81,7 @@ class Runner(object):
         parser.add_argument(
             "--config",
             type=str,
-            default='/ahc/work4/heli-qi/euterpe-heli-qi/recipes/asr/librispeech/train_clean_100/transformer/exp_cfg/sup_debug.yaml',
+            default='/ahc/work4/heli-qi/euterpe-heli-qi/recipes/asr/librispeech/train_960/transformer/exp_cfg/bpe10k_nomiddlespace_smooth0.2.yaml',
             help="All-in-one argument setting file. "
                  "You can write all the arguments in this file instead of giving them by command lines."
         )
@@ -95,7 +96,7 @@ class Runner(object):
         )
         group.add_argument(
             '--cudnn_benchmark',
-            type=bool,
+            type=str2bool,
             default=False,
             help="Whether to activate torch.backends.cudnn.benchmark. "
                  "This option can speed up the GPU calculation, "
@@ -104,7 +105,7 @@ class Runner(object):
         )
         group.add_argument(
             '--cudnn_deterministic',
-            type=bool,
+            type=str2bool,
             default=False,
             help="Whether to activate torch.backends.cudnn.deterministic. "
                  "If you turn on cudnn_benchmark, "
@@ -121,7 +122,7 @@ class Runner(object):
         )
         group.add_argument(
             '--pin_memory',
-            type=bool,
+            type=str2bool,
             default=False,
             help="Whether enable the pin_memory option of each Dataloader. "
                  "This option can activate the pinned memory in your dataloasers and speed up the data loading. "
@@ -129,7 +130,7 @@ class Runner(object):
         )
         group.add_argument(
             '--non_blocking',
-            type=bool,
+            type=str2bool,
             default=False,
             help="Whether enable the non_blocking option when putting data on GPUs. "
                  "This option can speed up the model processing. "
@@ -140,7 +141,7 @@ class Runner(object):
         group = parser.add_argument_group("Gradient calculation and back-propagation.")
         group.add_argument(
             '--use_amp',
-            type=bool,
+            type=str2bool,
             default=True,
             help="Whether use Automatic Mixed Precision for back-propagation. (default: True)"
         )
@@ -274,8 +275,8 @@ class Runner(object):
         group.add_argument(
             '--num_epochs',
             type=int,
-            default=100,
-            help="Maximum number of training epochs of your experiments. (default: 100)"
+            default=1000,
+            help="Maximum number of training epochs of your experiments. (default: 1000)"
         )
         group.add_argument(
             '--valid_per_epochs',
@@ -598,10 +599,10 @@ class Runner(object):
                 if train_monitor is not None and valid_monitor is not None:
                     train_monitor.load_state_dict(checkpoint['train_monitor'])
                     valid_monitor.load_state_dict(checkpoint['valid_monitor'])
+                    # info logging
+                    train_monitor.logger.info(f"The training process resumes from the epoch no.{start_epoch}.")
                 for name, optim_sche in optim_sches.items():
                     optim_sche.load_state_dict(checkpoint['optim_sches'][name])
-                # info logging
-                train_monitor.logger.info(f"The training process resumes from the epoch no.{start_epoch}.")
 
             # checkpoint does not exist
             except FileNotFoundError:
@@ -839,16 +840,17 @@ class Runner(object):
 
             # store the checkpoint of the current epoch for resuming later
             if not args.distributed or args.rank == 0:
-                torch.save(
-                    {
-                        "start_epoch": epoch + 1,
-                        "latest_model": model.state_dict() if not args.distributed else model.module.state_dict(),
-                        "train_monitor": train_monitor.state_dict(),
-                        "valid_monitor": valid_monitor.state_dict(),
-                        "optim_sches": {name: o.state_dict() for name, o in optim_sches.items()}
-                    },
-                    os.path.join(args.result_path, "checkpoint.pth")
-                )
+                if not args.dry_run and not args.no_optim:
+                    torch.save(
+                        {
+                            "start_epoch": epoch + 1,
+                            "latest_model": model.state_dict() if not args.distributed else model.module.state_dict(),
+                            "train_monitor": train_monitor.state_dict(),
+                            "valid_monitor": valid_monitor.state_dict(),
+                            "optim_sches": {name: o.state_dict() for name, o in optim_sches.items()}
+                        },
+                        os.path.join(args.result_path, "checkpoint.pth")
+                    )
 
         # check whether all the monitor queues become empty in every minute
         if not args.distributed or args.rank == 0:
@@ -1002,7 +1004,7 @@ class Runner(object):
             assert args.config is not None, \
                 "If you want to automatically generate the result_path, please give the configuration by '--config'."
             _config_split = args.config.split('/')
-            args.result_path = '/'.join(_config_split[:-2] + ['exp'] + _config_split[-1].split('.')[:-1])
+            args.result_path = '/'.join(_config_split[:-2] + ['exp'] + ['.'.join(_config_split[-1].split('.')[:-1])])
 
         # initialize the logger and save current script command
         _log_file_name = 'train' if args.train else 'test'
@@ -1026,7 +1028,11 @@ class Runner(object):
         # resume from an existing checkpoint, loading the old data and train configurations
         if args.resume:
             # loading the existing data and train configurations
-            data_cfg = yaml.load(open(os.path.join(args.result_path, "data_cfg.yaml")))
+            # But the input data configuration has higher priority than the existing one
+            if "data_cfg" in args:
+                data_cfg = yaml.load(open(args.data_cfg))
+            else:
+                data_cfg = yaml.load(open(os.path.join(args.result_path, "data_cfg.yaml")))
             train_cfg = yaml.load(open(os.path.join(args.result_path, "train_cfg.yaml")))
         # start from scratch, loading the new data and train configurations
         else:
@@ -1158,7 +1164,7 @@ class Runner(object):
             args.gpus = [int(gpu) for gpu in args.gpus.split(',')] if isinstance(args.gpus, str) else [args.gpus]
         elif 'CUDA_VISIBLE_DEVICES' in os.environ.keys():
             args.gpus = os.environ['CUDA_VISIBLE_DEVICES']
-            args.gpus = [int(gpu) for gpu in args.gpus.split(',')] if isinstance(args.gpus, str) else [args.gpus]
+            args.gpus = [idx for idx, _ in enumerate(args.gpus.split(','))] if isinstance(args.gpus, str) else [args.gpus]
         # automatically generate available GPUs
         else:
             args.gpus = sorted(GPUtil.getGPUs(), key=lambda g: g.memoryUtil)[:args.ngpu]

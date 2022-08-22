@@ -11,7 +11,11 @@ from contextlib import contextmanager
 import seaborn as sns
 import numpy as np
 import matplotlib.pyplot as plt
-import soundfile as sf
+
+try:
+    import soundfile as sf
+except OSError:
+    pass
 import torchvision
 
 from typing import Dict, List, Any

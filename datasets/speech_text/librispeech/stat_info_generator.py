@@ -8,45 +8,66 @@ import os
 import numpy as np
 import pandas as pd
 
-def main(args):
-    src_path = args.src_path
-    feat_scp = {
+
+def parse():
+    parser = argparse.ArgumentParser(description='params')
+    parser.add_argument('--src_path', type=str, default="/ahc/work4/heli-qi/euterpe-heli-qi/datasets/speech_text/librispeech/data/raw")
+    return parser.parse_args()
+
+
+def main(src_path: str):
+    """
+    Extract the statistical information from each subset of the LibriSpeech dataset.
+    Statistical information contains speech and text data as well as meta data (speaker id and gender).
+
+    Args:
+        src_path: str
+            The path where the original dataset is placed.
+
+    """
+    # register Dicts for the dataset information
+    idx2wav = {
         "train_clean_100": [],
         "train_clean_360": [],
-        "train_clean_460": [],
         "train_other_500": [],
-        "train_960": [],
         "dev_clean": [],
         "dev_other": [],
         "test_clean": [],
         "test_other": []
     }
 
-    utt2spk = {
+    idx2spk = {
         "train_clean_100": [],
         "train_clean_360": [],
-        "train_clean_460": [],
         "train_other_500": [],
-        "train_960": [],
         "dev_clean": [],
         "dev_other": [],
         "test_clean": [],
         "test_other": []
     }
 
-    text = {
+    idx2gen = {
         "train_clean_100": [],
         "train_clean_360": [],
-        "train_clean_460": [],
         "train_other_500": [],
-        "train_960": [],
         "dev_clean": [],
         "dev_other": [],
         "test_clean": [],
         "test_other": []
     }
 
-    ### Collect speech and text data ###
+    idx2sent = {
+        "train_clean_100": [],
+        "train_clean_360": [],
+        "train_other_500": [],
+        "dev_clean": [],
+        "dev_other": [],
+        "test_clean": [],
+        "test_other": []
+    }
+
+
+    # --- Collect speech and text data --- #
     # looping for each subset
     for dset in os.listdir(src_path):
         # skip those .TXT files
@@ -82,35 +103,18 @@ def main(args):
                         else:
                             chp_text = np.stack(np.chararray.split(chp_text, maxsplit=1))
 
-                        text[dset].append(chp_text)
-
-                        if dset in ["train_clean_100", "train_clean_360"]:
-                            text["train_clean_460"].append(chp_text)
-                            text["train_960"].append(chp_text)
-
-                        elif dset in ["train_other_500"]:
-                            text["train_960"].append(chp_text)
+                        idx2sent[dset].append(chp_text)
 
                     # speech data
                     else:
                         scp_item = [file.split('.')[0], os.path.abspath(file_path)]
-                        feat_scp[dset].append(scp_item)
+                        idx2wav[dset].append(scp_item)
 
                         spk_item = [file.split('.')[0], spk]
-                        utt2spk[dset].append(spk_item)
-
-                        if dset in ["train_clean_100", "train_clean_360"]:
-                            feat_scp["train_clean_460"].append(scp_item)
-                            feat_scp["train_960"].append(scp_item)
-                            utt2spk["train_clean_460"].append(spk_item)
-                            utt2spk["train_960"].append(spk_item)
-
-                        elif dset in ["train_other_500"]:
-                            feat_scp["train_960"].append(scp_item)
-                            utt2spk["train_960"].append(spk_item)
+                        idx2spk[dset].append(spk_item)
 
 
-    ### Collect speaker2gender data ###
+    # --- Collect meta data (speaker id and gender) --- #
     spk2gen = []
     spk_txt = open(src_path + '/SPEAKERS.TXT', 'r').readlines()[12:]
     for line in spk_txt:
@@ -120,41 +124,56 @@ def main(args):
     spk2gen = pd.Series(spk2gen[:, 1], index=spk2gen[:, 0])
 
 
-
-    ### Save all the files of each subset in LibriSpeech ###
-    for dset in feat_scp.keys():
-        if not os.path.exists(f"{src_path}/{dset}"):
-            os.makedirs(f"{src_path}/{dset}")
+    # --- Save all the statistical information of each subset in LibriSpeech --- #
+    for dset in idx2wav.keys():
+        os.makedirs(f"{src_path}/{dset}", exist_ok=True)
         print(f"Saving statistic information of subset {dset} to {src_path}/{dset}/")
 
-        # feat.scp
-        scp = np.array(feat_scp[dset], dtype=str)
-        idx = scp[:, 0].argsort()
-        scp = scp[idx]
-        np.savetxt(f"{src_path}/{dset}/feat.scp", scp, fmt='%s')
+        # idx2wav
+        np.savetxt(f"{src_path}/{dset}/idx2wav", sorted(idx2wav[dset], key=lambda x:x[0]), fmt='%s')
 
-        # utt2spk
-        u2s = np.array(utt2spk[dset], dtype=str)
-        u2s = u2s[idx]
-        np.savetxt(f"{src_path}/{dset}/utt2spk", u2s, fmt='%s')
+        # idx2spk
+        np.savetxt(f"{src_path}/{dset}/idx2spk", sorted(idx2spk[dset], key=lambda x:x[0]), fmt='%s')
 
-        # utt2gen
-        u2s[:, 1] = np.array(spk2gen[u2s[:, 1]])
-        np.savetxt(f"{src_path}/{dset}/utt2gen", u2s, fmt='%s')
+        # idx2gen
+        idx = list(map(lambda x: x[0], idx2spk[dset]))
+        gen = np.array(spk2gen[list(map(lambda x: x[1], idx2spk[dset]))]).tolist()
+        idx2gen[dset] = list(zip(idx, gen))
+        np.savetxt(f"{src_path}/{dset}/idx2gen", sorted(idx2gen[dset], key=lambda x:x[0]), fmt='%s')
 
-        # text
-        txt = np.concatenate(text[dset], axis=0)
-        idx = txt[:, 0].argsort()
-        txt = txt[idx]
-        np.savetxt(f"{src_path}/{dset}/text", txt, fmt='%s')
+        # idx2sent
+        idx2sent[dset] = np.concatenate(idx2sent[dset], axis=0).tolist()
+        _tmp = sorted(idx2sent[dset], key=lambda x: x[0])
+        np.savetxt(f"{src_path}/{dset}/idx2sent", _tmp, fmt='%s')
+        np.savetxt(f"{src_path}/{dset}/text", [item[1] for item in _tmp], fmt='%s')
 
 
-def parse():
-    parser = argparse.ArgumentParser(description='params')
-    parser.add_argument('--src_path', type=str, required=True)
-    return parser.parse_args()
-    pass
+    # --- train_clean_460 and train_960 data files production --- #
+    os.makedirs(f"{src_path}/train_clean_460", exist_ok=True)
+    os.makedirs(f"{src_path}/train_960", exist_ok=True)
+    for file in [idx2wav, idx2spk, idx2gen, idx2sent]:
+        file['train_clean_460'] = file['train_clean_100'] + file['train_clean_360']
+        file['train_960'] = file['train_clean_460'] + file['train_other_500']
+
+    # train_clean_460
+    print(f"Saving statistic information of subset train_clean_460 to {src_path}/train_clean_460/")
+    np.savetxt(f"{src_path}/train_clean_460/idx2wav", sorted(idx2wav['train_clean_460'], key=lambda x: x[0]), fmt='%s')
+    np.savetxt(f"{src_path}/train_clean_460/idx2spk", sorted(idx2spk['train_clean_460'], key=lambda x: x[0]), fmt='%s')
+    np.savetxt(f"{src_path}/train_clean_460/idx2gen", sorted(idx2gen['train_clean_460'], key=lambda x: x[0]), fmt='%s')
+    _tmp = sorted(idx2sent['train_clean_460'], key=lambda x: x[0])
+    np.savetxt(f"{src_path}/train_clean_460/idx2sent", _tmp, fmt='%s')
+    np.savetxt(f"{src_path}/train_clean_460/text", [item[1] for item in _tmp], fmt='%s')
+
+    # train_960
+    print(f"Saving statistic information of subset train_960 to {src_path}/train_960/")
+    np.savetxt(f"{src_path}/train_960/idx2wav", sorted(idx2wav['train_960'], key=lambda x: x[0]), fmt='%s')
+    np.savetxt(f"{src_path}/train_960/idx2spk", sorted(idx2spk['train_960'], key=lambda x: x[0]), fmt='%s')
+    np.savetxt(f"{src_path}/train_960/idx2gen", sorted(idx2gen['train_960'], key=lambda x: x[0]), fmt='%s')
+    _tmp = sorted(idx2sent['train_960'], key=lambda x: x[0])
+    np.savetxt(f"{src_path}/train_960/idx2sent", _tmp, fmt='%s')
+    np.savetxt(f"{src_path}/train_960/text", [item[1] for item in _tmp], fmt='%s')
 
 
 if __name__ == '__main__':
-    main(parse())
+    args = parse()
+    main(args.src_path)

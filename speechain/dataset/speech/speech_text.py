@@ -132,9 +132,9 @@ class SpeechTextDataset(Dataset):
         There are 3 ways to extract waveforms from the disk, no large difference in loaded values.
         The no.2 method by librosa consumes a little more time than the others. Among them, torchaudio.load() directly
         gives torch.Tensor, so it is chosen in this function.
-            1. feat = soundfile.read(self.feat_scp[index], always_2d=True, dtype='float32')[0]
-            2. feat = librosa.core.load(self.feat_scp[index], sr=self.sample_rate)[0].reshape(-1, 1)
-            3. feat = torchaudio.load(self.feat_scp[index], channels_first=False, normalize=False)[0]
+            1. feat = soundfile.read(self.src_data[index], always_2d=True, dtype='float32')[0]
+            2. feat = librosa.core.load(self.src_data[index], sr=self.sample_rate)[0].reshape(-1, 1)
+            3. feat = torchaudio.load(self.src_data[index], channels_first=False, normalize=False)[0]
 
         Args:
             index: int
@@ -142,7 +142,7 @@ class SpeechTextDataset(Dataset):
 
         """
         # extract audio waveform from the disk
-        if self.feat_type == 'raw':
+        if self.feat_type == 'wav':
             feat = torchaudio.load(self.src_data[index], channels_first=False, normalize=False)[0]
         # extract acoustic features from the disk
         elif self.feat_type == 'feat':

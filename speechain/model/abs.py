@@ -483,5 +483,49 @@ class Model(torch.nn.Module, ABC):
 
 
     @abstractmethod
-    def inference(self, **kwargs):
+    def inference(self, **kwargs) -> Dict[str, Dict]:
+        """
+        This function receives the test data and test configuration. After obtaining the inference results,
+        all the results will be packaged into a Dict[str, Dict] which is passed to TestMonitor.
+
+        Each key-value item in the returned Dict corresponds to a file on the disk. The file name is decided by the
+        key and the file content is decided by the value. Currently, three file types are supported in our toolkit:
+        1. .txt files (include .md files)
+        2. .wav files
+        3. .flac files
+
+        The value of each item must also be a Dict and there must be two items in this sub-Dict: 'format' and 'content'.
+        'format' indicates the file type and 'content' is a List that contains the data to be saved to the file.
+
+        Each file type has a specific rule of key-value format:
+            1. For .txt files, the value of 'format' in the sub-Dict must be 'txt' and the value of 'content' must be
+            made up of fundamental data type (e.g. int, float, str, bool, ...).
+            And the file will be named by ('idx2' + first-level key) and each line of the file will be made up of
+            (a test sample index + a blank + an element in the 'content' List). For example,
+            >>> dict(cer=dict(format='txt', content=[0.1, 0.2, 0.3]))
+            will create a file named 'idx2cer' and the file content will be
+            >>> xxx-xxxx1 0.1
+            >>> xxx-xxxx2 0.2
+            >>> xxx-xxxx3 0.3
+            Note: if the first-level key ends with '.md', there will not be 'idx2' attached at the front.
+
+            2. For .wav and .flac files, the value of 'format' in the sub-Dict must be 'wav' or 'flac' and the value of
+            'content' must be made up of array-like data type (e.g. numpy.ndarry, torch.Tensor, ...). Moreover,
+            there must be a new key-value item named 'sample_rate' that indicates the sampling rate of the waveform to
+            be saved.
+            There will be a folder named by the first-level key that contains all the waveform files and a .txt file
+            named by ('idx2' + first-level key) that contains the absolute paths of the saved waveform files.
+            For example,
+            >>> dict(wav=dict(format='flac', content=[np_arr1, np_arr2, np_arr3]))
+            will create a folder named 'wav' and a .txt file named 'idx2wav'.
+            The folder 'wav' is like:
+            >>> xxx-xxxx1.flac
+            >>> xxx-xxxx2.flac
+            >>> xxx-xxxx3.flac
+            And 'idx2wav' is like:
+            >>> xxx-xxxx1 /x/xx/xxx/xxx-xxxx1.flac
+            >>> xxx-xxxx2 /x/xx/xxx/xxx-xxxx2.flac
+            >>> xxx-xxxx3 /x/xx/xxx/xxx-xxxx3.flac
+
+        """
         raise NotImplementedError

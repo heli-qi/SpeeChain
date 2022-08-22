@@ -152,6 +152,7 @@ class Conv2dPrenet(Module):
             # feat_len = (feat_len - self.conv_kernel[0]) // self.conv_stride[0] + 1
             feat_len = torch.div(feat_len - self.conv_kernel[0], self.conv_stride[0], rounding_mode='floor') + 1
 
+        # check the input feat length
         if max(feat_len) != feat.size(1):
             raise RuntimeError(f"There is a bug in the {self.__class__.__name__}."
                                f"The calculation of the feature lengths has something wrong.")

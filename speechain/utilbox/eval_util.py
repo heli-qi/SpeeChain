@@ -48,6 +48,6 @@ def get_word_edit_alignment(hypo: str, real: str) -> (int, int, int, str):
             real_words.append(real_word_list[op[3]])
 
     align_table = get_table_strings(contents=[hypo_words, word_ops, real_words],
-                                    first_col=['Hypothesis', 'Operation', 'Transcript'])
+                                    first_col=['Hypothesis', 'Alignment', 'Reference'])
 
     return insertion, deletion, substitution, align_table

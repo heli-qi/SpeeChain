@@ -5,12 +5,12 @@
 """
 import copy
 import numpy as np
-import time
 import torch
 from typing import Dict, Any, List
 
 from speechain.model.abs import Model
 from speechain.tokenizer.char import CharTokenizer
+from speechain.tokenizer.subword import SubwordTokenizer
 from speechain.infer_func.beam_search import beam_searching
 from speechain.utilbox.tensor_util import to_cpu
 from speechain.utilbox.eval_util import get_word_edit_alignment
@@ -24,7 +24,8 @@ class ASR(Model):
 
     def model_customize(self,
                         token_type: str,
-                        token_dict: str,
+                        token_vocab: str,
+                        token_model: str = None,
                         sample_rate: int = 16000,
                         audio_format: str = 'wav',
                         return_att: bool = False,
@@ -35,16 +36,20 @@ class ASR(Model):
 
         Args:
             token_type:
-            token_dict:
+            token_vocab:
+            token_model:
             sample_rate:
+            audio_format:
             return_att:
             return_hidden:
             return_enc:
 
         """
         # initialize the tokenizer
-        if token_type == 'char':
-            self.tokenizer = CharTokenizer(token_dict)
+        if token_type.lower() == 'char':
+            self.tokenizer = CharTokenizer(token_vocab)
+        elif token_type.lower() == 'subword':
+            self.tokenizer = SubwordTokenizer(token_vocab, token_model=token_model)
         else:
             raise NotImplementedError
 
@@ -333,6 +338,9 @@ class ASR(Model):
         Returns:
 
         """
+        # remove the padding zeros at the end of the input feat
+        feat = feat[:, :feat_len]
+
         # obtain the inference results
         infer_results = self.inference(feat=feat, feat_len=feat_len,
                                        text=text, text_len=text_len,
@@ -342,11 +350,11 @@ class ASR(Model):
         vis_logs = []
         # CER, WER, hypothesis probability
         materials = dict()
-        for metric in ['cer', 'wer', 'hypo_text_prob']:
+        for metric in ['cer', 'wer', 'sent_prob', 'len_offset']:
             # store each target metric into materials
             if metric not in epoch_records[sample_index].keys():
                 epoch_records[sample_index][metric] = []
-            epoch_records[sample_index][metric].append(infer_results[metric][0])
+            epoch_records[sample_index][metric].append(infer_results[metric]['content'][0])
             materials[metric] = epoch_records[sample_index][metric]
         # save the visualization log
         vis_logs.append(
@@ -375,13 +383,13 @@ class ASR(Model):
                 )
             )
         # hypothesis text
-        if 'hypo_text' not in epoch_records[sample_index].keys():
-            epoch_records[sample_index]['hypo_text'] = []
-        epoch_records[sample_index]['hypo_text'].append(infer_results['hypo_text'][0])
+        if 'sent' not in epoch_records[sample_index].keys():
+            epoch_records[sample_index]['sent'] = []
+        epoch_records[sample_index]['sent'].append(infer_results['sent']['content'][0])
         # snapshot the information in the materials
         vis_logs.append(
             dict(
-                materials=dict(hypo_text=copy.deepcopy(epoch_records[sample_index]['hypo_text'])),
+                materials=dict(hypo_text=copy.deepcopy(epoch_records[sample_index]['sent'])),
                 plot_type='text', epoch=epoch, x_stride=snapshot_interval,
                 subfolder_names=sample_index
             )
@@ -487,25 +495,25 @@ class ASR(Model):
         text = [self.tokenizer.tensor2text(real[torch.logical_and(real != self.tokenizer.ignore_idx,
                                                                   real != self.tokenizer.sos_eos_idx)])
                 for real in text]
-        # text has sos/eos attached at the beginning and the end
         text_len -= 2
 
-        # make sure that all the values in the returned Dict is in the form of List
+        # in the decoding-only mode, only the hypothesis-related results will be returned
         outputs = dict(
-            hypo_text=hypo_text,
-            hypo_text_prob=to_cpu(hypo_text_prob),
+            sent=dict(format='txt', content=hypo_text),
+            sent_len=dict(format='txt', content=to_cpu(hypo_text_len + 1)), # consider one <sos/eos> at the end
+            sent_prob=dict(format='txt', content=to_cpu(hypo_text_prob))
         )
-        # text and text_len will not be used in the decoding-only mode
         if decode_only:
             return outputs
 
-        # return the metrics calculated by text and text_len in the normal mode
+        # in the normal mode, return all the information calculated by the reference
         outputs.update(
-            cer=cer_wer['cer'],
-            wer=cer_wer['wer'],
-            hypo_len_offset=to_cpu(hypo_text_len - text_len)
+            cer=dict(format='txt', content=cer_wer['cer']),
+            wer=dict(format='txt', content=cer_wer['wer']),
+            len_offset=dict(format='txt', content=to_cpu(hypo_text_len - text_len))
         )
-        # add the attention matrix into the output Dict (mainly for model visualization during training)
+        # add the attention matrix into the output Dict, only used for model visualization during training
+        # because it will consume too much time for saving the attention matrices of all testing samples during testing
         if return_att:
             outputs.update(
                 hypo_att=hypo_att
@@ -515,13 +523,14 @@ class ASR(Model):
         sample_reports, insertion, deletion, substitution = [], [], [], []
         for i in range(len(text)):
             i_num, d_num, s_num, align_table = \
-                get_word_edit_alignment(outputs['hypo_text'][i], text[i])
+                get_word_edit_alignment(hypo_text[i], text[i])
             md_list = get_list_strings(
                 {
-                    'CER': f"{outputs['cer'][i]:.2%}",
-                    'WER': f"{outputs['wer'][i]:.2%}",
-                    'Hypothesis Score': f"{outputs['hypo_text_prob'][i]:.6f}",
-                    'Length Offset': f"{'+' if outputs['hypo_len_offset'][i] >= 0 else ''}{outputs['hypo_len_offset'][i]:d}",
+                    'CER': f"{cer_wer['cer'][i]:.2%}",
+                    'WER': f"{cer_wer['wer'][i]:.2%}",
+                    'Hypothesis Probability': f"{to_cpu(hypo_text_prob)[i]:.6f}",
+                    'Length Offset': f"{'+' if to_cpu(hypo_text_len - text_len)[i] >= 0 else ''}"
+                                     f"{to_cpu(hypo_text_len - text_len)[i]:d}",
                     'Word Insertion': f"{i_num}",
                     'Word Deletion': f"{d_num}",
                     'Word Substitution': f"{s_num}"
@@ -539,11 +548,11 @@ class ASR(Model):
             deletion.append(d_num)
             substitution.append(s_num)
 
-        outputs['sample_reports.md'] = sample_reports
+        outputs['sample_reports.md'] = dict(format='txt', content=sample_reports)
         outputs.update(
-            word_insertion=insertion,
-            word_deletion=deletion,
-            word_substitution=substitution
+            insertion=dict(format='txt', content=insertion),
+            deletion=dict(format='txt', content=deletion),
+            substitution=dict(format='txt', content=substitution)
         )
         return outputs
 
@@ -552,7 +561,6 @@ class SemiASR(ASR):
     """
 
     """
-
     def model_forward(self, **batch_data) -> Dict[str, Dict or torch.Tensor]:
         """
 
