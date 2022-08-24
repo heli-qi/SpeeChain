@@ -493,6 +493,7 @@ class Model(torch.nn.Module, ABC):
         1. .txt files (include .md files)
         2. .wav files
         3. .flac files
+        4. .npz files
 
         The value of each item must also be a Dict and there must be two items in this sub-Dict: 'format' and 'content'.
         'format' indicates the file type and 'content' is a List that contains the data to be saved to the file.
@@ -526,6 +527,25 @@ class Model(torch.nn.Module, ABC):
             >>> xxx-xxxx1 /x/xx/xxx/xxx-xxxx1.flac
             >>> xxx-xxxx2 /x/xx/xxx/xxx-xxxx2.flac
             >>> xxx-xxxx3 /x/xx/xxx/xxx-xxxx3.flac
+
+            3. For .npz files, the value of 'format' in the sub-Dict must be 'npz' and the value of
+            'content' must be made up of numpy.ndarry (torch.Tensor is not supported).
+            In each .npz file, there will be two key-value items: 'feat' and 'index'. 'feat' contains your given
+            numpy.ndarry and 'index' contains the sample index of the array (Currently, only 'feat' is useful while
+            'index' is only for reference).
+            There will be a folder named by the first-level key that contains all the .npz files and a .txt file
+            named by ('idx2' + first-level key) that contains the absolute paths of the saved feature files.
+            For example,
+            >>> dict(feat=dict(format='npz', content=[np_arr1, np_arr2, np_arr3]))
+            will create a folder named 'feat' and a .txt file named 'idx2feat'.
+            The folder 'feat' is like:
+            >>> xxx-xxxx1.npz
+            >>> xxx-xxxx2.npz
+            >>> xxx-xxxx3.npz
+            And 'idx2feat' is like:
+            >>> xxx-xxxx1 /x/xx/xxx/xxx-xxxx1.npz
+            >>> xxx-xxxx2 /x/xx/xxx/xxx-xxxx2.npz
+            >>> xxx-xxxx3 /x/xx/xxx/xxx-xxxx3.npz
 
         """
         raise NotImplementedError
