@@ -1,6 +1,6 @@
 [CHANGE LOG]
 
-2022/9/2:
+2022/9/2: (author: Sashi Novitasari, NAIST)
 --------
 MODULE/MODELS
 --------
@@ -100,10 +100,16 @@ RECIPES
 	Path 	: recipes/tts/ljspeech/vocoder
 	Content	: materials for TTS vocoder (mel-to-waveform) training based on LJ speech dataset. 
 
-1) 	Recipe 	: recipes.tts.wsj.transformer
+3) 	Recipe 	: recipes.tts.wsj.transformer
 	Path 	: recipes/tts/wsj/transformer
 	Content	: materials for multi-speaker TTS core (text-to-mel) training based on WSJ dataset. 
 
-1) 	Recipe 	: recipes.tts.wsj.vocoder
+4) 	Recipe 	: recipes.tts.wsj.vocoder
 	Path 	: recipes/tts/wsj/vocoder
 	Content	: materials for TTS inverter (mel-to-waveform) training based on WSJ dataset. 
+
+
+------------
+BUGS
+------------
+1. Inference: Visualization file/folder generation (FileNotFoundError). Occur after all inference finish. Does not affect the inference process and result/output data.

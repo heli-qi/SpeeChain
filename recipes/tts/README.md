@@ -144,3 +144,9 @@ python runner.py --config recipes/tts/wsj/transformer/exp_cfg/INFERENCE_sup_8hea
 2. Open --config file for vocoder inference (gold) above
 3. Go to data_cfg file and open data_cfg file
 4. In data_cfg, go to test.clean.conf.dataset_conf.src_data, replace the path with `idx2hypo_feat_npz` from step 1.1.
+
+## Training Tips
+1. Core: Use big batchsize
+2. Core: Use big number of batch/epoch
+3. Core: Configure the hyperparams for speech-end flag well
+4. Core (multi-speaker): Speaker recognition model accuracy > 99% (for speaker embedding generation) 
