@@ -1,0 +1,34 @@
+# Experiment environment
+seed: 0
+ngpu: 1
+num_workers: 1
+pin_memory: False
+non_blocking: False
+
+# gradient descent related
+grad_clip: 5.0
+accum_grad: 1
+
+# Training monitoring
+train: True
+test: False
+resume: False
+
+num_epochs: 50
+report_per_steps: 5
+
+#valid_per_epochs: 1
+best_model_num: 5
+best_model_mode: min
+best_model_metric: loss
+early_stopping_patience: 40
+test_model: best
+
+result_path: "/project/nakamura-lab05/Work/novitasari-s/tools/SpeeChain_expr/spkrec/deepspeaker/wsj/si284/result/model_base_e50"
+
+
+
+# Experiment configurations
+data_cfg: "/project/nakamura-lab05/Work/novitasari-s/tools/SpeeChain/recipes/spkrec/wsj/data_cfg/sup_si284.yaml"
+train_cfg: "/project/nakamura-lab05/Work/novitasari-s/tools/SpeeChain/recipes/spkrec/wsj/deepspeaker/train_cfg/deepspeakercnn_base.yaml"
+test_cfg: "/project/nakamura-lab05/Work/novitasari-s/tools/SpeeChain/config/infer/tts/greedy_search_maxlen250_bernth0.0.yaml"

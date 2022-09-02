@@ -1,0 +1,110 @@
+model:
+  model_type: asr.ASR
+  model_conf:
+    init: xavier
+    frozen_modules:
+    pretrained_model:
+    visual_infer_conf:
+      teacher_forcing: True
+    customize_conf:
+      token_type: char
+      token_dict: /project/nakamura-lab05/Work/novitasari-s/tools/SpeeChain/datasets/speech_text/ljspeech/data/char/train/dict
+
+  module_conf:
+    encoder:
+      type: encoder.asr.ASREncoder
+      conf:
+        frontend:
+          type: frontend.speech2mel.Speech2MelSpec
+          conf:
+            sr: 16000
+            preemphasis: 0.97
+            n_fft: 2048
+            hop_length: 0.0125
+            win_length: 0.05
+            n_mels: 80
+            fmin: 125
+            fmax: 7600
+
+        prenet:
+          type: prenet.conv2d.Conv2dPrenet
+          conf:
+            conv_dims:
+              - 512
+              - 512
+            conv_kernel: 3
+            conv_stride: 2
+            conv_batchnorm: true
+            lnr_dims:
+              - 512
+            lnr_dropout:
+              - 0.2
+
+        encoder:
+          type: transformer.encoder.TransformerEncoder
+          conf:
+            posenc_type: sep
+            posenc_maxlen: 2000
+            posenc_dropout: 0.1
+            d_model: 512
+            num_heads: 4
+            num_layers: 12
+            att_dropout: 0.15
+            fdfwd_dim: 2048
+            fdfwd_dropout: 0.15
+            res_dropout: 0.15
+            layernorm_first: true
+
+    decoder:
+      type: decoder.asr.ASRDecoder
+      conf:
+        vocab_size: 37
+
+        prenet:
+          type: prenet.embed.EmbedPrenet
+          conf:
+            embedding_dim: 512
+
+        decoder:
+          type: transformer.decoder.TransformerDecoder
+          conf:
+            posenc_type: sep
+            posenc_maxlen: 2000
+            posenc_dropout: 0.1
+            d_model: 512
+            num_heads: 4
+            num_layers: 6
+            att_dropout: 0.15
+            fdfwd_dim: 2048
+            fdfwd_dropout: 0.15
+            res_dropout: 0.15
+            layernorm_first: true
+
+        postnet:
+          type: postnet.token.TokenPostnet
+
+
+  criterion_conf:
+    cross_entropy:
+      type: cross_entropy.CrossEntropy
+      label_smoothing: 0.1
+
+    accuracy:
+      type: accuracy.Accuracy
+
+    error_rate:
+      type: error_rate.ErrorRate
+
+
+optim_sches:
+  noam_adam:
+    type: noam.Noamlr
+    conf:
+      optim_type: Adam
+      optim_conf:
+        betas:
+          - 0.9
+          - 0.98
+        eps: 1.0e-9
+      d_model: 512
+      warmup_steps: 35000

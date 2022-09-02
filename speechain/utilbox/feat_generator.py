@@ -2,6 +2,9 @@
     Author: Sashi Novitasari
     Affiliation: NAIST
     Date: 2022.07
+
+CHANGELOG
+- 2022/8/2 SashiNovitasari: added import TacoHelper
 """
 import os
 import numpy as np
@@ -14,6 +17,7 @@ import librosa
 import librosa.filters
 from tqdm import tqdm
 from speechain.utilbox import signal_util
+from speechain.utilbox.helper import TacotronHelper
 
 
 ############

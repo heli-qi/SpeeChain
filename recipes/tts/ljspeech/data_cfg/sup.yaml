@@ -1,0 +1,48 @@
+train:
+    sup:
+        type: block.BlockIterator
+        conf:
+            dataset_type: speech.speech_text.SpeechTextDataset
+            dataset_conf:
+                feat_type: feat
+                src_data: /project/nakamura-lab05/Work/novitasari-s/tools/SpeeChain/datasets/speech_text/ljspeech/data/taco_mel_f80/train/feat.scp
+                tgt_label: /project/nakamura-lab05/Work/novitasari-s/tools/SpeeChain/datasets/speech_text/ljspeech/data/raw16000/train/text
+
+            shuffle: True
+            is_descending: True
+            batches_per_epoch: 1000
+            batch_frames: 30000 #1000000 # 4000000 = 20000 * 200 (16000 * 0.0125)
+            data_len: /project/nakamura-lab05/Work/novitasari-s/tools/SpeeChain/datasets/speech_text/ljspeech/data/taco_mel_f80/train/feat_len.scp
+
+
+valid:
+    dev:
+        type: block.BlockIterator
+        conf:
+            dataset_type: speech.speech_text.SpeechTextDataset
+            dataset_conf:
+                feat_type: feat
+                src_data: /project/nakamura-lab05/Work/novitasari-s/tools/SpeeChain/datasets/speech_text/ljspeech/data/taco_mel_f80/valid/feat.scp
+                tgt_label: /project/nakamura-lab05/Work/novitasari-s/tools/SpeeChain/datasets/speech_text/ljspeech/data/raw16000/valid/text
+
+            shuffle: False
+            is_descending: True
+            batch_frames: 30000 # 4000000 = 20000 * 200 (16000 * 0.0125)
+            data_len: /project/nakamura-lab05/Work/novitasari-s/tools/SpeeChain/datasets/speech_text/ljspeech/data/taco_mel_f80/valid/feat_len.scp
+
+
+test:
+    clean:
+        type: piece.PieceIterator
+        conf:
+            dataset_type: speech.speech_text.SpeechTextDataset
+            dataset_conf:
+                feat_type: feat
+                src_data: /project/nakamura-lab05/Work/novitasari-s/tools/SpeeChain/datasets/speech_text/ljspeech/data/taco_mel_f80/test/feat.scp
+                tgt_label: /project/nakamura-lab05/Work/novitasari-s/tools/SpeeChain/datasets/speech_text/ljspeech/data/raw16000/test/text
+
+            shuffle: False
+            batch_size: 1
+            data_len: /project/nakamura-lab05/Work/novitasari-s/tools/SpeeChain/datasets/speech_text/ljspeech/data/taco_mel_f80/test/feat_len.scp
+
+   

@@ -1,0 +1,52 @@
+model:
+  model_type: tts_vocoder.TTSVocoder
+  model_conf:
+    init: xavier
+    frozen_modules:
+    pretrained_model:
+    visual_infer_conf:
+      teacher_forcing: True
+    customize_conf:
+      speechfeat_group: 4
+      speechfeat_cfg: /project/nakamura-lab05/Work/novitasari-s/tools/SpeeChain/config/feat/taco_raw_fft2048.json
+ 
+
+  module_conf:
+    vocoder:
+      type: custom.vocoder.TacotronV1Inverter
+      conf:
+        vocoder:
+          in_size: 320
+          out_size: 4100
+          projection_size: [512]
+          projection_fn: 'LeakyReLU'
+          projection_do: 0.1
+
+  criterion_conf:
+    feat_loss:
+      type: least_error.LeastError
+      conf:
+        loss_type: L2
+        coeff: 1.0
+
+    feat_freq_loss: 
+      type: least_error.LeastError
+      conf:
+        loss_type: L2
+        coeff: 1.0
+        topn: 0.25
+
+    
+
+optim_sches:
+  noam_adam:
+    type: noam.Noamlr
+    conf:
+      optim_type: Adam
+      optim_conf:
+        betas:
+          - 0.9
+          - 0.98
+        eps: 1.0e-9
+      d_model: 512
+      warmup_steps: 5000

@@ -1,0 +1,17 @@
+numpy
+scipy
+torch
+pytest
+tabulate
+tqdm
+pathos
+librosa
+tensorboardX
+pandas
+tables
+python-speech-features
+soundfile
+psutil
+tensorboard
+pyyaml
+torchaudio

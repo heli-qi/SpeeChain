@@ -1,0 +1,34 @@
+# Experiment environment
+seed: 0
+ngpu: 1
+num_workers: 1
+pin_memory: False
+non_blocking: False
+
+# gradient descent related
+grad_clip: 5.0
+accum_grad: 1
+
+# Training monitoring
+train: False
+test: True
+resume: False
+
+num_epochs: 600
+report_per_steps: 10
+
+#valid_per_epochs: 1
+best_model_num: 3
+best_model_mode: min
+best_model_metric: loss
+early_stopping_patience: 50
+test_model: epoch_247
+
+result_path: "/project/nakamura-lab05/Work/novitasari-s/tools/SpeeChain_expr/tts/transformer/ljspeech/core/base/result/model"
+
+
+
+# Experiment configurations
+data_cfg: "/project/nakamura-lab05/Work/novitasari-s/tools/SpeeChain/recipes/tts/ljspeech/data_cfg/sup.yaml"
+train_cfg: "/project/nakamura-lab05/Work/novitasari-s/tools/SpeeChain/recipes/tts/ljspeech/transformer/train_cfg/8head_512dim_warmup4k.yaml"
+test_cfg: "/project/nakamura-lab05/Work/novitasari-s/tools/SpeeChain/config/infer/tts/greedy_search_maxlen250_bernth0.0.yaml"

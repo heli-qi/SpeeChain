@@ -1,0 +1,50 @@
+model:
+  model_type: spkrec.DeepSpeaker
+  model_conf:
+    init: xavier
+    frozen_modules:
+    pretrained_model:
+    visual_infer_conf:
+      teacher_forcing: True
+    customize_conf:
+      speaker_list: /project/nakamura-lab05/Work/novitasari-s/tools/SpeeChain/datasets/speech_spk/wsj/si284/speaker_list
+
+    
+  module_conf:
+    spkrec:
+      type: custom.deepspeaker.DeepSpeakerCNN
+      conf:
+        spkrec:
+          in_size: 80
+          out_emb_size: 128
+          channel_size: [64, 128, 256, 512]
+          kernel_size: [[3, 5], [3, 5], [3, 5], [3, 5]]
+          stride: [[2, 2], [2, 2], [1, 2], [1, 1]]
+          conv_fn_act: leaky_relu
+          pool_fn: avg
+          conv_do: 0.1
+          linear_do: 0.1
+          num_speaker: 300
+          
+  criterion_conf:
+    cross_entropy:
+      type: cross_entropy_cls.CrossEntropy
+      label_smoothing: 0.0
+
+    accuracy:
+      type: accuracy_cls.Accuracy
+
+    
+
+optim_sches:
+  noam_adam:
+    type: noam.Noamlr
+    conf:
+      optim_type: Adam
+      optim_conf:
+        betas:
+          - 0.9
+          - 0.98
+        eps: 1.0e-9
+      d_model: 512
+      warmup_steps: 5000

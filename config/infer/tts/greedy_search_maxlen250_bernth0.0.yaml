@@ -1,0 +1,3 @@
+bern_stop_thshld: 0.0
+dec_max_len: 250
+feat_dim: 320 #grouped feature size (original feature size * grouping rate)

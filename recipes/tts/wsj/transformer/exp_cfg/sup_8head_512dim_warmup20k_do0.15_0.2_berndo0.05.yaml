@@ -1,0 +1,34 @@
+# Experiment environment
+seed: 0
+ngpu: 1
+num_workers: 1
+pin_memory: False
+non_blocking: False
+
+# gradient descent related
+grad_clip: 5.0
+accum_grad: 1
+
+# Training monitoring
+train: True
+test: False
+resume: False
+
+num_epochs: 200
+report_per_steps: 10
+
+#valid_per_epochs: 1
+best_model_num: 10
+best_model_mode: min
+best_model_metric: loss
+early_stopping_patience: 900
+test_model: best
+
+result_path: "/project/nakamura-lab05/Work/novitasari-s/tools/SpeeChain_expr/tts/transformer/wsj/core/result/model_8head_512dim_warmup20k_do0.15_0.2_berndo0.05v3"
+
+
+
+# Experiment configurations
+data_cfg: "/project/nakamura-lab05/Work/novitasari-s/tools/SpeeChain/recipes/tts/wsj/data_cfg/sup.yaml"
+train_cfg: "/project/nakamura-lab05/Work/novitasari-s/tools/SpeeChain/recipes/tts/wsj/transformer/train_cfg/8head_512dim_warmup20k_do0.15_0.2_berndo0.05.yaml"
+test_cfg: "/project/nakamura-lab05/Work/novitasari-s/tools/SpeeChain/config/infer/tts/greedy_search_maxlen250_bernth0.0.yaml"

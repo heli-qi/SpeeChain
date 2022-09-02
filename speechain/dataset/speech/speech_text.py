@@ -81,7 +81,7 @@ class SpeechTextDataset(Dataset):
         Returns:
 
         """
-        if meta_type in ['speaker', 'gender']:
+        if meta_type in ['speaker', 'gender','speaker_feat']:
             # read feat_scp file that contains the absolute paths of audio files
             # str -> np.ndarray
             meta = np.loadtxt(meta_file, dtype=str, delimiter=" ")
@@ -164,6 +164,6 @@ class SpeechTextDataset(Dataset):
         # return the meta information if given
         if self.meta_info is not None:
             outputs.update(
-                {key: value[index] for key, value in self.meta_info.items()}
+                {key: (value[index] if 'feat' not in key else np.load(value[index])['feat']) for key, value in self.meta_info.items()}
             )
         return outputs

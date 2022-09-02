@@ -1,0 +1,162 @@
+model:
+  model_type: tts.TTS
+  model_conf:
+    init: xavier
+    frozen_modules:
+    pretrained_model:
+    visual_infer_conf:
+      teacher_forcing: True
+    customize_conf:
+      token_type: char
+      token_dict: /project/nakamura-lab05/Work/novitasari-s/tools/SpeeChain/datasets/speech_text/ljspeech/data/char/train/dict
+      speechfeat_group: 4
+
+  module_conf:
+    encoder:
+      type: encoder.tts.TTSEncoder
+      conf:
+        embedding:
+          type: prenet.embed.EmbedPrenet
+          conf:
+            embedding_dim: 256
+            vocab_size: 37
+
+        prenet:
+          type: prenet.conv1d.Conv1dPrenet
+          conf:
+            conv_dims:
+              - 512
+              - 512
+              - 512
+            conv_dropout:
+              - 0.2
+              - 0.2
+              - 0.2
+            conv_kernel: 
+              - 5
+              - 5
+              - 5
+            conv_batchnorm: true
+            lnr_dims:
+              - 512
+            lnr_dropout:
+              - 0.2
+            pre_dropout: 0.2
+
+
+        encoder:
+          type: transformer.encoder.TransformerEncoder
+          conf:
+            posenc_type: sep
+            posenc_maxlen: 2000
+            posenc_dropout: 0.15
+            d_model: 512
+            num_heads: 8
+            num_layers: 6
+            att_dropout: 0.15
+            fdfwd_dim: 2048
+            fdfwd_dropout: 0.15
+            res_dropout: 0.15
+            layernorm_first: true
+
+    decoder:
+      type: decoder.tts.TTSDecoderSingleSpeaker
+      conf:
+
+        prenet:
+          type: prenet.linear.LinearPrenet
+          conf:
+            feat_dim: 320
+            lnr_dims: 
+              - 256
+              - 512
+            lnr_activation: LeakyReLU
+            lnr_dropout:
+              - 0.2
+              - 0.2
+
+        decoder:
+          type: transformer.decoder.TransformerDecoder
+          conf:
+            posenc_type: sep
+            posenc_maxlen: 2000
+            posenc_dropout: 0.15
+            d_model: 512
+            num_heads: 8
+            num_layers: 6
+            att_dropout: 0.15
+            fdfwd_dim: 2048
+            fdfwd_dropout: 0.15
+            res_dropout: 0.15
+            layernorm_first: true
+
+        postnet:
+          type: postnet.linearResidual.LinearResidualPostnet
+          conf:
+            lnr_dims: 
+              - 512
+              - 512
+              - 512
+              - 512
+              - 512
+            lnr_activation: LeakyReLU
+            lnr_dropout:
+              - 0.2
+              - 0.2
+              - 0.2
+              - 0.2
+              - 0.2
+            residual: True
+        
+        featnet:
+          type: postnet.linearResidual.LinearResidualPostnet
+          conf:
+            lnr_dims:
+              - 320
+            lnr_dropout:
+              - 0
+            is_output_lyr: True
+            
+        bernnet:
+          type: postnet.linearResidual.LinearResidualPostnet
+          conf:
+            lnr_dims:
+              - 256
+              - 1
+            lnr_activation: LeakyReLU
+            lnr_dropout:
+              - 0.05
+              - 0
+            is_output_lyr: True
+      
+          
+  criterion_conf:
+    feat_loss:
+      type: least_error.LeastError
+      conf:
+        loss_type: L2
+        coeff: 1.0
+
+    bern_loss:
+      type: bce_logits.BCELogits
+      conf:
+        coeff: 1.0
+        coeff_bern_positive: 6.0
+
+    bern_accuracy:
+      type: accuracy.Accuracy
+
+    
+
+optim_sches:
+  noam_adam:
+    type: noam.Noamlr
+    conf:
+      optim_type: Adam
+      optim_conf:
+        betas:
+          - 0.9
+          - 0.98
+        eps: 1.0e-9
+      d_model: 512
+      warmup_steps: 25000

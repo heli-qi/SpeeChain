@@ -81,7 +81,7 @@ class Runner(object):
         parser.add_argument(
             "--config",
             type=str,
-            default='/ahc/work4/heli-qi/euterpe-heli-qi/recipes/asr/librispeech/train_960/transformer/exp_cfg/bpe10k_nomiddlespace_smooth0.2.yaml',
+            default=None,#'/ahc/work4/heli-qi/euterpe-heli-qi/recipes/asr/librispeech/train_960/transformer/exp_cfg/bpe10k_nomiddlespace_smooth0.2.yaml',
             help="All-in-one argument setting file. "
                  "You can write all the arguments in this file instead of giving them by command lines."
         )

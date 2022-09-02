@@ -10,9 +10,18 @@ In the sub-folder of each task, each dataset has a second-level sub-folder.
 1. [LibriSpeech](https://github.com/ahclab/SpeeChain/tree/main/recipes/asr/librispeech)
 2. [LJSpeech](https://github.com/ahclab/SpeeChain/tree/main/recipes/asr/ljspeech)
 
-### [Speech Synthesis]()
+### [Speech Synthesis](https://github.com/ahclab/SpeeChain/tree/main/recipes/tts)
+1. [LJSpeech]
+1.1. [Core(txt2feat)](https://github.com/ahclab/SpeeChain/tree/main/recipes/tts/ljspeech/transformer)
+1.2. [Vocoder(feat2wav)](https://github.com/ahclab/SpeeChain/tree/main/recipes/tts/ljspeech/vocoder)
 
-### [Speaker Recognition]()
+2. [WSJ]
+(pre-requisite: speaker recognition)
+1.1. [Core(txt2feat)](https://github.com/ahclab/SpeeChain/tree/main/recipes/tts/wsj/transformer)
+1.2. [Vocoder(feat2wav)](https://github.com/ahclab/SpeeChain/tree/main/recipes/tts/wsj/vocoder)
+
+### [Speaker Recognition](https://github.com/ahclab/SpeeChain/tree/main/recipes/spkrec)
+1. [WSJ](https://github.com/ahclab/SpeeChain/tree/main/recipes/spkrec/wsj)
 
 ## Experiment Results Structure
 The structure of the result files in an experiment folder is shown as below:

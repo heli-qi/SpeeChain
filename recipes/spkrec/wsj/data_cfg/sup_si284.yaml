@@ -1,0 +1,48 @@
+train:
+    sup:
+        type: block.BlockIterator
+        conf:
+            dataset_type: speech.speech_text.SpeechTextDataset
+            dataset_conf:
+                feat_type: feat
+                src_data: /project/nakamura-lab05/Work/novitasari-s/tools/SpeeChain/datasets/speech_spk/wsj/si284/train/taco_mel_f80_feat.scp
+                tgt_label: /project/nakamura-lab05/Work/novitasari-s/tools/SpeeChain/datasets/speech_spk/wsj/si284/train/text_word
+                meta_info:
+                    speaker: /project/nakamura-lab05/Work/novitasari-s/tools/SpeeChain/datasets/speech_spk/wsj/si284/train/spkid
+            shuffle: True
+            is_descending: True
+            batches_per_epoch: 200
+            batch_frames: 30000 #1000000 # 4000000 = 20000 * 200 (16000 * 0.0125)
+            data_len: /project/nakamura-lab05/Work/novitasari-s/tools/SpeeChain/datasets/speech_spk/wsj/si284/train/taco_mel_f80_feat_len.scp
+
+valid:
+    dev:
+        type: block.BlockIterator
+        conf:
+            dataset_type: speech.speech_text.SpeechTextDataset
+            dataset_conf:
+                feat_type: feat
+                src_data: /project/nakamura-lab05/Work/novitasari-s/tools/SpeeChain/datasets/speech_spk/wsj/si284/dev/taco_mel_f80_feat.scp
+                tgt_label: /project/nakamura-lab05/Work/novitasari-s/tools/SpeeChain/datasets/speech_spk/wsj/si284/dev/text_word
+                meta_info:
+                    speaker: /project/nakamura-lab05/Work/novitasari-s/tools/SpeeChain/datasets/speech_spk/wsj/si284/dev/spkid
+            shuffle: False
+            is_descending: True
+            batch_frames: 30000 # 4000000 = 20000 * 200 (16000 * 0.0125)
+            data_len: /project/nakamura-lab05/Work/novitasari-s/tools/SpeeChain/datasets/speech_spk/wsj/si284/dev/taco_mel_f80_feat_len.scp
+
+test:
+    clean:
+        type: piece.PieceIterator
+        conf:
+            dataset_type: speech.speech_text.SpeechTextDataset
+            dataset_conf:
+                feat_type: feat
+                src_data: /project/nakamura-lab05/Work/novitasari-s/tools/SpeeChain/datasets/speech_spk/wsj/si284/test/taco_mel_f80_feat.scp
+                tgt_label: /project/nakamura-lab05/Work/novitasari-s/tools/SpeeChain/datasets/speech_spk/wsj/si284/test/text_word
+                meta_info:
+                    speaker: /project/nakamura-lab05/Work/novitasari-s/tools/SpeeChain/datasets/speech_spk/wsj/si284/test/spkid
+            shuffle: False
+            batch_size: 1
+            data_len: /project/nakamura-lab05/Work/novitasari-s/tools/SpeeChain/datasets/speech_spk/wsj/si284/test/taco_mel_f80_feat_len.scp
+   

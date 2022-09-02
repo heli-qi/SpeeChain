@@ -1,0 +1,43 @@
+train:
+    sup:
+        type: block.BlockIterator
+        conf:
+            dataset_type: speech.speech_speech.SpeechSpeechDataset
+            dataset_conf:
+                feat_type: feat
+                src_data: /project/nakamura-lab05/Work/novitasari-s/tools/SpeeChain/datasets/speech_text/wsj/wsj1_all/train/taco_mel_f80_feat.scp
+                tgt_label: /project/nakamura-lab05/Work/novitasari-s/tools/SpeeChain/datasets/speech_text/wsj/wsj1_all/train/taco_raw_fft2048_feat.scp
+            shuffle: True
+            is_descending: True
+            batches_per_epoch: 200
+            batch_frames: 20000 #1000000 # 4000000 = 20000 * 200 (16000 * 0.0125)
+            data_len: /project/nakamura-lab05/Work/novitasari-s/tools/SpeeChain/datasets/speech_text/wsj/wsj1_all/train/taco_mel_f80_feat_len.scp
+
+
+valid:
+    dev:
+        type: block.BlockIterator
+        conf:
+            dataset_type: speech.speech_speech.SpeechSpeechDataset
+            dataset_conf:
+                feat_type: feat
+                src_data: /project/nakamura-lab05/Work/novitasari-s/tools/SpeeChain/datasets/speech_text/wsj/wsj1_all/dev/taco_mel_f80_feat.scp
+                tgt_label: /project/nakamura-lab05/Work/novitasari-s/tools/SpeeChain/datasets/speech_text/wsj/wsj1_all/dev/taco_raw_fft2048_feat.scp
+            shuffle: False
+            is_descending: True
+            batch_frames: 20000 # 4000000 = 20000 * 200 (16000 * 0.0125)
+            data_len: /project/nakamura-lab05/Work/novitasari-s/tools/SpeeChain/datasets/speech_text/wsj/wsj1_all/dev/taco_mel_f80_feat_len.scp
+
+test:
+    clean:
+        type: piece.PieceIterator
+        conf:
+            dataset_type: speech.speech_speech.SpeechSpeechDataset
+            dataset_conf:
+                feat_type: feat
+                src_data: /project/nakamura-lab05/Work/novitasari-s/tools/SpeeChain/datasets/speech_text/wsj/wsj1_all/test/taco_mel_f80_feat.scp
+                tgt_label: /project/nakamura-lab05/Work/novitasari-s/tools/SpeeChain/datasets/speech_text/wsj/wsj1_all/test/taco_raw_fft2048_feat.scp
+            shuffle: False
+            batch_size: 1
+            data_len: /project/nakamura-lab05/Work/novitasari-s/tools/SpeeChain/datasets/speech_text/wsj/wsj1_all/test/taco_mel_f80_feat_len.scp
+   
