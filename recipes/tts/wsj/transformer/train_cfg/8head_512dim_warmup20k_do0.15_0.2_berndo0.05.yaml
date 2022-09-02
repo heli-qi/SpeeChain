@@ -91,7 +91,7 @@ model:
               - 512
             lnr_activation: none
             lnr_dropout:
-              - 0.0
+              - 0.05
         spkproj_dec:
           type: prenet.linear.LinearPrenet
           conf:
@@ -100,7 +100,7 @@ model:
               - 512
             lnr_activation: none
             lnr_dropout:
-              - 0.0
+              - 0.05
         decoder:
           type: transformer.decoder.TransformerDecoder
           conf:
@@ -151,7 +151,7 @@ model:
               - 1
             lnr_activation: LeakyReLU
             lnr_dropout:
-              - 0.0
+              - 0.05
               - 0
             is_output_lyr: True
       
@@ -167,7 +167,7 @@ model:
       type: bce_logits.BCELogits
       conf:
         coeff: 1.0
-        coeff_bern_positive: 6.0
+        coeff_bern_positive: 7.0
 
     bern_accuracy:
       type: accuracy.Accuracy

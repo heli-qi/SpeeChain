@@ -103,8 +103,8 @@ python runner.py --config recipes/tts/ljspeech/transformer/exp_cfg/INFERENCE_sup
 ## Multi-speaker TTS
 Example: [WSJ](https://github.com/ahclab/SpeeChain/tree/tts/recipes/tts/wsj)
 ### Training
-1. Train speaker recognition model and generate all data's speaker embedding beforehand (see: [speaker recognition](https://github.com/ahclab/SpeeChain/tree/tts/recipes/spkrec)) 
-1.1. After generating the embedding, get the speaker embedding list `idx2pred_embedding`.
+1. Train speaker recognition model and generate all data's speaker embedding beforehand (see: [speaker recognition](https://github.com/ahclab/SpeeChain/tree/tts/recipes/spkrec)) <br>
+1.1. After generating the embedding, get the speaker embedding list `idx2pred_embedding`. <br>
 1.2. In TTS data_cfg, put the following for each train, valid, and test sections:
 ```
 dataset_conf:
@@ -114,14 +114,14 @@ dataset_conf:
     meta_info:
         speaker_feat: <path to idx2pred_spkembedding>
 ```
-2. Train core module. Same as the single-speaker version, with exceptions:
+2. Train core module. Same as the single-speaker version with exceptions:
 - data_cfg: add meta_info.speaker_feat (filepath to list of speaker embedding filepath)
 - train_cfg: set module_conf.decoder.type into `decoder.tts.TTSDecoderMultiSpeaker` <br>
 Script
 ```
 python runner.py --config recipes/tts/wsj/transformer/exp_cfg/sup_8head_512dim_warmup20k_do0.15_0.2_berndo0.05.yaml
 ```
-3. Train vocoder modele (same as the single speaker version but use a multispeaker data)
+3. Train vocoder model (same as the single speaker version but use a multispeaker data)
 ```
 python runner.py --config recipes/tts/wsj/vocoder/exp_cfg/sup_TacotronV1Inverter_lrelu_group4.yaml
 ```

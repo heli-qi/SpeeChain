@@ -231,30 +231,30 @@ class TTSDecoderMultiSpeaker(Module):
         # Text Embedding
         feat,feat_len = self.prenet(feat,feat_len)
 
-        # mask generation for the input text
+        # mask generation for the output feat
         feat_mask = make_mask_from_len(feat_len)
         if feat.is_cuda:
             feat_mask = feat_mask.cuda(feat.device)
-        speaker_feat_len=torch.ones(speaker_feat.size(0))
 
         # Speaker embedding
-        speaker_feat = self.spkproj_prenet(speaker_feat,speaker_feat_len)[0]   
+        speaker_feat_len    = torch.ones(speaker_feat.size(0))
+        speaker_feat        = self.spkproj_prenet(speaker_feat,speaker_feat_len)[0]   
         # speaker embedding for encoder output
-        speaker_feat_enc = self.spkproj_act(self.spkproj_enc(speaker_feat,speaker_feat_len)[0])
-        speaker_feat_enc = speaker_feat_enc.expand((-1,enc_text.size(1),-1))
+        speaker_feat_enc    = self.spkproj_act(self.spkproj_enc(speaker_feat,speaker_feat_len)[0])
+        speaker_feat_enc    = speaker_feat_enc.expand((-1,enc_text.size(1),-1))
 
         # speaker embedding for decoder input
         speaker_feat_dec = self.spkproj_act(self.spkproj_dec(speaker_feat,speaker_feat_len)[0])
         speaker_feat_dec = speaker_feat_dec.expand((-1,feat.size(1),-1))
 
         #merge features with projected spk embedding
-        enc_text += speaker_feat_enc
-        feat += speaker_feat_dec
+        enc_text_embedded   = enc_text + speaker_feat_enc
+        feat_embedded       = feat + speaker_feat_dec
         
         
         # Decoding
-        dec_results = self.decoder(src=enc_text, src_mask=enc_text_mask,
-                                   tgt=feat, tgt_mask=feat_mask)
+        dec_results = self.decoder(src=enc_text_embedded, src_mask=enc_text_mask,
+                                   tgt=feat_embedded, tgt_mask=feat_mask)
 
         # integrate trf output with spk embedding then pass to postnet
         dec_post_preout = self.postnet(dec_results['output'],feat_len)
