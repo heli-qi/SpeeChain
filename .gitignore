@@ -21,3 +21,5 @@ speechain/utilbox/__pycache__/thread_util.cpython-38.pyc
 speechain/utilbox/__pycache__/train_util.cpython-38.pyc
 speechain/utilbox/__pycache__/train_util.cpython-39.pyc
 datasets/speech_text/ljspeech/data
+TTS_CHANGE%20LOG
+speechain.egg-info
