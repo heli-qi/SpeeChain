@@ -1,9 +1,0 @@
-LICENSE
-README.md
-setup.py
-config/__init__.py
-speechain.egg-info/PKG-INFO
-speechain.egg-info/SOURCES.txt
-speechain.egg-info/dependency_links.txt
-speechain.egg-info/requires.txt
-speechain.egg-info/top_level.txt
