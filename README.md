@@ -18,10 +18,11 @@ Anytime you encounter problems when using our toolkit, please don't hesitate to 
     5. [User-friendly interfaces and configuration files](https://github.com/ahclab/SpeeChain#user-friendly-interfaces-and-configuration-files)
 2. [**File System**](https://github.com/ahclab/SpeeChain#file-system)
 3. [**Toolkit Architecture**](https://github.com/ahclab/SpeeChain#toolkit-architecture)
-    1. [User Interaction Part](https://github.com/ahclab/SpeeChain#user-interaction-part)
-    2. [Data Loading Part](https://github.com/ahclab/SpeeChain#data-loading-part)
-    3. [Model Calculation Part](https://github.com/ahclab/SpeeChain#model-calculation-part)
-    4. [Parameter Optimization Part](https://github.com/ahclab/SpeeChain#parameter-optimization-part)
+    1. [Data Preparation Part](https://github.com/ahclab/SpeeChain#data-preparation-part)
+    2. [User Interaction Part](https://github.com/ahclab/SpeeChain#user-interaction-part)
+    3. [Data Loading Part](https://github.com/ahclab/SpeeChain#data-loading-part)
+    4. [Model Calculation Part](https://github.com/ahclab/SpeeChain#model-calculation-part)
+    5. [Parameter Optimization Part](https://github.com/ahclab/SpeeChain#parameter-optimization-part)
 4. [**Support Models**](https://github.com/ahclab/SpeeChain#support-models)
     1. [Speech Recognition](https://github.com/ahclab/SpeeChain#speech-recognition)
     2. [Speech Synthesis](https://github.com/ahclab/SpeeChain#speech-synthesis)
@@ -222,7 +223,7 @@ Our toolkit is consisted of the following 5 parts:
 4. Model calculation part (red)
 5. Parameter optimization part (brown).
 
-### Data Preparation Part ([reference]())
+### [Data Preparation Part](https://github.com/ahclab/SpeeChain/tree/main/datasets)
 We follow the ESPNET-style data preparation pipeline and provide all-in-one _.sh_ script. 
 This script separates the entire data preparation pipeline into several individual steps, each of which is done by a specific .sh or .py file. 
 The all-in-one _.sh_ script acts as intermediary that glues those processing scripts together. 
