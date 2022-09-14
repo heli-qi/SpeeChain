@@ -6,7 +6,6 @@
 """
 import math
 import torch
-import torch.nn as nn
 
 from speechain.module.abs import Module
 
@@ -20,16 +19,17 @@ class PositionalEncoding(Module):
     """
 
     def module_init(self,
-                    type: str = 'mix',
+                    posenc_type: str = 'mix',
                     d_model: int = 512,
+                    emb_scale: bool = True,
                     max_len: int = 5000,
                     dropout: float = 0.0):
         """
         Positional Encoding with maximum length max_len.
 
         Args:
-            type: str
-                The type of positional encoding (must be either 'cross' or 'order').
+            posenc_type: str
+                The type of positional encoding (must be either 'mix' or 'sep').
                 For the 'mix' type, sin is applied to the odd dimensions and cos is applied to the even dimensions.
                 The equations are as below:
                     PE(pos, 2i) = sin(pos / 10000^{2i / d_model}), i ∈ {0, ..., d_model / 2 - 1}
@@ -50,27 +50,53 @@ class PositionalEncoding(Module):
                 The dropout rate for the Dropout layer after adding the positional encoding to the input
         """
 
-        assert type in ['mix', 'sep'], \
-            f"The type of PositionalEncoding layer must be either 'cross' or 'order', but got type={type}!"
+        assert posenc_type in ['mix', 'sep'], \
+            f"The type of PositionalEncoding layer must be either 'mix' or 'sep', but got type={posenc_type}!"
         assert d_model % 2 == 0, \
             f"Cannot apply sin/cos positional encoding to the vectors with odd dimensions (got d_model={d_model:d})."
 
+        self.posenc_type = posenc_type
+        self.d_model = d_model
+        self.emb_scale = emb_scale
+
+        # positional encoding matrix
+        self.update_posenc(max_len, d_model)
+
+        # positional encoding Dropout layer
+        self.dropout = torch.nn.Dropout(p=dropout)
+
+
+    def update_posenc(self, max_len: int, d_model: int):
+        """
+
+        Args:
+            max_len:
+            d_model:
+
+        """
         # positional encoding calculation
         position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
-        div_term = torch.exp((torch.arange(0, d_model, 2, dtype=torch.float) * -(math.log(10000.0) / d_model)))
+        div_term = torch.exp(
+            torch.arange(0, d_model, 2, dtype=torch.float) * (math.log(10000.0) / d_model)
+        )
         posenc = torch.zeros(max_len, d_model)
 
-        if type == 'mix':
-            posenc[:, 0::2] = torch.sin(position * div_term)
-            posenc[:, 1::2] = torch.cos(position * div_term)
+        # 'mix' positional encoding: sine functions and cosine functions mix up with each other
+        if self.posenc_type == 'mix':
+            posenc[:, 0::2] = torch.sin(position / div_term)
+            posenc[:, 1::2] = torch.cos(position / div_term)
+        # 'sep' positional encoding: sine functions and cosine functions occupy the positional encoding separately
+        elif self.posenc_type == 'sep':
+            div_term_ext = torch.exp(
+                torch.arange(d_model, d_model * 2, 2, dtype=torch.float) * (math.log(10000.0) / d_model)
+            )
+            posenc[:, :int(d_model / 2)] = torch.sin(position / div_term)
+            posenc[:, int(d_model / 2):] = torch.cos(position / div_term_ext)
 
-        elif type == 'sep':
-            div_term_ext = torch.exp((torch.arange(d_model, d_model * 2, 2, dtype=torch.float) * -(math.log(10000.0) / d_model)))
-            posenc[:, : int(d_model / 2)] = torch.sin(position * div_term)
-            posenc[:, int(d_model / 2):] = torch.cos(position * div_term_ext)
-
+        # posenc = posenc.unsqueeze(0) does not put posenc into the buffer
+        # here register_buffer() allows posenc to be automatically put onto GPUs as a buffer member
         self.register_buffer('posenc', posenc.unsqueeze(0))
-        self.dropout = torch.nn.Dropout(p=dropout)
+
 
     def forward(self, emb_feat):
         """
@@ -84,9 +110,13 @@ class PositionalEncoding(Module):
             Embedded input feature sequences with positional encoding
 
         """
+        # in case that the input sequence is longer than the preset max_len
+        if emb_feat.size(1) > self.posenc.size(1):
+            self.update_posenc(emb_feat.size(1), self.d_model)
 
-        assert emb_feat.size(1) <= self.posenc.size(1), \
-            f"The length of the input features is longer than max_len!" \
-            f"max_len={self.posenc.size(1):d}, but got {emb_feat.size(1):d}"
+        # 1. (optional) scale the embedded feature up by d_model
+        if self.emb_scale:
+            emb_feat *= math.sqrt(self.d_model)
 
+        # 2. add the positional encoding; 3. apply the dropout
         return self.dropout(emb_feat + self.posenc[:, :emb_feat.size(1)])

@@ -28,17 +28,20 @@ class Module(torch.nn.Module, ABC):
 
     """
 
-    def __init__(self, input_size: int = None, **module_conf):
+    def __init__(self, input_size: int = None, distributed: bool = False, **module_conf):
         """
 
         Args:
             input_size: int
+            distributed: bool
             **module_conf:
         """
         super(Module, self).__init__()
 
         self.input_size = input_size
         self.output_size = None
+
+        self.distributed = distributed
 
         self.module_init(**module_conf)
 

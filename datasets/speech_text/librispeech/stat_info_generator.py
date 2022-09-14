@@ -11,7 +11,7 @@ import pandas as pd
 
 def parse():
     parser = argparse.ArgumentParser(description='params')
-    parser.add_argument('--src_path', type=str, default="/ahc/work4/heli-qi/euterpe-heli-qi/datasets/speech_text/librispeech/data/raw")
+    parser.add_argument('--src_path', type=str, required=True)
     return parser.parse_args()
 
 
@@ -130,17 +130,15 @@ def main(src_path: str):
         print(f"Saving statistic information of subset {dset} to {src_path}/{dset}/")
 
         # idx2wav
-        np.savetxt(f"{src_path}/{dset}/idx2wav", sorted(idx2wav[dset], key=lambda x:x[0]), fmt='%s')
-
-        # idx2spk
-        np.savetxt(f"{src_path}/{dset}/idx2spk", sorted(idx2spk[dset], key=lambda x:x[0]), fmt='%s')
-
+        np.savetxt(f"{src_path}/{dset}/idx2wav", sorted(idx2wav[dset], key=lambda x: x[0]), fmt='%s')
+        # idx2spk & spk_list
+        np.savetxt(f"{src_path}/{dset}/idx2spk", sorted(idx2spk[dset], key=lambda x: x[0]), fmt='%s')
+        np.savetxt(f"{src_path}/{dset}/spk_list", sorted(set([i[1] for i in idx2spk[dset]])), fmt='%s')
         # idx2gen
         idx = list(map(lambda x: x[0], idx2spk[dset]))
         gen = np.array(spk2gen[list(map(lambda x: x[1], idx2spk[dset]))]).tolist()
         idx2gen[dset] = list(zip(idx, gen))
-        np.savetxt(f"{src_path}/{dset}/idx2gen", sorted(idx2gen[dset], key=lambda x:x[0]), fmt='%s')
-
+        np.savetxt(f"{src_path}/{dset}/idx2gen", sorted(idx2gen[dset], key=lambda x: x[0]), fmt='%s')
         # idx2sent
         idx2sent[dset] = np.concatenate(idx2sent[dset], axis=0).tolist()
         _tmp = sorted(idx2sent[dset], key=lambda x: x[0])
@@ -148,30 +146,30 @@ def main(src_path: str):
         np.savetxt(f"{src_path}/{dset}/text", [item[1] for item in _tmp], fmt='%s')
 
 
-    # --- train_clean_460 and train_960 data files production --- #
-    os.makedirs(f"{src_path}/train_clean_460", exist_ok=True)
-    os.makedirs(f"{src_path}/train_960", exist_ok=True)
+    # --- train_clean_460, train_960, and dev data files generation --- #
     for file in [idx2wav, idx2spk, idx2gen, idx2sent]:
+        # train_clean_460 = train_clean_100 + train_clean_360
         file['train_clean_460'] = file['train_clean_100'] + file['train_clean_360']
+        # train_960 = train_clean_460 + train_other_500
         file['train_960'] = file['train_clean_460'] + file['train_other_500']
+        # dev = dev_clean + dev_other
+        file['dev'] = file['dev_clean'] + file['dev_other']
 
-    # train_clean_460
-    print(f"Saving statistic information of subset train_clean_460 to {src_path}/train_clean_460/")
-    np.savetxt(f"{src_path}/train_clean_460/idx2wav", sorted(idx2wav['train_clean_460'], key=lambda x: x[0]), fmt='%s')
-    np.savetxt(f"{src_path}/train_clean_460/idx2spk", sorted(idx2spk['train_clean_460'], key=lambda x: x[0]), fmt='%s')
-    np.savetxt(f"{src_path}/train_clean_460/idx2gen", sorted(idx2gen['train_clean_460'], key=lambda x: x[0]), fmt='%s')
-    _tmp = sorted(idx2sent['train_clean_460'], key=lambda x: x[0])
-    np.savetxt(f"{src_path}/train_clean_460/idx2sent", _tmp, fmt='%s')
-    np.savetxt(f"{src_path}/train_clean_460/text", [item[1] for item in _tmp], fmt='%s')
+    for dset in ['train_clean_460', 'train_960', 'dev']:
+        print(f"Saving statistic information of subset {dset} to {src_path}/{dset}/")
+        os.makedirs(f"{src_path}/{dset}", exist_ok=True)
 
-    # train_960
-    print(f"Saving statistic information of subset train_960 to {src_path}/train_960/")
-    np.savetxt(f"{src_path}/train_960/idx2wav", sorted(idx2wav['train_960'], key=lambda x: x[0]), fmt='%s')
-    np.savetxt(f"{src_path}/train_960/idx2spk", sorted(idx2spk['train_960'], key=lambda x: x[0]), fmt='%s')
-    np.savetxt(f"{src_path}/train_960/idx2gen", sorted(idx2gen['train_960'], key=lambda x: x[0]), fmt='%s')
-    _tmp = sorted(idx2sent['train_960'], key=lambda x: x[0])
-    np.savetxt(f"{src_path}/train_960/idx2sent", _tmp, fmt='%s')
-    np.savetxt(f"{src_path}/train_960/text", [item[1] for item in _tmp], fmt='%s')
+        # waveform
+        np.savetxt(f"{src_path}/{dset}/idx2wav", sorted(idx2wav[dset], key=lambda x: x[0]), fmt='%s')
+        # speaker
+        np.savetxt(f"{src_path}/{dset}/idx2spk", sorted(idx2spk[dset], key=lambda x: x[0]), fmt='%s')
+        np.savetxt(f"{src_path}/{dset}/spk_list", sorted(set([i[1] for i in idx2spk[dset]])), fmt='%s')
+        # gender
+        np.savetxt(f"{src_path}/{dset}/idx2gen", sorted(idx2gen[dset], key=lambda x: x[0]), fmt='%s')
+        # text
+        _tmp = sorted(idx2sent[dset], key=lambda x: x[0])
+        np.savetxt(f"{src_path}/{dset}/idx2sent", _tmp, fmt='%s')
+        np.savetxt(f"{src_path}/{dset}/text", [item[1] for item in _tmp], fmt='%s')
 
 
 if __name__ == '__main__':

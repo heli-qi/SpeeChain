@@ -143,11 +143,11 @@ class SpeechTextDataset(Dataset):
         """
         # extract audio waveform from the disk
         if self.feat_type == 'wav':
-            feat = torchaudio.load(self.src_data[index], channels_first=False, normalize=False)[0]
+            feat = torchaudio.load(self.src_data[index], channels_first=False)[0]
         # extract acoustic features from the disk
         elif self.feat_type == 'feat':
             feat = np.load(self.src_data[index])['feat']
-        # currently only support 'raw' and 'feat' types
+        # currently only support 'wav' and 'feat' types
         else:
             raise ValueError
 

@@ -35,22 +35,27 @@ class Accuracy(Criterion):
             The accuracy of the token predictions.
 
         """
-        if text_len.max() == text.size(1):
-            text_len -= 1
-        elif text_len.max() != text.size(1) - 1:
-            raise ValueError(f"There is a mismatch of the sentence length between text and text_len. "
-                             f"Expect text_len.max() is either equal to or 1 smaller than text.size(1), "
-                             f"but got text_len.max()={text_len.max()} and text.size(1)={text.size(1)}.")
+        # For the text attached by a <sos/eos> at the beginning
+        if logits.size(1) == text.size(1) - 1:
+            # text_len must match the sequence dimension of text
+            assert text_len.max() == text.size(1), \
+                f"There is a mismatch of the sentence length between text and text_len. " \
+                f"Expect text_len.max() is either equal to or 1 smaller than text.size(1), " \
+                f"but got text_len.max()={text_len.max()} and text.size(1)={text.size(1)}."
+            # remove the <sos/eos> at the beginning
+            text = text[:, 1:].squeeze()
+            # don't use text_len -= 1 here because it will also change the text_len outside this function
+            text_len = text_len - 1
+        # Otherwise, text must not have a <sos/eos> at the beginning (equal in length with logits)
+        elif logits.size(1) != text.size(1):
+            raise RuntimeError
 
         # mask generation for the input text length
         text_mask = make_mask_from_len(text_len).squeeze()
         if text.is_cuda:
             text_mask = text_mask.cuda(text.device)
 
-        # remove the <sos/eos> at the beginning of each sentence if necessary
-        text = text[:, 1:].squeeze()
-
         # calculate the accuracy by the correct prediction
         correct_num = logits.argmax(dim=-1).eq(text).masked_select(text_mask).sum()
-        total_num = text_mask.sum()
+        total_num = text_len.sum()
         return correct_num / total_num

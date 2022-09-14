@@ -16,9 +16,10 @@ class TransformerEncoderLayer(Module):
     """
     A single Transformer encoder layer has:
     · a Multi-head attention sublayer
+    · a LayerNorm layer exclusively for the attention sublayer
     · a position-wise feed-forward sublayer
+    · a LayerNorm layer exclusively for the feed-forward sublayer
     · a residual dropout layer
-    · a layernorm layer
 
     """
 
@@ -26,7 +27,7 @@ class TransformerEncoderLayer(Module):
                     d_model: int = 512,
                     num_heads: int = 8,
                     att_dropout: float = 0.1,
-                    fdfwd_dim: int = 0,
+                    fdfwd_dim: int = 2048,
                     fdfwd_dropout: float = 0.1,
                     res_dropout: float = 0.1,
                     layernorm_first: bool = True):
@@ -55,19 +56,15 @@ class TransformerEncoderLayer(Module):
 
         """
         # initialize multi-head attention layer
-        self.multihead_att = MultiHeadedAttention(d_model=d_model,
-                                                  num_heads=num_heads,
-                                                  dropout=att_dropout)
+        self.multihead_att = MultiHeadedAttention(d_model=d_model, num_heads=num_heads, dropout=att_dropout)
 
         # initialize feedforward layer
-        self.feed_forward = PositionwiseFeedForward(d_model=d_model,
-                                                    fdfwd_dim=fdfwd_dim,
-                                                    dropout=fdfwd_dropout)
+        self.feed_forward = PositionwiseFeedForward(d_model=d_model, fdfwd_dim=fdfwd_dim, dropout=fdfwd_dropout)
 
         # initialize residual dropout layer
         self.dropout = nn.Dropout(res_dropout)
 
-        # initialize layernorm layers
+        # initialize layernorm layers, each sublayer has an exclusive LayerNorm layer
         self.layernorm_first = layernorm_first
         self.att_layernorm = nn.LayerNorm(d_model, eps=1e-6)
         self.fdfwd_layernorm = nn.LayerNorm(d_model, eps=1e-6)
@@ -123,15 +120,15 @@ class TransformerEncoder(Module):
 
         Our Transformer encoder implements the following properties:
             1. Different positional encoding. (Mix or Sep)
-            2. Different positions of the LayerNorm layer (beginning or end)
-            3. Time Step Downsampling (drop or concat)
+            2. Different positions of the LayerNorm layer (first or last)
+            3. Time Frame Downsampling (pool or concat)
         For the details, please refer to the docstrings of PositionalEncoding and TransformerEncoderLayer.
 
         In our Transformer implementation, there are 4 places to place the Dropout layers:
             1. After adding the positional encoding into the embedded features.
             2. After the softmax operation and before reweighting all the values by these weights in the
-            multi-head attention layer.
-            3. Between two feedforward linear layers there will be a Dropout.
+                multi-head attention layer.
+            3. Between two feedforward linear layers there will be a Dropout layer.
             4. Before performing residual connect in a Transformer layer.
 
     """
@@ -148,7 +145,7 @@ class TransformerEncoder(Module):
                     res_dropout: float = 0.1,
                     layernorm_first: bool = True,
                     dwsmpl_factors: int or List[int] = None,
-                    dwsmpl_type: str = 'pool'):
+                    dwsmpl_type: str = 'drop'):
         """
 
         Args:
@@ -184,10 +181,13 @@ class TransformerEncoder(Module):
                 The downsampling type of each Transformer layer. It can be either 'drop' or 'concat'.
                 'drop' downsampling means one of two neighbouring time steps will be dropped.
                 'concat' downsampling means the features of two neighbouring time steps will be concatenated to become
-                a new time step.
+                    a new time step.
             layernorm_first: bool
                 controls whether the LayerNorm layer appears at the beginning or at the end of each Transformer layer.
-                True means the LayerNorm layer appears at the beginning; False means the LayerNorm layer appears at the end.
+                    True means the LayerNorm layer appears at the beginning
+                    False means the LayerNorm layer appears at the end.
+                For LayerNorm first, there will be an additional LayerNorm at the end of the Transformer Encoder to
+                perform the final normalization.
 
         """
         # input_size and output_size initialization
@@ -220,7 +220,7 @@ class TransformerEncoder(Module):
                 self.dwsmpl_factors = [1 for _ in range(_diff)] + self.dwsmpl_factors
 
         # initialize positional encoding layer
-        self.posenc = PositionalEncoding(type=posenc_type,
+        self.posenc = PositionalEncoding(posenc_type=posenc_type,
                                          d_model=d_model,
                                          max_len=posenc_maxlen,
                                          dropout=posenc_dropout)
@@ -282,7 +282,7 @@ class TransformerEncoder(Module):
                     src = src[:, : src.size(1) // dwsmpl_factor * dwsmpl_factor].contiguous()
                     src = src.view(src.size(0), src.size(1) // dwsmpl_factor, src.size(2) * dwsmpl_factor)
                 else:
-                    raise ValueError(f"dwsmpl_type should be one of {['pool', 'concat']}), but got {self.dwsmpl_type}!")
+                    raise ValueError(f"dwsmpl_type should be one of {['drop', 'concat']}), but got {self.dwsmpl_type}!")
 
         # go through the final layernorm layer if necessary
         if self.layernorm_first:

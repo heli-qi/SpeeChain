@@ -16,10 +16,12 @@ class TransformerDecoderLayer(Module):
     """
     A single Transformer decoder layer has:
     · a self multi-head attention sublayer
+    · a LayerNorm layer exclusively for the self-attention sublayer
     · a encoder-decoder multi-head attention sublayer
+    · a LayerNorm layer exclusively for the encoder-decoder attention sublayer
     · a position-wise feed-forward sublayer
+    · a LayerNorm layer exclusively for the feed-forward sublayer
     · a residual dropout layer
-    · a layernorm layer
 
     """
 
@@ -57,19 +59,13 @@ class TransformerDecoderLayer(Module):
                     output = LayerNorm(input + Sublayer(input))
         """
         # initialize the self attention layer
-        self.self_att = MultiHeadedAttention(num_heads=num_heads,
-                                             d_model=d_model,
-                                             dropout=att_dropout)
+        self.self_att = MultiHeadedAttention(num_heads=num_heads, d_model=d_model, dropout=att_dropout)
 
         # initialize the encoder-decoder attention layer
-        self.encdec_att = MultiHeadedAttention(num_heads=num_heads,
-                                                d_model=d_model,
-                                                dropout=att_dropout)
+        self.encdec_att = MultiHeadedAttention(num_heads=num_heads, d_model=d_model, dropout=att_dropout)
 
         # initialize feedforward layer
-        self.feed_forward = PositionwiseFeedForward(d_model=d_model,
-                                                    fdfwd_dim=fdfwd_dim,
-                                                    dropout=fdfwd_dropout)
+        self.feed_forward = PositionwiseFeedForward(d_model=d_model, fdfwd_dim=fdfwd_dim, dropout=fdfwd_dropout)
 
         # initialize layernorm layers
         self.layernorm_first = layernorm_first
@@ -208,7 +204,7 @@ class TransformerDecoder(Module):
         self.layernorm_first = layernorm_first
 
         # initialize the positional encoding layer
-        self.posenc = PositionalEncoding(type=posenc_type,
+        self.posenc = PositionalEncoding(posenc_type=posenc_type,
                                          d_model=d_model,
                                          max_len=posenc_maxlen,
                                          dropout=posenc_dropout)

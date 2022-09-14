@@ -7,47 +7,58 @@ import torch
 
 from typing import Dict
 from speechain.module.abs import Module
-from speechain.utilbox.import_util import import_class
 from speechain.utilbox.train_util import make_mask_from_len
+
+from speechain.module.prenet.embed import EmbedPrenet
+from speechain.module.transformer.decoder import TransformerDecoder
+from speechain.module.postnet.token import TokenPostnet
+
 
 class ASRDecoder(Module):
     """
 
     """
-    def module_init(self, prenet: Dict, decoder: Dict, postnet: Dict, vocab_size: int = None):
+    prenet_class_dict = dict(
+        embed=EmbedPrenet
+    )
+
+    decoder_class_dict = dict(
+        transformer=TransformerDecoder
+    )
+
+    def module_init(self, prenet: Dict, decoder: Dict, vocab_size: int = None):
         """
 
         Args:
             prenet:
             decoder:
-            postnet:
             vocab_size:
 
-        Returns:
-
         """
+        # temporary register for connecting two sequential modules
         _prev_output_size = None
 
-        prenet_class = import_class('speechain.module.' + prenet['type'])
+        # embedding layer of the E2E ASR decoder
+        prenet_class = self.prenet_class_dict[prenet['type']]
         prenet['conf'] = dict() if 'conf' not in prenet.keys() else prenet['conf']
         self.prenet = prenet_class(vocab_size=vocab_size, **prenet['conf'])
         _prev_output_size = self.prenet.output_size
 
-        decoder_class = import_class('speechain.module.' + decoder['type'])
+        # main body of the E2E ASR decoder
+        decoder_class = self.decoder_class_dict[decoder['type']]
         decoder['conf'] = dict() if 'conf' not in decoder.keys() else decoder['conf']
         self.decoder = decoder_class(input_size=_prev_output_size, **decoder['conf'])
         _prev_output_size = self.decoder.output_size
 
-        postnet_class = import_class('speechain.module.' + postnet['type'])
-        postnet['conf'] = dict() if 'conf' not in postnet.keys() else postnet['conf']
-        self.postnet = postnet_class(input_size=_prev_output_size, vocab_size=vocab_size, **postnet['conf'])
+        # token prediction layer for the E2E ASR decoder
+        self.postnet = TokenPostnet(input_size=_prev_output_size, vocab_size=vocab_size)
 
 
     def forward(self,
-               enc_feat: torch.Tensor,
-               enc_feat_mask: torch.Tensor,
-               text: torch.Tensor,
-               text_len: torch.Tensor):
+                enc_feat: torch.Tensor,
+                enc_feat_mask: torch.Tensor,
+                text: torch.Tensor,
+                text_len: torch.Tensor):
         """
 
         Args:

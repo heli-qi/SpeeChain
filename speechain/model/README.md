@@ -1,11 +1,12 @@
 # Model Calculation Part
 Model calculation is done by three classes: *Model*, *Module*, and *Criterion*.
 
-[*Model*](https://github.com/ahclab/SpeeChain/blob/main/speechain/model/abs.py) is the framework of this part where different *Module* and *Criterion* can be freely assembled to create a new model.
+[*Model*](https://github.com/ahclab/SpeeChain/blob/main/speechain/model/abs.py) is the hub of this part where different *Module* and *Criterion* can be freely assembled to create a new model.
 This framework encapsulates the general model-related services and provides sufficient interfaces. 
 By overriding the interfaces, you can easily customize your own implementations to meet your specific research needs. 
 
-[*Module*](https://github.com/ahclab/SpeeChain/blob/main/speechain/module/abs.py) is the unit of the main body of your model. It only has the function of forwarding the input data. 
+[*Module*](https://github.com/ahclab/SpeeChain/blob/main/speechain/module/abs.py) is the unit of the main body of your model. 
+It only has the function of forwarding the input data. 
 The input batch is processed by all *Module* in a *Model* sequentially to become the model output.
 
 [*Criterion*](https://github.com/ahclab/SpeeChain/blob/main/speechain/criterion/abs.py) serves the role of evaluating the model predictions. Its output can be either a training loss or a validation metric.
@@ -18,10 +19,11 @@ The input batch is processed by all *Module* in a *Model* sequentially to become
     1. [Module](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#module)
     2. [Criterion](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#criterion)
     3. [Model](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#model)
-3. [**How to Construct a Model by Available Modules**](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#how-to-construct-a-model-by-available-modules)
+3. [**How to Construct a Model**](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#how-to-construct-a-model)
+    1. [ASR]()
+    2. [TTS]()
 4. [**How to Freeze a Specific Part of your Model**](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#how-to-freeze-a-specific-part-of-your-model)
 5. [**How to Initialize your Model by the Pretrained Model**](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#how-to-initialize-your-model-by-the-pretrained-model)
-6. [**How to Perform Multi-Task Training**](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#how-to-perform-multi-task-training)
 
 ## Configuration File Format
 The configuration of your model is given in the *model* tag of *train_cfg*. 
@@ -61,17 +63,13 @@ model:
         ...
     criterion_conf:
         criterion1:
-            type: file_name.class_name
-            conf:
-                ...
+            ...
         criterion2:
-            type: file_name.class_name
-            conf:
-                ...
+            ...
         ...    
 ```
 1. **model_type** is the query used to pick up your target *Model* class for automatic model initialization.
-Your given query should be in the form of `file_name.class_name` to indicate the place of your target class. 
+Your given query should be in the form of `file_name.class_name` to indicate the place of your target class in `./speechain/model/`. 
 For example, `asr.ASR` means the class `ASR` in `./speechain/model/asr.py`.
 
 2. **model_conf** contains the general configuration of your model. It is made up of the following 4 parts:
@@ -81,21 +79,17 @@ For example, `asr.ASR` means the class `ASR` in `./speechain/model/asr.py`.
     3. **pretrained_model** contains pretrained models you would like to load into your model as the initial parameters. 
     If a list of pretrained models is given, all those pretrained models can be used to initialize your model. 
     4. **customize_conf** contains the configuration used to initialize the customized part of your model. 
-    These configurations are used in the *model_customize()* interface.
+    These configurations will be used in the *model_construction()* interface.
     
 3. **module_conf** contains all the information about the module initialization. 
 Each module corresponds to a key-value pair here and the value of each pair has the same structure as below:
     1. **type** is the query used to pick up the target *Module* class.
-    Your given query should be in the form of `subfolder_name.file_name.class_name` to indicate the place of your target class. 
-    For example, `transformer.encoder.TransformerEncoder` means the class `TransformerEncoder` in `./speechain/module/transformer/encoder.py`.
+    The way how to give the '_type_' arguments is defined in the *model_construction()* of each model.
     2. **conf** contains all the configurations used to initialize this module.
 
 4. **criterion_conf** contains all the information about the criterion initialization. 
-Each criterion corresponds to a key-value pair here and the value of each pair has the same structure as below:
-    1. **type** is the query used to pick up the target *Criterion* class.
-    Your given query should be in the form of `file_name.class_name` to indicate the place of your target class. 
-    For example, `cross_entropy.CrossEntropy` means the class `CrossEntropy` in `speechain/criterion/cross_entropy.py`.
-    2. **conf** contains all the configurations used to initialize this criterion.
+You don't need to separate 'type' and 'conf' here but directly give the configuration under the criterion name. 
+All the criteria will be initialized explicitly in the *model_construction()* of each model.
 
 
 ## Abstract Interfaces Description
@@ -117,9 +111,11 @@ This function decides how the input model prediction and the target label are us
 For more details, please refer to [*Criterion*](https://github.com/ahclab/SpeeChain/blob/main/speechain/criterion/abs.py).
 
 ### Model
-1. **model_customize()**:
-The customized part of your model is initialized in this function.  
-Note: *model_customize()* is not mandatory to be overridden.
+1. **model_construction()**:
+The function where the specific model is constructed. 
+This function receives _customize_conf_, _module_conf_, and _criterion_conf_ as the input. 
+The construction is at least two parts: built-in module initialization and built-in criterion initialization. 
+Some models have their customized part that needs to be initialization in this function, e.g. the tokenizer of ASR and TTS models.
 
 2. **batch_preprocess()**: 
 This function preprocesses the input batch before feeding it to the built-in modules. 
@@ -149,102 +145,23 @@ Each key-value pair in the _Dict_ corresponds to a file where the key is the fil
 
 For more details, please refer to [*Model*](https://github.com/ahclab/SpeeChain/blob/main/speechain/model/abs.py).
 
-## How to Construct a Model by Available Modules
-We provide two granularity of modules for you to construct your model. 
-The module is either a *fine-grained unit module* or a *coarse-grained template module*.
+## How to Construct a Model
+### ASR
+**model_type:**
+   1. [asr.ASR]()  
+      * Encoder-Decoder ASR model.  
+      * Receive one set of speech-text paired data (_feat_, _feat_len_, _text_, _text_len_) in _model_forward()_.  
+      * Return a single cross-entropy loss calculated on the supervised data in _loss_calculation()_.
+   2. [asr.SemiASR]() (_under development_)   
+      * Semi-supervised Encoder-Decoder ASR model.  
+      * Receive multiple sets of speech-text paired data  (_feat_, _feat_len_, _text_, _text_len_) in _model_forward()_. 
+      One of them is the real speech-text paired data and the others are pseudo speech-text paired data.
+      * Return multiple cross-entropy losses calculated on all the paired data sets in _loss_calculation()_. 
+      The loss named _loss_ is the trainable overall loss that is the linear combination of all losses. 
+      The component loss calcualated on each set of paired set is converted into a non-trainable metric value for recording. 
 
-### Fine-Grained Unit Module
-_Fine-grained unit module_ is the smallest unit to build a model. Each unit module has only one specific purpose. 
-An example of the module configuration of a Transformer-based ASR model is shown below. 
-In this example, the ASR model is made up of 5 modules and each module corresponds to a key-value pair in _module_conf_. 
-```
-module_conf:
-    frontend:
-      type: frontend.speech2mel.Speech2MelSpec
-      conf:
-        ...
-
-    encoder_prenet:
-      type: prenet.conv2d.Conv2dPrenet
-      conf:
-        ...
-
-    encoder:
-      type: transformer.encoder.TransformerEncoder
-      conf:
-        ...
-
-    decoder_prenet:
-      type: prenet.embed.EmbedPrenet
-      conf:
-        vocab_size: 31
-        ...
-
-    decoder:
-      type: transformer.decoder.TransformerDecoder
-      conf:
-        ...
-
-    decoder_postnet:
-      type: postnet.token.TokenPostnet
-      conf:
-        vocab_size: 31
-        ...
-```
-The advantage is that there is a lot of freedom to construct your model and design a complicated model forward function. 
-But the disadvantage is that both the configuration and codes will become a little untidy and you may need to give some redundant arguments in your configuration 
-(e.g. _vocab_size_ needs to be given _decoder_prenet_ and _decoder_postnet_ twice.).
-
-### Coarse-Grained Template Module
-_Coarse-grained template module_ is the module that holds several built-in unit modules. 
-With template modules, the model construction becomes easier and tidier. 
-The example of constructing the same Transformer-based ASR model above by template modules is shown below.
-```
-module_conf:
-    encoder:
-      type: encoder.asr.ASREncoder
-      conf:
-        frontend:
-          type: feat_frontend.speech2mel.Speech2MelSpec
-          conf:
-            ...
-
-        prenet:
-          type: prenet.conv2d.Conv2dPrenet
-          conf:
-            ...
-
-        encoder:
-          type: transformer.encoder.TransformerEncoder
-          conf:
-            ...
-
-    decoder:
-      type: decoder.asr.ASRDecoder
-      conf:
-        vocab_size: 31
-
-        prenet:
-          type: prenet.embed.EmbedPrenet
-          conf:
-            ...
-
-        decoder:
-          type: transformer.decoder.TransformerDecoder
-          conf:
-            ...
-
-        postnet:
-          type: postnet.token.TokenPostnet
-          conf:
-            ...
-```
-In this example, the ASR model is made up of two template modules: _encoder_ and _decoder_. 
-In each template module, several unit modules are chosen to initialize its built-in unit models. 
-In this way, the configuration becomes neater and tidier (we only need to give _vocal_size_ to _decoder_ once). 
-
-In the contrast, the disadvantage is that the built-in unit modules are fixed for each template module. 
-It may not be able to meet some specific research needs.
+### TTS
+Coming soon~~~
 
 ## How to Freeze a Specific Part of your Model
 Parameter freezing can be done simply by giving the name of the module you want to freeze in _frozen_modules_. 
@@ -279,22 +196,24 @@ model:
 Pretrained model loading can be easily done by giving the model path in _pretrained_model_. 
 In the example below, the entire ASR model will be initialized by the given _best_accuracy.mdl_ model.
 ```
+mdl_root: ./recipe/speech/librispeech/train_clean_100/asr/transformer/exp/sup_warmup4k
 model:
     model_type: asr.ASR
     model_conf:
         pretrained_model:
-            path: ./recipe/speech/librispeech/train_clean_100/asr/transformer/exp/sup_warmup4k/accuracy_best.mdl
+            path: !ref <mdl_root>/accuracy_best.mdl
 ```
 If you only want to initialize a part of your model, you can use the _mapping_ argument in _pretrained_model_. 
 The parameter name mismatch can also be solved by the _mapping_ argument. 
 In the example below, only the encoder of the ASR model will be initialized by the given pretrained model. 
 Even though the pretrained model is constructed by unit modules, it can still be loaded into the ASR model constructed by template modules by aligning their module names.
 ```
+mdl_root: ./recipe/speech/librispeech/train_clean_100/asr/transformer/exp/sup_warmup4k
 model:
     model_type: asr.ASR
     model_conf:
         pretrained_model:
-            path: ./recipe/speech/librispeech/train_clean_100/asr/transformer/exp/sup_warmup4k/accuracy_best.mdl
+            path: !ref <mdl_root>/accuracy_best.mdl
             mapping: 
               encoder_prenet: encoder.prenet
               encoder: encoder.encoder
@@ -305,71 +224,19 @@ In the example below, the encoder and decoder of the ASR model are initialized b
 Note that if there are overlapping modules between the _mapping_ arguments of different pretrained models, 
 the module will be initialized by the pretrained models at the back of the list.
 ```
+mdl_root: ./recipe/speech/librispeech/train_clean_100/asr/transformer/exp/sup_warmup4k
 model:
     model_type: asr.ASR
     model_conf:
         pretrained_model:
-            - path: ./recipe/speech/librispeech/train_clean_100/asr/transformer/exp/sup_warmup4k/accuracy_best.mdl
+            - path: !ref <mdl_root>/accuracy_best.mdl
               mapping:
                 encoder_prenet: encoder.prenet
                 encoder: encoder.encoder
-            - path: ./recipe/speech/librispeech/train_clean_100/asr/transformer/exp/sup_warmup4k/5_accuracy_average.mdl
+            - path: !ref <mdl_root>/5_accuracy_average.mdl
               mapping:
                 decoder_prenet: decoder.prenet
                 decoder: decoder.decoder
                 decoder_postnet: decoder.postnet
 ```
 
-## How to Perform Multi-Task Training
-In the normal setting, both the training loss, validation metric, and testing metric are given by the _type&conf_ configuration. 
-The example below is the criterion configuration for an ASR model. 
-_cross_entropy_ is the training loss, _accuracy_ is the validation metric, and _error_rate_ is the testing metric.
-```
-criterion_conf:
-    cross_entropy:
-      type: cross_entropy.CrossEntropy
-      conf:
-        ...
-
-    accuracy:
-      type: accuracy.Accuracy
-      conf:
-        ...
-
-    error_rate:
-      type: error_rate.ErrorRate
-      conf:
-        ...
-```
-Sometimes, you may need to combine multiple losses to a weighted sum in the multi-task setting. 
-In this case, you can give the configuration of the combined loss like the example below. 
-This example is the criterion configuration of a semi-supervised ASR model. 
-The training loss _cross_entropy_ is calculated by two losses: _sup_ loss and _unsup_ loss. 
-The weights of these two losses are both 0.5.
-
-This one is just an example. The number of component losses can be more than 2. 
-The names of the component losses (_sup_ and _unsup_ in this case) are used in _loss_calculation()_ to calculate the combined loss.
-```
-criterion_conf:
-    cross_entropy:
-      sup:
-        weight: 0.5
-        type: cross_entropy.CrossEntropy
-        conf:
-          ...
-      unsup:
-        weight: 0.5
-        type: cross_entropy.CrossEntropy
-        conf:
-          ...
-    
-    accuracy:
-      type: accuracy.Accuracy
-      conf:
-        ...
-
-    error_rate:
-      type: error_rate.ErrorRate
-      conf:
-        ...
-```

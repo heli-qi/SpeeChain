@@ -15,8 +15,8 @@ import torch
 import numpy as np
 try:
     import soundfile as sf
-except OSError:
-    pass
+except OSError as e:
+    print(e)
 
 from typing import Dict, List
 from abc import ABC, abstractmethod
@@ -166,6 +166,8 @@ class Monitor(ABC):
                 if len(info.shape) == 1:
                     info = info[0]
                 info = info.item()
+            elif isinstance(info, List):
+                info = info[0]
             self.step_records[key][name].append(info)
 
 
@@ -208,6 +210,10 @@ class Monitor(ABC):
             self.logger.warn(f"GPUtil.getGPUs() returns nothing at the {self.mode} part of epoch no.{self.epoch}. ")
 
         for rank, gpu in enumerate(self.gpus):
+            # recover the GPU number from 'CUDA_VISIBLE_DEVICES'
+            if 'CUDA_VISIBLE_DEVICES' in os.environ.keys():
+                gpu = int(os.environ['CUDA_VISIBLE_DEVICES'].split(',')[gpu])
+
             # --- torch.cuda is only able to report the GPU used in the current rank --- #
             # --- but torch.cuda can report the precise allocated and reserved memory information of the model --- #
             # turn bytes into MB，
@@ -228,6 +234,9 @@ class Monitor(ABC):
             if len(gpus) != 0:
                 memory_used = gpus[gpu].memoryUsed
             epoch_message += f"GPU rank no.{rank} (cuda:{gpu}): {memory_used} MB -- "
+
+            if f'Rank{rank}' not in self.epoch_records['consumed_memory'].keys():
+                self.epoch_records['consumed_memory'][f'Rank{rank}'] = []
             self.epoch_records['consumed_memory'][f'Rank{rank}'].append(memory_used)
         epoch_message += "\n"
 
@@ -252,7 +261,7 @@ class Monitor(ABC):
             # calculate the average criterion value
             aver_result = np.mean(results).item()
             std_result = np.std(results).item()
-            epoch_message += f"Average {name}: {aver_result:.2f} ± {std_result:.2f}\n"
+            epoch_message += f"Average {name}: {aver_result:.2e} ± {std_result:.2f}\n"
             # record the average criterion value
             self.epoch_records['criteria'][name].append(aver_result)
         epoch_message += "\n"
@@ -378,7 +387,7 @@ class TrainMonitor(Monitor):
                 step_message += "Training Criteria: "
                 for name, result in self.step_records['criteria'].items():
                     _tmp_criteria = result[-self.report_per_steps:]
-                    step_message += f"{name}: {np.mean(_tmp_criteria):.2f} ± {np.std(_tmp_criteria):.2f} -- "
+                    step_message += f"{name}: {np.mean(_tmp_criteria):.2e} -- "
 
                 if not self.no_optim:
                     # report the information of optimizers after each training step
@@ -576,8 +585,8 @@ class ValidMonitor(Monitor):
             self.epoch_records[sample_index] = dict()
 
         # get the visualization logs for model snapshotting
-        vis_logs = self.model(batch_data=used_sample, epoch_records=self.epoch_records,
-                              epoch=epoch, sample_index=sample_index,
+        vis_logs = self.model(batch_data=used_sample, epoch=epoch,
+                              epoch_records=self.epoch_records, sample_index=sample_index,
                               snapshot_interval=self.model_snapshot_interval)
 
         # put all the visualization logs into the queue
@@ -862,7 +871,7 @@ class TestMonitor(Monitor):
             group_time=[],
             total_time=0
         )
-        self.group_num = 1
+        self.finished_group_num = 0
 
         self.logger.info(f"The evaluation stage starts. The number of total testing steps is {total_step_num}.\n")
 
@@ -919,39 +928,54 @@ class TestMonitor(Monitor):
 
         # --- Report the testing midway information to users --- #
         test_step_message = None
-        if step_num % self.report_per_steps != 0:
-            _curr_test_time = time.time()
-            self.step_info['group_time'].append(_curr_test_time - self.prev_test_time)
-            self.prev_test_time = _curr_test_time
-        else:
-            _group_test_time = sum(self.step_info['group_time'])
-            self.step_info['total_time'] += _group_test_time
+        # record the tesing time of the current step
+        curr_test_time = time.time()
+        self.step_info['group_time'].append(curr_test_time - self.prev_test_time)
+        self.prev_test_time = curr_test_time
+
+        # meet the reporting interval
+        if step_num % self.report_per_steps == 0:
+            curr_group_time = sum(self.step_info['group_time'])
+
+            # the first testing step
+            if self.finished_group_num == 0:
+                prev_group_time = curr_group_time
+            # other testing steps
+            else:
+                # calculate the average time of all the previous groups
+                prev_group_time = self.step_info['total_time'] / self.finished_group_num
+
+            # calculate the number of remaining steps
+            self.finished_group_num += 1
+            finish_step_num = int(self.finished_group_num * self.report_per_steps)
+            remaining_step_num = self.total_step_num - finish_step_num
+            # take the weighted average consuming time of each group
+            aver_group_time = (prev_group_time + curr_group_time) / 2
+            remaining_time = aver_group_time * (remaining_step_num / self.report_per_steps)
+
+            # update the time records
+            self.step_info['total_time'] += curr_group_time
             self.step_info['group_time'] = []
 
-            _finish_step_num = int(self.group_num * self.report_per_steps)
-            _remaining_step_num = self.total_step_num - _finish_step_num
-            _remaining_time = (self.step_info['total_time'] / self.group_num) * (_remaining_step_num / self.report_per_steps)
-            self.group_num += 1
-
             test_step_message = f"Testing Midway Report -- " \
-                                f"testing time for the recent {self.report_per_steps} steps: {_group_test_time:.2f}s -- " \
-                                f"finished step number: {_finish_step_num} -- " \
-                                f"remaining step number: {_remaining_step_num} -- " \
+                                f"testing time for the recent {self.report_per_steps} steps: {curr_group_time:.2f}s -- " \
+                                f"finished step number: {finish_step_num} -- " \
+                                f"remaining step number: {remaining_step_num} -- " \
                                 f"expected remaining time: "
 
-            remaining_days, _remaining_time = int(_remaining_time // (3600 * 24)), _remaining_time % (3600 * 24)
+            remaining_days, remaining_time = int(remaining_time // (3600 * 24)), remaining_time % (3600 * 24)
             if remaining_days > 0:
                 test_step_message += f"{remaining_days:d}d "
 
-            remaining_hours, _remaining_time = int(_remaining_time // 3600), _remaining_time % 3600
+            remaining_hours, remaining_time = int(remaining_time // 3600), remaining_time % 3600
             if remaining_hours > 0:
                 test_step_message += f"{remaining_hours:d}h "
 
-            remaining_minutes, _remaining_time = int(_remaining_time // 60), _remaining_time % 60
+            remaining_minutes, remaining_time = int(remaining_time // 60), remaining_time % 60
             if remaining_minutes > 0:
                 test_step_message += f"{remaining_minutes:d}m "
 
-            remaining_seconds = _remaining_time
+            remaining_seconds = remaining_time
             test_step_message += f"{remaining_seconds:.2f}s"
 
         if test_step_message is not None:
@@ -1049,8 +1073,12 @@ class TestMonitor(Monitor):
 
 
         # --- Portion-level Evaluation Report Production --- #
-        result_path = os.path.join(final_path, "portion_reports.md")
-        table_headers, table_contents = ['Portion'], dict(All=[])
+        result_path = os.path.join(final_path, "overall_results.md")
+        result_string = ""
+
+        # The overall evaluation performance
+        result_string += "***Overall Evaluation:***\n\n"
+        content_dict = dict()
         # loop each metric and record the overall model performance
         for metric, result_dict in self.step_info.items():
             result_list = list(result_dict.values())
@@ -1058,28 +1086,37 @@ class TestMonitor(Monitor):
             if not isinstance(result_list[0], (int, float)):
                 continue
 
-            table_headers.append(metric)
-            table_contents['All'].append(f"{np.mean(list(result_dict.values())):.4f}")
+            content_dict[metric] = f"{np.mean(list(result_dict.values())):.4f}"
+        result_string += get_list_strings(content_dict=content_dict)
 
         # record the portion-level model performance
         if group_meta_info is not None:
-            for group_dict in group_meta_info.values():
+            for meta_name, group_dict in group_meta_info.items():
+                result_string += f"\n" \
+                                 f"***{meta_name} Evaluation:***\n\n"
+                table_headers, table_contents = [meta_name], dict()
                 # loop each group and calculate the group-specific performance
                 for group_name, group_list in group_dict.items():
-                    table_contents[group_name] = []
                     # loop each metric
                     for metric, result_dict in self.step_info.items():
                         result_list = [result_dict[sample] for sample in group_list if sample in result_dict.keys()]
-                        # only average the numerical results
+                        # skip the non-numerical results
                         if len(result_list) > 0 and not isinstance(result_list[0], (int, float)):
                             continue
+                        # average the numerical results and record them
+                        if len(result_list) != 0:
+                            # create group item lazily
+                            if group_name not in table_contents.keys():
+                                table_contents[group_name] = []
 
-                        table_contents[group_name].append(f"{np.mean(result_list):.4f}")
+                            if metric not in table_headers:
+                                table_headers.append(metric)
+                            table_contents[group_name].append(f"{np.mean(result_list):.4f}")
 
-        result_table = get_table_strings(contents=list(table_contents.values()),
-                                         first_col=list(table_contents.keys()),
-                                         headers=table_headers)
-        np.savetxt(result_path, [result_table], fmt="%s")
+                result_string += get_table_strings(contents=list(table_contents.values()),
+                                                   first_col=list(table_contents.keys()),
+                                                   headers=table_headers)
+        np.savetxt(result_path, [result_string], fmt="%s")
 
 
         # --- Top-N Bad Cases Presentation --- #
@@ -1123,22 +1160,6 @@ class TestMonitor(Monitor):
         # copy the plotted figures into final_path
         shutil.move(src=os.path.join(self.result_path, 'figures'),
                     dst=os.path.join(final_path, 'figures'))
-
-
-        # --- Remove all the temporary folders at the end of evaluation --- #
-        # shutil may not be able to remove the folder because of .nfs file in it
-        if not self.distributed:
-            try:
-                shutil.rmtree(self.result_path)
-            except OSError:
-                pass
-        else:
-            for rank in range(torch.distributed.get_world_size()):
-                try:
-                    shutil.rmtree(final_path + f'.{rank}')
-                except OSError:
-                    pass
-
 
 
     def state_dict(self):

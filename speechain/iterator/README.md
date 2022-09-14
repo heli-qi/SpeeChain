@@ -156,16 +156,15 @@ train_batch:
         text_len: torch.Tensor
 ```
 If you have only one iterator like the configuration below, your _train_batch_ will not have any sub-Dict but only the data-label pair from that iterator. 
-In this case, the name of your iterator will not be used.
+In this case, you don't need to give the name tag for the iterator.
 ```
 train:
-    sup:
-        type: block.BlockIterator
-        conf:
-            dataset_type: speech.speech_text.SpeechTextDataset
-            dataset_conf:
-                ...
+    type: block.BlockIterator
+    conf:
+        dataset_type: speech.speech_text.SpeechTextDataset
+        dataset_conf:
             ...
+        ...
 ```
 ```
 train_batch:
@@ -180,21 +179,21 @@ train_batch:
 If you want to initialize your iterator with multiple datasets and want your dataloader to pick up batches from the mixed dataset, 
 you can simply give a list of file paths to the _src_data_ and _tgt_label_ arguments to initialize the built-in dataset of your iterator like the example below.
 ```
+data_root: ./datasets/speech/librispeech/data/wav
 train:
-    sup:
-        type: block.BlockIterator
-        conf:
-            dataset_type: speech.speech_text.SpeechTextDataset
-            dataset_conf:
-                src_data:
-                    - ./datasets/speech/librispeech/data/raw/train_clean_100/feat.scp
-                    - ./datasets/speech/librispeech/data/raw/train_clean_360/feat.scp
-                    - ./datasets/speech/librispeech/data/raw/train_other_500/feat.scp
-                tgt_label:
-                    - ./datasets/speech/librispeech/data/raw/train_clean_100/text
-                    - ./datasets/speech/librispeech/data/raw/train_clean_100/text
-                    - ./datasets/speech/librispeech/data/raw/train_other_500/text
-            ...
+    type: block.BlockIterator
+    conf:
+        dataset_type: speech.speech_text.SpeechTextDataset
+        dataset_conf:
+            src_data:
+                - !ref <data_root>/train_clean_100/feat.scp
+                - !ref <data_root>/train_clean_360/feat.scp
+                - !ref <data_root>/train_other_500/feat.scp
+            tgt_label:
+                - !ref <data_root>/train_clean_100/text
+                - !ref <data_root>/train_clean_100/text
+                - !ref <data_root>/train_other_500/text
+        ...
 ```
 
 ## How to Perform Data Selection in a Single Dataloader
@@ -204,56 +203,56 @@ _selection_mode_ specifies the selection method and _selection_num_ specifies th
 _selection_num_ can be given as a positive float number or a negative integer number. 
 The positive float number means the ratio of the dataset. In the example below, the first 50% of *LibriSpeech-train_clean_100* will be selected. 
 ```
+data_root: ./datasets/speech/librispeech/data/wav
 train:
-    sup:
-        type: block.BlockIterator
-        conf:
-            dataset_type: speech.speech_text.SpeechTextDataset
-            dataset_conf:
-                src_data: ./datasets/speech/librispeech/data/raw/train_clean_100/feat.scp
-                tgt_label: ./datasets/speech/librispeech/data/raw/train_clean_100/text
+    type: block.BlockIterator
+    conf:
+        dataset_type: speech.speech_text.SpeechTextDataset
+        dataset_conf:
+            src_data: !ref <data_root>/train_clean_100/feat.scp
+            tgt_label: !ref <data_root>/train_clean_100/text
 
-            selection_mode: order
-            selection_num: 0.5
-            ...
+        selection_mode: order
+        selection_num: 0.5
+        ...
 ```
 The negative integer number means the absolute number of the selected samples. 
 In the example below, 1000 data samples of *LibriSpeech-train_clean_100* will be randomly selected. 
 ```
+data_root: ./datasets/speech/librispeech/data/wav
 train:
-    sup:
-        type: block.BlockIterator
-        conf:
-            dataset_type: speech.speech_text.SpeechTextDataset
-            dataset_conf:
-                src_data: ./datasets/speech/librispeech/data/raw/train_clean_100/feat.scp
-                tgt_label: ./datasets/speech/librispeech/data/raw/train_clean_100/text
+    type: block.BlockIterator
+    conf:
+        dataset_type: speech.speech_text.SpeechTextDataset
+        dataset_conf:
+            src_data: !ref <data_root>/train_clean_100/feat.scp
+            tgt_label: !ref <data_root>/train_clean_100/text
 
-            selection_mode: random
-            selection_num: -1000
-            ...
+        selection_mode: random
+        selection_num: -1000
+        ...
 ```
 Moreover, data selection and datasets mixing can be used in a single iterator but they will be done sequentially. 
 In the example below, _train_clean_100_, _train_clean_360_, and _train_other_500_ datasets of the _LibriSpeech_ corpus will be first mixed into a large dataset, and then the last 50% of the large dataset will be selected.
 ```
+data_root: ./datasets/speech/librispeech/data/wav
 train:
-    sup:
-        type: block.BlockIterator
-        conf:
-            dataset_type: speech.speech_text.SpeechTextDataset
-            dataset_conf:
-                src_data:
-                    - ./datasets/speech/librispeech/data/raw/train_clean_100/feat.scp
-                    - ./datasets/speech/librispeech/data/raw/train_clean_360/feat.scp
-                    - ./datasets/speech/librispeech/data/raw/train_other_500/feat.scp
-                tgt_label:
-                    - ./datasets/speech/librispeech/data/raw/train_clean_100/text
-                    - ./datasets/speech/librispeech/data/raw/train_clean_360/text
-                    - ./datasets/speech/librispeech/data/raw/train_other_500/text
-            
-            selection_mode: rev_order
-            selection_num: 0.5
-            ...
+    type: block.BlockIterator
+    conf:
+        dataset_type: speech.speech_text.SpeechTextDataset
+        dataset_conf:
+            src_data:
+                - !ref <data_root>/train_clean_100/feat.scp
+                - !ref <data_root>/train_clean_360/feat.scp
+                - !ref <data_root>/train_other_500/feat.scp
+            tgt_label:
+                - !ref <data_root>/train_clean_100/text
+                - !ref <data_root>/train_clean_360/text
+                - !ref <data_root>/train_other_500/text
+        
+        selection_mode: rev_order
+        selection_num: 0.5
+        ...
 ```
 
 ## How to introduce Meta Information to your batches
@@ -264,22 +263,22 @@ For example, for an utterance, besides the transcript, we may also need to know 
 The introduction of the meta information is very simple. First, please override the interface _read_meta_file()_ if you are making a new _speechain.abs.Dataset_ class. 
 Then, giving the data loading configuration as follows:
 ```
+data_root: ./datasets/speech/librispeech/data/wav
 train:
-    sup:
-        type: block.BlockIterator
-        conf:
-            dataset_type: speech.speech_text.SpeechTextDataset
-            dataset_conf:
-                src_data: ./datasets/speech/librispeech/data/raw/train_clean_100/feat.scp
-                tgt_label: ./datasets/speech/librispeech/data/raw/train_clean_100/text
-                meta_info:
-                    speaker: ./datasets/speech/librispeech/data/raw/train_clean_100/utt2spk
-                    gender: ./datasets/speech/librispeech/data/raw/train_clean_100/utt2gen
-            
-            selection_mode: rev_order
-            selection_num: 0.5
-            ...
+    type: block.BlockIterator
+    conf:
+        dataset_type: speech.speech_text.SpeechTextDataset
+        dataset_conf:
+            src_data: !ref <data_root>/train_clean_100/feat.scp
+            tgt_label: !ref <data_root>/train_clean_100/text
+            meta_info:
+                speaker: !ref <data_root>/train_clean_100/utt2spk
+                gender: !ref <data_root>/train_clean_100/utt2gen
+        
+        selection_mode: rev_order
+        selection_num: 0.5
+        ...
 ```
 Different from _src_data_ and _tgt_label_, _meta_info_ is given in the form of a _Dict_. 
 So, multiple types of meta information can be included and each one corresponds to a key-value pair in this _Dict_. 
-The key name acts as the 
+The tag names (e.g. gender, speaker) will act as the keys in the _meta_info_ Dict.

@@ -16,10 +16,10 @@ from speechain.utilbox.type_util import str2bool
 def parse():
     parser = argparse.ArgumentParser(description='params')
     group = parser.add_argument_group("General arguments shared by all token types")
-    group.add_argument('--text_path', type=str, default="../../datasets/speech_text/librispeech/data/raw/train_clean_100/text")
-    group.add_argument('--output_path', type=str, default="../../datasets/speech_text/librispeech/data/char/train_clean_100")
-    group.add_argument('--token_type', type=str, default="char")
-    group.add_argument('--tgt_subsets', type=str, default="train valid test ")
+    group.add_argument('--text_path', type=str, required=True)
+    group.add_argument('--output_path', type=str, required=True)
+    group.add_argument('--token_type', type=str, required=True)
+    group.add_argument('--tgt_subsets', type=str, required=True)
 
     group = parser.add_argument_group("Specific arguments used by the subword token type")
     # tokenizer training-related
@@ -32,10 +32,6 @@ def parse():
                             "Note: We don't recommend you to set this argument to False because most of time middle "
                             "spaces inside tokens will degrade ASR performance. "
                             "Also, middle spaces will disable lexicon calibration. (default: True)")
-    # tokenizer encoding-related
-    group.add_argument('--enable_sampling', type=bool, default=False)
-    group.add_argument('--alpha', type=float, default=0.0)
-    group.add_argument('--nbest_size', type=int, default=-1)
 
     return parser.parse_args()
 
@@ -84,8 +80,12 @@ def generate_vocab_char(output_path: str, text_path: str, tgt_subsets: List[str]
 
 def generate_vocab_subword(output_path: str, text_path: str, tgt_subsets: List[str],
                            vocab_size: int, character_coverage: float,
-                           model_type: str, split_by_whitespace: bool,
-                           enable_sampling: bool, alpha: float, nbest_size: int):
+                           model_type: str, split_by_whitespace: bool):
+    # argu checking
+    model_type = model_type.lower()
+    assert model_type in ['unigram', 'bpe'], \
+        "model_type must be either 'unigram' or 'bpe' if you want to use subword tokenizer."
+
     # --- Vocabulary List Generation --- #
     if os.path.exists(os.path.join(output_path, 'model')) and os.path.exists(os.path.join(output_path, 'vocab')):
         print(f"Subword tokenizer model and vocabulary list already exist in {output_path}.")
@@ -126,7 +126,8 @@ def generate_vocab_subword(output_path: str, text_path: str, tgt_subsets: List[s
         idx2sent_len = []
         for line in idx2sent:
             idx, sent = line.split(' ', 1)
-            tokens = sp.encode_as_ids(sent, enable_sampling=enable_sampling, alpha=alpha, nbest_size=nbest_size)
+            # disable the encode sampling no matter what type of subword tokenizer is used ('unigram' or 'bpe')
+            tokens = sp.encode_as_ids(sent, enable_sampling=False, alpha=0.0, nbest_size=-1)
             # consider all the tokens of this sentence plus a <sos/eos> (teacher-forcing setting)
             idx2sent_len.append([idx, len(tokens) + 1])
 
@@ -218,8 +219,7 @@ def main(args):
         # generate subword vocabulary list
         generate_vocab_subword(output_path=output_path, text_path=args.text_path, tgt_subsets=tgt_subsets,
                                vocab_size=args.vocab_size, character_coverage=args.character_coverage,
-                               model_type=args.model_type, split_by_whitespace=args.split_by_whitespace,
-                               enable_sampling=args.enable_sampling, alpha=args.alpha, nbest_size=args.nbest_size)
+                               model_type=args.model_type, split_by_whitespace=args.split_by_whitespace)
 
     # word token branch
     elif args.token_type.lower() == 'word':

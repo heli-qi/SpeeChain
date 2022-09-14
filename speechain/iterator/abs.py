@@ -3,7 +3,10 @@
     Affiliation: NAIST
     Date: 2022.07
 """
+from functools import partial
+
 import numpy as np
+import random
 import torch
 
 from torch.utils.data import DataLoader
@@ -11,6 +14,16 @@ from typing import Dict, List, Any
 from abc import ABC, abstractmethod
 
 from speechain.utilbox.import_util import import_class
+
+def worker_init_fn(worker_id, base_seed: int = 0):
+    """
+    Set random seed for each worker in DataLoader.
+    Borrowed from https://github.com/espnet/espnet/blob/master/espnet2/iterators/sequence_iter_factory.py#L13
+
+    """
+    seed = base_seed + worker_id
+    random.seed(seed)
+    np.random.seed(seed)
 
 
 class Iterator(ABC):
@@ -142,7 +155,7 @@ class Iterator(ABC):
         # initialize the customized part of the iterator and get the batches of data indices
         self.batches = self.iter_init(**iter_conf)
 
-        # clip the batches for distributed training
+        # clip the batch view for distributed training
         if self.distributed:
             # set stride to the number of processes
             stride = torch.distributed.get_world_size()
@@ -317,7 +330,8 @@ class Iterator(ABC):
                           batch_sampler=batches,
                           num_workers=self.num_workers,
                           pin_memory=self.pin_memory,
-                          collate_fn=self.dataset.collate_fn)
+                          collate_fn=self.dataset.collate_fn,
+                          worker_init_fn=partial(worker_init_fn, base_seed=epoch + self.seed))
 
 
     def __repr__(self):

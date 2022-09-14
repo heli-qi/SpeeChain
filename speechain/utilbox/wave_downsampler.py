@@ -17,8 +17,8 @@ from speechain.utilbox.regex_util import regex_key_val
 def parse() :
     parser = argparse.ArgumentParser(description='params')
     parser.add_argument('--sample_rate', type=int, default=16000)
-    parser.add_argument('--src_file', type=str, default="/ahc/work4/heli-qi/euterpe-heli-qi/datasets/speech/ljspeech/data/raw/train/feat.scp")
-    parser.add_argument('--tgt_path', type=str, default="/ahc/work4/heli-qi/euterpe-heli-qi/datasets/speech/ljspeech/data/raw16000/train")
+    parser.add_argument('--src_file', type=str, required=True)
+    parser.add_argument('--tgt_path', type=str, required=True)
     parser.add_argument('--ncpu', type=int, default=16)
     return parser.parse_args()
 

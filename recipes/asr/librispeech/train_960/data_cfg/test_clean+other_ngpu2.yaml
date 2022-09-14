@@ -1,0 +1,44 @@
+### Author: Heli Qi
+### Affiliation: NAIST
+### Date: 2022.09
+
+
+### --- Reference Values --- ###
+# These values can be referred and reused by the representer '!ref' like the way below
+data_root: /ahc/work4/heli-qi/euterpe-heli-qi/datasets/speech_text/librispeech/data/wav
+ngpu: 2
+### ------------------------ ###
+
+
+test:
+    clean:
+        type: piece.PieceIterator
+        conf:
+            dataset_type: speech.speech_text.SpeechTextDataset
+            dataset_conf:
+                feat_type: wav
+                src_data: !ref <data_root>/test_clean/idx2wav
+                tgt_label: !ref <data_root>/test_clean/idx2sent
+                meta_info:
+                    speaker: !ref <data_root>/test_clean/idx2spk
+                    gender: !ref <data_root>/test_clean/idx2gen
+
+            shuffle: False
+            batch_size: !ref <ngpu>
+            data_len: !ref <data_root>/test_clean/idx2wav_len
+
+    other:
+        type: piece.PieceIterator
+        conf:
+            dataset_type: speech.speech_text.SpeechTextDataset
+            dataset_conf:
+                feat_type: wav
+                src_data: !ref <data_root>/test_other/idx2wav
+                tgt_label: !ref <data_root>/test_other/idx2sent
+                meta_info:
+                    speaker: !ref <data_root>/test_other/idx2spk
+                    gender: !ref <data_root>/test_other/idx2gen
+
+            shuffle: False
+            batch_size: !ref <ngpu>
+            data_len: !ref <data_root>/test_other/idx2wav_len

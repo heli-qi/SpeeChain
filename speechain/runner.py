@@ -4,12 +4,13 @@
     Date: 2022.07
 """
 import argparse
-import copy
 import os
 import sys
 import time
 import warnings
-from functools import partial
+from contextlib import contextmanager
+
+from packaging.version import parse as V
 
 import GPUtil
 import torch
@@ -18,10 +19,10 @@ import random
 import yaml
 import torch.multiprocessing as mp
 import torch.distributed as dist
-from torch.cuda.amp import autocast, GradScaler
+from torch.cuda.amp import autocast
 from typing import Dict, Any, List
 
-from speechain.monitor import *
+from speechain.monitor import Monitor, TrainMonitor, ValidMonitor, TestMonitor
 from speechain.iterator.abs import Iterator
 from speechain.model.abs import Model
 from speechain.optim_sche.abs import OptimScheduler
@@ -29,6 +30,7 @@ from speechain.optim_sche.abs import OptimScheduler
 from speechain.utilbox.log_util import logger_stdout_file, model_summary, distributed_zero_first
 from speechain.utilbox.import_util import import_class, get_port
 from speechain.utilbox.type_util import str2bool
+from speechain.utilbox.yaml_util import load_yaml
 
 
 class Runner(object):
@@ -81,7 +83,7 @@ class Runner(object):
         parser.add_argument(
             "--config",
             type=str,
-            default='/ahc/work4/heli-qi/euterpe-heli-qi/recipes/asr/librispeech/train_960/transformer/exp_cfg/bpe10k_nomiddlespace_smooth0.2.yaml',
+            default=None,
             help="All-in-one argument setting file. "
                  "You can write all the arguments in this file instead of giving them by command lines."
         )
@@ -95,18 +97,23 @@ class Runner(object):
             help="Random seed for initializing your experiment. (default: 0)"
         )
         group.add_argument(
+            '--cudnn_enabled',
+            type=str2bool,
+            default=True,
+            help="Whether to enable torch.backends.cudnn. (default: True)"
+        )
+        group.add_argument(
             '--cudnn_benchmark',
             type=str2bool,
             default=False,
             help="Whether to activate torch.backends.cudnn.benchmark. "
-                 "This option can speed up the GPU calculation, "
-                 "but we don't recommend you to turn it on if you are doing seq2seq tasks such as ASR. "
-                 "(default: False)"
+                 "When True, your training will be speed up and the model performance may improve somewhat. "
+                 "But your results will become less reproducible. (default: False)"
         )
         group.add_argument(
             '--cudnn_deterministic',
             type=str2bool,
-            default=False,
+            default=True,
             help="Whether to activate torch.backends.cudnn.deterministic. "
                  "If you turn on cudnn_benchmark, "
                  "you must also set this arugment to True for the safe calculation. (default: False)"
@@ -148,8 +155,8 @@ class Runner(object):
         group.add_argument(
             '--grad_clip',
             type=float,
-            default=1.0,
-            help="Gradient clipping to prevent NaN gradients during training. (default: 1.0)"
+            default=5.0,
+            help="Gradient clipping to prevent NaN gradients during training. (default: 5.0)"
         )
         group.add_argument(
             '--grad_norm_type',
@@ -189,23 +196,26 @@ class Runner(object):
                  "In this case, env values of 'MASTER_PORT', 'MASTER_ADDR', 'WORLD_SIZE', and 'RANK' are referred. "
                  "The default value is 'tcp://127.0.0.1' for single-node distributed training and "
                  "a free port will be automatically selected. "
-                 "You can also specify the port manually in this argument by 'tcp://127.0.0.1:xxxxx'.",
+                 "The port number cannot be set mannly. "
+                 "The argument 'tcp://127.0.0.1:xxxxx' will have no effect and the port will still be selected automatically.",
         )
         group.add_argument(
             "--world_size",
             default=1,
             type=int,
             help="The number of nodes for distributed training. "
+                 "This argument is fixed to 1 and currently we don't recommend you to modify its value."
                  "If you want to conduct multi-node distributed training by the command line, "
-                 "please set this argument to -1."
+                 "please give this argument through the command line."
         )
         group.add_argument(
             '--rank',
             default=0,
             type=int,
             help="The global rank of the node for distributed training. "
+                 "This argument is fixed to 0 and currently we don't recommend you to modify its value."
                  "If you want to conduct multi-node distributed training by the command line, "
-                 "please set this argument to -1."
+                 "please give this argument through the command line."
         )
         group.add_argument(
             '--ngpu',
@@ -297,8 +307,8 @@ class Runner(object):
         group.add_argument(
             '--best_model_num',
             type=int,
-            default=5,
-            help="The number of the best models recorded during training. (default: 5)"
+            default=10,
+            help="The number of the best models recorded during training. (default: 10)"
         )
         group.add_argument(
             '--best_model_mode',
@@ -322,12 +332,12 @@ class Runner(object):
         group.add_argument(
             '--early_stopping_threshold',
             type=float,
-            default=0.01,
+            default=0.005,
             help="The threshold to refresh early-stopping in the monitor. "
                  "Positive values in (0.0, 1.0) represent the relative threshold over the current best results, "
                  "negative values represent the absolute threshold over the current best results. "
                  "0 means no threshold is applied in the monitor."
-                 "(default: 0.01)"
+                 "(default: 0.005)"
         )
 
         # Training Snapshotting
@@ -343,7 +353,7 @@ class Runner(object):
         group.add_argument(
             '--model_snapshot_number',
             type=int,
-            default=3,
+            default=0,
             help="The number of the SnapShots made by your model in each validation epoch. "
                  "The snapshots will be taken by the first sample of each validation batch, "
                  "so this argument should be smaller than the number of your validation batches. "
@@ -389,13 +399,13 @@ class Runner(object):
         group.add_argument(
             '--data_cfg',
             type=str,
-            default=None,
+            default='/ahc/work4/heli-qi/euterpe-heli-qi/recipes/asr/librispeech/train_960/transformer/exp/bpe5k_10ms+25ms/data_cfg.yaml',
             help="The configuration file of data loading and batching."
         )
         group.add_argument(
             '--train_cfg',
             type=str,
-            default=None,
+            default='/ahc/work4/heli-qi/euterpe-heli-qi/recipes/asr/librispeech/train_960/transformer/exp/bpe5k_10ms+25ms/train_cfg.yaml',
             help="The configuration file of the structure of the model and optimschedulers."
         )
         group.add_argument(
@@ -415,7 +425,7 @@ class Runner(object):
 
     @classmethod
     def build_iterators(cls, data_cfg: Dict[str, Dict], args: argparse.Namespace) \
-            -> Dict[str, Dict[str, Iterator]]:
+            -> Dict[str, Dict[str, Iterator] or Iterator]:
         """
         This static function builds all iterators used in the experiment. The configuration of iterators is given in
         your specified 'data_cfg'.
@@ -436,63 +446,57 @@ class Runner(object):
             The dictionary of the iterators of all groups (train, valid, test).
 
         """
-        # turn the keys in data_cfg into their lowercase forms
-        for key in data_cfg.keys():
-            data_cfg[key.lower()] = data_cfg.pop(key)
-
-        # all the available combinations of keys
-        dset_keys = dict(
-            train_test=['train', 'valid', 'test'],
-            train=['train', 'valid'],
-            test=['test']
-        )
-
-        # check the first-level keys of data_cfg
-        assert list(data_cfg.keys()) in dset_keys.values(), \
-            f"The first-level tags of data_cfg must be one of {list(dset_keys.values())}."
-
         # initialize all iterators
         iterators = dict()
         batch_nums = dict()
 
-        # get the mode of the current experiment
+        # get the target datasets of the current experiment
         if args.train:
-            _mode = 'train'
+            dset_keys = ['train', 'valid']
         elif args.test:
-            _mode = 'test'
+            dset_keys = ['test']
         else:
             raise RuntimeError
 
-        # looping each dataset in the configuration
-        for dset, iter_list in data_cfg.items():
-            # filter the unused dset for the current mode
-            if dset not in dset_keys[_mode]:
-                continue
-
-            # initialize the valid dset
-            iterators[dset] = dict()
+        # looping each target dataset
+        for dset in dset_keys:
+            # get the configuration of iterators in the given dataset
+            iter_list = data_cfg[dset]
+            # record the batch number for the later reporting interval calculation
             batch_nums[dset] = list()
 
-            # looping each iterator in the current dataset
-            for name, iterator in iter_list.items():
-                iterator_class = import_class('speechain.iterator.' + iterator["type"])
-                iterators[dset][name] = iterator_class(seed=args.seed,
-                                                       num_workers=args.num_workers,
-                                                       pin_memory=args.pin_memory,
-                                                       distributed=args.distributed,
-                                                       **iterator["conf"])
-                batch_nums[dset].append(len(iterators[dset][name]))
+            # single-dataloader scenario
+            if len(iter_list) == 2 and ('type' in iter_list.keys() and 'conf' in iter_list.keys()):
+                iterator_class = import_class('speechain.iterator.' + iter_list["type"])
+                iterators[dset] = iterator_class(seed=args.seed,
+                                                 num_workers=args.num_workers,
+                                                 pin_memory=args.pin_memory,
+                                                 distributed=args.distributed,
+                                                 **iter_list["conf"])
+                batch_nums[dset].append(len(iterators[dset]))
+            # multi-dataloader scenario
+            else:
+                iterators[dset] = dict()
+                # looping each iterator in the current dataset
+                for name, iterator in iter_list.items():
+                    iterator_class = import_class('speechain.iterator.' + iterator["type"])
+                    iterators[dset][name] = iterator_class(seed=args.seed,
+                                                           num_workers=args.num_workers,
+                                                           pin_memory=args.pin_memory,
+                                                           distributed=args.distributed,
+                                                           **iterator["conf"])
+                    batch_nums[dset].append(len(iterators[dset][name]))
 
-
+        mode = 'train' if args.train else 'test'
         # set the relative reporting interval during training or testing
         if args.report_per_steps <= 0:
             _reports_per_epoch = 10 if args.report_per_steps == 0 else int(-args.report_per_steps)
-            args.report_per_steps = min(batch_nums[_mode]) // _reports_per_epoch
+            args.report_per_steps = min(batch_nums[mode]) // _reports_per_epoch
         # check the absolute reporting interval during training and testing
         else:
-            assert int(args.report_per_steps) <= min(batch_nums[_mode]), \
+            assert int(args.report_per_steps) <= min(batch_nums[mode]), \
                 f"If args.report_per_steps is given as a positive integer, " \
-                f"it should be smaller than the minimal {_mode} batch number ({min(batch_nums[_mode])}). " \
+                f"it should be smaller than the minimal {mode} batch number ({min(batch_nums[mode])}). " \
                 f"But got report_per_steps={int(args.report_per_steps)}!"
 
             # in case that report_per_steps is given as a float number
@@ -533,10 +537,14 @@ class Runner(object):
     def build_optim_sches(cls,
                           model: Model,
                           optim_sche_cfg: Dict[str, Any],
-                          args: argparse.Namespace) -> Dict[str, OptimScheduler]:
+                          args: argparse.Namespace) -> Dict[str, OptimScheduler] or OptimScheduler:
         """
         This static function builds the OptimSchedulers used in the pipeline. The configuration of the
         OptimSchedulers is given in the value of 'optim_sches' key in your specified 'train_cfg'.
+
+        This function must be done after DDP wrapping because we need to make sure that the model parameters received
+        by the optimizer in each process are identical. With the identical model parameters, it's safe to consider that
+        the optimizer parameters are also identical.
 
         Args:
             model: Model
@@ -550,23 +558,71 @@ class Runner(object):
             The Dict of the initialized OptimSchedulers.
 
         """
-        optim_sches = dict()
+        # single-optimizer scenario
+        if len(optim_sche_cfg) == 2 and ('type' in optim_sche_cfg.keys() and 'conf' in optim_sche_cfg.keys()):
+            optim_sche_class = import_class('speechain.optim_sche.' + optim_sche_cfg['type'])
+            optim_sches = optim_sche_class(model=model,
+                                           distributed=args.distributed,
+                                           use_amp=args.use_amp,
+                                           accum_grad=args.accum_grad,
+                                           ft_factor=args.ft_factor,
+                                           grad_clip=args.grad_clip,
+                                           grad_norm_type=args.grad_norm_type,
+                                           **optim_sche_cfg['conf'])
+        # multi-optimizer scenario
+        else:
+            optim_sches = dict()
+            for name, optim_sche in optim_sche_cfg.items():
+                optim_sche_class = import_class('speechain.optim_sche.' + optim_sche['type'])
+                optim_sches[name] = optim_sche_class(model=model,
+                                                     use_amp=args.use_amp,
+                                                     accum_grad=args.accum_grad,
+                                                     ft_factor=args.ft_factor,
+                                                     grad_clip=args.grad_clip,
+                                                     grad_norm_type=args.grad_norm_type,
+                                                     **optim_sche['conf'])
 
-        for name, optim_sche in optim_sche_cfg.items():
-            optim_sche_class = import_class('speechain.optim_sche.' + optim_sche['type'])
-            optim_sches[name] = optim_sche_class(model=model,
-                                                 accum_grad=args.accum_grad,
-                                                 ft_factor=args.ft_factor,
-                                                 grad_clip=args.grad_clip,
-                                                 grad_norm_type=args.grad_norm_type,
-                                                 **optim_sche['conf'])
+            # adjust whether there are parameter overlapping among updated_modules of all the OptimSchedulers
+            is_all_para = [o.updated_modules is None for o in optim_sches.values()]
+            # updated_modules of all the OptimSchedulers cannot be None at the same time
+            if sum(is_all_para) == len(is_all_para):
+                raise RuntimeError
+            else:
+                # collect the updated_modules of all the OptimScheduler
+                para_list = []
+                for o in optim_sches.values():
+                    para_list.extend(o.updated_modules)
+                # adjust whether there are redundant keys
+                para_set = set(para_list)
+                # there is parameter overlapping if there are redundant keys
+                if len(para_set) != len(para_list):
+                    raise RuntimeError
+
+        # resuming from an existing checkpoint
+        if args.resume:
+            try:
+                checkpoint = torch.load(os.path.join(args.result_path, "checkpoint.pth"), map_location=model.device)
+                # single-optimizer scenario
+                if isinstance(optim_sches, OptimScheduler):
+                    # for compatibility with previous version
+                    if len(checkpoint['optim_sches']) == 1:
+                        cpt_key = list(checkpoint['optim_sches'].keys())[0]
+                        optim_sches.load_state_dict(checkpoint['optim_sches'][cpt_key])
+                    else:
+                        optim_sches.load_state_dict(checkpoint['optim_sches'])
+                # multi-optimizer scenario
+                elif isinstance(optim_sches, Dict):
+                    for name in optim_sches.keys():
+                        optim_sches[name].load_state_dict(checkpoint['optim_sches'][name])
+            except FileNotFoundError:
+                print(f"No checkpoint is found in {args.result_path}. The training process will start from scratch.")
+
         return optim_sches
 
     @classmethod
     def resume(cls,
                args: argparse.Namespace,
                model: Model,
-               optim_sches: Dict[str, OptimScheduler],
                train_monitor: Monitor,
                valid_monitor: Monitor) -> int:
         """
@@ -576,8 +632,6 @@ class Runner(object):
                 The input arguments.
             model: Model
                 The model to be trained.
-            optim_sches: Dict
-                The dictionary of the OptimSchedulers used to update the model parameters.
             train_monitor: Monitor
                 The training monitor used to monitor the training part
             valid_monitor: Monitor
@@ -593,16 +647,18 @@ class Runner(object):
             # load the existing checkpoint
             try:
                 checkpoint = torch.load(os.path.join(args.result_path, "checkpoint.pth"), map_location=model.device)
-                # load the checkpoint information into the current experiment
+                # load the latest training epoch
                 start_epoch = checkpoint['start_epoch']
+                # load the model parameters to the current process. This operation is necessary in our toolkit because
+                # we need to makes sure that the models in all the processes have the same buffer and parameter tensors.
                 model.load_state_dict(checkpoint['latest_model'])
+
+                # loading the monitor
                 if train_monitor is not None and valid_monitor is not None:
                     train_monitor.load_state_dict(checkpoint['train_monitor'])
                     valid_monitor.load_state_dict(checkpoint['valid_monitor'])
                     # info logging
                     train_monitor.logger.info(f"The training process resumes from the epoch no.{start_epoch}.")
-                for name, optim_sche in optim_sches.items():
-                    optim_sche.load_state_dict(checkpoint['optim_sches'][name])
 
             # checkpoint does not exist
             except FileNotFoundError:
@@ -638,7 +694,7 @@ class Runner(object):
 
 
     @classmethod
-    def dict_transform(cls, src_dict: Dict, transform_func):
+    def dict_transform(cls, src_dict, transform_func):
         """
 
         Args:
@@ -648,13 +704,17 @@ class Runner(object):
         Returns:
 
         """
-        tgt_dict = dict()
-        # loop the sub-dict of each dataloader
-        for key, value in src_dict.items():
-            tgt_dict[key] = transform_func(value)
-        # if there is only one sub-dict (single-dataloder training)
-        if len(tgt_dict) == 1:
-            tgt_dict = tgt_dict[key]
+        # Multi-dataloader
+        if isinstance(src_dict, Dict):
+            tgt_dict = dict()
+            # loop the sub-dict of each dataloader
+            for key, value in src_dict.items():
+                tgt_dict[key] = transform_func(value)
+
+        # Single-dataloader
+        else:
+            tgt_dict = transform_func(src_dict)
+
         return tgt_dict
 
 
@@ -673,9 +733,9 @@ class Runner(object):
     @classmethod
     def train(cls,
               args: argparse.Namespace,
-              iterators: Dict[str, Dict[str, Iterator]],
+              iterators: Dict[str, Dict[str, Iterator]] or Dict[str, Iterator],
               model: Model,
-              optim_sches: Dict[str, OptimScheduler],
+              optim_sches: Dict[str, OptimScheduler] or OptimScheduler,
               logger,
               train_monitor: TrainMonitor,
               valid_monitor: ValidMonitor):
@@ -702,19 +762,33 @@ class Runner(object):
         """
         assert args.start_epoch <= args.num_epochs, "The starting epoch is larger than args.num_epochs!"
 
-        # checking the data lengths of all training iterators
-        train_batch_nums = set([len(iterator) for iterator in iterators['train'].values()])
-        min_train_batch_num = min(train_batch_nums)
-        if len(train_batch_nums) != 1:
-            logger.info(f"Your training iterators have different batch numbers: {train_batch_nums}. "
-                        f"The real batch number during training is set to {min_train_batch_num}!")
+        # --- checking the data lengths of all training iterators --- #
+        # multiple dataloaders scenario
+        if isinstance(iterators['train'], Dict):
+            train_batch_nums = set([len(iterator) for iterator in iterators['train'].values()])
+            min_train_batch_num = min(train_batch_nums)
+            if len(train_batch_nums) != 1:
+                logger.info(f"Your training iterators have different batch numbers: {train_batch_nums}. "
+                            f"The real batch number during training is set to {min_train_batch_num}!")
+        # single dataloader scenario
+        elif isinstance(iterators['train'], Iterator):
+            min_train_batch_num = len(iterators['train'])
+        else:
+            raise RuntimeError
 
-        # checking the data lengths of all validation iterators
-        valid_batch_nums = set([len(iterator) for iterator in iterators['valid'].values()])
-        min_valid_batch_num = min(valid_batch_nums)
-        if len(valid_batch_nums) != 1:
-            logger.info(f"Your validation iterators have different batch numbers: {valid_batch_nums}. "
-                        f"The real batch number during validation is set to {min_valid_batch_num}!")
+        # --- checking the data lengths of all validation iterators --- #
+        # multiple dataloaders scenario
+        if isinstance(iterators['valid'], Dict):
+            valid_batch_nums = set([len(iterator) for iterator in iterators['valid'].values()])
+            min_valid_batch_num = min(valid_batch_nums)
+            if len(valid_batch_nums) != 1:
+                logger.info(f"Your validation iterators have different batch numbers: {valid_batch_nums}. "
+                            f"The real batch number during validation is set to {min_valid_batch_num}!")
+        # single dataloader scenario
+        elif isinstance(iterators['valid'], Iterator):
+            min_valid_batch_num = len(iterators['valid'])
+        else:
+            raise RuntimeError
 
         # synchronize the batch numbers across all the distributed processes
         if args.distributed:
@@ -728,45 +802,54 @@ class Runner(object):
             torch.distributed.all_gather(_batch_num_list, torch.LongTensor([min_valid_batch_num]).cuda(model.device))
             min_valid_batch_num = min([batch_num.item() for batch_num in _batch_num_list])
 
-        # Initialize the gradient scaler for AMP training
-        scaler = GradScaler() if args.use_amp else None
-
         # loop each epoch until the end
         for epoch in range(args.start_epoch, args.num_epochs + 1):
-            # set the random seeds for the current epoch
+            # update the random seeds for the current epoch to keep in line with the dataloaders
             cls.set_random_seeds(args.seed + epoch)
             # start the current training epoch
             if train_monitor is not None:
                 train_monitor.start_epoch(epoch)
             # initialize all the training dataloaders
-            data_loaders = {name: iter(iterator.build_loader(epoch)) for name, iterator in iterators['train'].items()}
+            data_loaders = iter(iterators['train'].build_loader(epoch)) if isinstance(iterators['train'], Iterator) \
+                else {name: iter(iterator.build_loader(epoch)) for name, iterator in iterators['train'].items()}
 
-            # loop all the training batches
+
+            # --- Training Stage --- #
             model.train()
+            # loop all the training batches
             for step in range(1, min_train_batch_num + 1):
+                step_num = int(step + (epoch - 1) * min_train_batch_num)
+
                 # --- data loading part --- #
                 with cls.measure_time(train_monitor)("data_load_time"):
                     train_batch = cls.dict_transform(src_dict=data_loaders, transform_func=next)
 
                 # forward the batch to get the training criteria and optimize the model
-                train_metrics = None
-                optim_lr = None
+                train_metrics, optim_lr = None, None
                 # whether to skip the model forward part and model optimization part
                 if not args.dry_run:
                     # --- model forward part --- #
-                    with autocast(enabled=scaler is not None):
+                    with autocast(enabled=args.use_amp):
                         with cls.measure_time(train_monitor)("model_forward_time"):
-                            losses, train_metrics = model(batch_data=train_batch)
+                            losses, train_metrics = model(batch_data=train_batch, epoch=epoch)
 
                     # whether to skip the model optimization part
                     if not args.no_optim:
                         # --- loss backward and optimization part --- #
                         optim_lr = dict()
-                        for name, optim_sche in optim_sches.items():
-                            optim_sche.step(losses=losses, scaler=scaler,
-                                            time_func=cls.measure_time(train_monitor),
-                                            optim_name=name, step_num=int(step + (epoch - 1) * min_train_batch_num))
-                            optim_lr[name] = optim_sche.get_lr()
+                        # single-optimizer scenario, default optimizer name is 'main'
+                        if isinstance(optim_sches, OptimScheduler):
+                            optim_sches.step(losses=losses, time_func=cls.measure_time(train_monitor),
+                                             optim_name='main', step_num=step_num)
+                            optim_lr['main'] = optim_sches.get_lr()
+                        # multi-optimizer scenario, each optimizer has its own name
+                        elif isinstance(optim_sches, Dict):
+                            for name, optim_sche in optim_sches.items():
+                                optim_sche.step(losses=losses, time_func=cls.measure_time(train_monitor),
+                                                optim_name=name, step_num=step_num)
+                                optim_lr[name] = optim_sche.get_lr()
+                        else:
+                            raise RuntimeError
 
                 # log the information of the current training step
                 if train_monitor is not None:
@@ -776,14 +859,17 @@ class Runner(object):
             if train_monitor is not None:
                 train_monitor.finish_epoch()
 
-            # check the validation interval
+
+            # --- Validation Stage --- #
             if epoch % args.valid_per_epochs == 0:
                 # start the validation part of the current epoch
                 if valid_monitor is not None:
                     valid_monitor.start_epoch(epoch)
                 # initialize all the validation dataloaders
-                data_loaders = {name: iter(iterator.build_loader(epoch)) for name, iterator in iterators['valid'].items()}
-                valid_indices = {name: iterator.batches for name, iterator in iterators['valid'].items()}
+                data_loaders = iter(iterators['valid'].build_loader(epoch)) if isinstance(iterators['valid'], Iterator) \
+                    else {name: iter(iterator.build_loader(epoch)) for name, iterator in iterators['valid'].items()}
+                valid_indices = iterators['valid'].batches if isinstance(iterators['valid'], Iterator) else \
+                    {name: iterator.batches for name, iterator in iterators['valid'].items()}
 
                 # make sure that no gradient appears during validation
                 model.eval()
@@ -806,7 +892,6 @@ class Runner(object):
                                 # evaluate the model at the current validation step and visualize the results
                                 if epoch % args.model_snapshot_interval == 0 and step < args.model_snapshot_number:
                                     # make sure that all processes go through the validation phase smoothly
-                                    # with distributed_zero_first(args.distributed, args.rank):
                                     if valid_monitor is not None:
                                         # obtain the index of the choosen sample for visualization
                                         sample_index = cls.dict_transform(src_dict=valid_indices,
@@ -847,7 +932,8 @@ class Runner(object):
                             "latest_model": model.state_dict() if not args.distributed else model.module.state_dict(),
                             "train_monitor": train_monitor.state_dict(),
                             "valid_monitor": valid_monitor.state_dict(),
-                            "optim_sches": {name: o.state_dict() for name, o in optim_sches.items()}
+                            "optim_sches": optim_sches.state_dict() if isinstance(optim_sches, OptimScheduler) else
+                                {name: o.state_dict() for name, o in optim_sches.items()}
                         },
                         os.path.join(args.result_path, "checkpoint.pth")
                     )
@@ -871,6 +957,7 @@ class Runner(object):
     @classmethod
     def test(cls,
              args: argparse.Namespace,
+             test_model: str,
              iterators: Dict[str, Dict[str, Iterator]],
              model: Model):
         """
@@ -891,7 +978,7 @@ class Runner(object):
         assert 'test_cfg' in args and args.test_cfg is not None, "Please specify at least one test configuration file!"
         if isinstance(args.test_cfg, str):
             args.test_cfg = [args.test_cfg]
-        test_cfg_dict = {cfg.split("/")[-1].split(".")[0]: cfg for cfg in args.test_cfg}
+        test_cfg_dict = {'.'.join(cfg.split("/")[-1].split(".")[:-1]): cfg for cfg in args.test_cfg}
 
         # loop each test configuration
         for test_cfg_name, test_cfg in test_cfg_dict.items():
@@ -901,7 +988,7 @@ class Runner(object):
 
             # load the existing testing configuration for resuming
             test_cfg_path = os.path.join(test_result_path, "test_cfg.yaml")
-            test_cfg = yaml.load(open(test_cfg_path)) if args.resume else yaml.load(open(test_cfg))
+            test_cfg = load_yaml(open(test_cfg_path)) if args.resume else load_yaml(open(test_cfg))
 
             # save the testing configuration file to result_path
             if not args.distributed or args.rank == 0:
@@ -914,8 +1001,19 @@ class Runner(object):
                 test_indices = iterator.get_sample_indices()
 
                 # add the identity symbol to the path for multi-GPU testing
-                test_dset_path = os.path.join(test_result_path, args.test_model, name + f'.{args.rank}')
+                test_dset_path = os.path.join(test_result_path, test_model, name + f'.{args.rank}')
                 logger = logger_stdout_file(test_dset_path, file_name='test')
+                if args.bad_cases_selection is None:
+                    if model.bad_cases_selection is not None:
+                        args.bad_cases_selection = model.bad_cases_selection
+                    else:
+                        logger.info("There is no configuration of topN bad case selection in either your input arguments or default values of your selected model. "
+                                    "So there will not be any reports about topN bad cases.")
+
+                # the main testing process
+                if args.bad_cases_selection is not None:
+                    logger.info(f"The configuration of topN bad case selection in the current testing process is {args.bad_cases_selection}.")
+                logger.info(f"There are totally {sum([len(i) for i in test_indices])} testing samples in the current testing process.")
                 monitor = TestMonitor(logger=logger, args=args, result_path=test_dset_path)
 
                 if args.resume:
@@ -941,7 +1039,7 @@ class Runner(object):
                     for i, test_batch in enumerate(test_loader):
                         if i < start_step:
                             continue
-                        test_results = model.evaluate(test_batch=test_batch, **test_cfg)
+                        test_results = model.evaluate(test_batch=test_batch, infer_conf=test_cfg)
                         monitor.step(step_num=i + 1, test_results=test_results, test_index=test_indices[i])
 
                 # make sure that all the processes finish all the testing steps at the same time
@@ -956,17 +1054,49 @@ class Runner(object):
     @classmethod
     def set_random_seeds(cls, seed: int):
         """
+        Set random seeds for python environment, numpy environment and torch environment
 
-        Args:
-            seed:
-
-        Returns:
+        Note:
+            torch.random.manual_seed(seed) is the same with torch.manual_seed(seed),
+            so it is not necessary to be included here.
 
         """
         random.seed(seed)
         np.random.seed(seed)
         torch.manual_seed(seed)
         torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+        os.environ['PYTHONHASHSEED'] = str(seed)
+
+
+    @classmethod
+    def gather_all_iter_ascii(cls, iterator: Iterator, device: torch.device):
+        """
+
+        Args:
+            iterator:
+            device:
+
+        Returns:
+
+        """
+        # turn the message into ASCII codes and gather the codes length
+        _iter_asc = torch.LongTensor([ord(char) for char in str(iterator)])
+        _iter_asc_len = torch.LongTensor([_iter_asc.size(0)]).cuda(device)
+        _iter_asc_lens = [torch.LongTensor([0]).cuda(device) for _ in range(torch.distributed.get_world_size())]
+        torch.distributed.all_gather(_iter_asc_lens, _iter_asc_len)
+
+        # padding the ASCII codes to the same length and gather them
+        _iter_asc_lens = torch.LongTensor(_iter_asc_lens)
+        if _iter_asc_len < _iter_asc_lens.max():
+            _iter_asc = torch.cat((_iter_asc,
+                                   torch.zeros(_iter_asc_lens.max().item() - _iter_asc_len.item(),
+                                               dtype=torch.int64)))
+        _iter_ascs = [torch.zeros(_iter_asc_lens.max().item(), dtype=torch.int64).cuda(device)
+                      for _ in range(torch.distributed.get_world_size())]
+        torch.distributed.all_gather(_iter_ascs, _iter_asc.cuda(device))
+
+        return _iter_ascs, _iter_asc_lens
 
 
     @classmethod
@@ -979,23 +1109,32 @@ class Runner(object):
             args:
 
         """
-        # initialize random seeds
+        # set distinct base random seeds for all the processes in DDP mode to remove the process homogeneity
+        if args.distributed:
+            args.seed += gpu
         cls.set_random_seeds(args.seed)
 
-        # initialize cudnn backend mode
+        # reproducibility setting
+        torch.backends.cudnn.enabled = args.cudnn_enabled
         torch.backends.cudnn.benchmark = args.cudnn_benchmark
         torch.backends.cudnn.deterministic = args.cudnn_deterministic
+        # torch.use_deterministic_algorithms(torch.backends.cudnn.deterministic)
+        # For more details about 'CUBLAS_WORKSPACE_CONFIG',
+        # please refer to https://docs.nvidia.com/cuda/cublas/index.html#cublasApi_reproducibility
+        if V(torch.version.cuda) >= V("10.2"):
+            os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
 
         # initialize the distributed training environment
         if args.distributed:
             # load the global node rank from the os environment in the multi-node setting
-            if args.dist_url == "env://" and args.rank == -1:
+            if args.dist_url == "env://":
                 args.rank = int(os.environ["RANK"])
 
             if args.ngpu > 1:
-                # Here, the global rank is turned from the node rank to the process rank
-                # the input argument 'gpu' is the local rank of the current process
+                # Here, the rank is turned from the local node-level rank to the global process-level rank
+                # the input argument 'gpu' is the local rank of the current process in the specific node
                 args.rank = args.rank * args.ngpu + gpu
+            # initialize the distributed environment, connections among all the processes are established here
             dist.init_process_group(backend=args.dist_backend, init_method=args.dist_url,
                                     world_size=args.world_size, rank=args.rank)
 
@@ -1029,53 +1168,59 @@ class Runner(object):
         if args.resume:
             # loading the existing data and train configurations
             # But the input data configuration has higher priority than the existing one
-            if "data_cfg" in args:
-                data_cfg = yaml.load(open(args.data_cfg))
+            if args.data_cfg is not None:
+                data_cfg = load_yaml(open(args.data_cfg))
             else:
-                data_cfg = yaml.load(open(os.path.join(args.result_path, "data_cfg.yaml")))
-            train_cfg = yaml.load(open(os.path.join(args.result_path, "train_cfg.yaml")))
+                data_cfg = load_yaml(open(os.path.join(args.result_path, "data_cfg.yaml")))
+            # training configuration will be loaded from the existing file
+            train_cfg = load_yaml(open(os.path.join(args.result_path, "train_cfg.yaml")))
         # start from scratch, loading the new data and train configurations
         else:
             assert args.data_cfg is not None and args.train_cfg is not None, \
                 "Please specify a data configuration file and a train configuration file!"
-            data_cfg = yaml.load(open(args.data_cfg))
-            train_cfg = yaml.load(open(args.train_cfg))
+            data_cfg = load_yaml(open(args.data_cfg))
+            train_cfg = load_yaml(open(args.train_cfg))
 
-        # initialize the iterators
+
+        # --- Initialization of the Iterators --- #
         iterators = cls.build_iterators(data_cfg=data_cfg, args=args)
 
         # logging the information of the iterators
         _iter_message = "The information of the iterators:"
         for dset, iters in iterators.items():
-            for name, iterator in iters.items():
+            # single iterator for the current dataset
+            if isinstance(iters, Iterator):
                 # gather the iterator message from all the process in the multi-GPU distributed training mode
                 if args.distributed:
-                    # turn the message into ASCII codes and gather the codes length
-                    _iter_asc = torch.LongTensor([ord(char) for char in str(iterator)])
-                    _iter_asc_len = torch.LongTensor([_iter_asc.size(0)]).cuda(device)
-                    _iter_asc_lens = [torch.LongTensor([0]).cuda(device) for _ in range(torch.distributed.get_world_size())]
-                    torch.distributed.all_gather(_iter_asc_lens, _iter_asc_len)
-
-                    # padding the ASCII codes to the same length and gather them
-                    _iter_asc_lens = torch.LongTensor(_iter_asc_lens)
-                    if _iter_asc_len < _iter_asc_lens.max():
-                        _iter_asc = torch.cat((_iter_asc,
-                                               torch.zeros(_iter_asc_lens.max().item() - _iter_asc_len.item(),
-                                                           dtype=torch.int64)))
-                    _iter_ascs = [torch.zeros(_iter_asc_lens.max().item(), dtype=torch.int64).cuda(device)
-                                  for _ in range(torch.distributed.get_world_size())]
-                    torch.distributed.all_gather(_iter_ascs, _iter_asc.cuda(device))
+                    _iter_ascs, _iter_asc_lens = cls.gather_all_iter_ascii(iters, device)
 
                     # recover the codes from all the processes back to the text
                     for i, asc in enumerate(_iter_ascs):
                         _iter_text = ''.join([chr(a) for a in asc[:_iter_asc_lens[i]].tolist()])
-                        _iter_message += f"\nThe {name} iterator in the {dset} set of the rank no.{i}: {_iter_text}"
+                        _iter_message += f"\nThe iterator in the {dset} set of the rank no.{i}: {_iter_text}"
                 # directly report the message in the single-GPU mode
                 else:
-                    _iter_message += f"\nThe {name} iterator in the {dset} set: {iterator}"
+                    _iter_message += f"\nThe iterator in the {dset} set: {iters}"
+
+            # multiple iterators for the current dataset
+            elif isinstance(iters, Dict):
+                for name, iterator in iters.items():
+                    # gather the iterator message from all the process in the multi-GPU distributed training mode
+                    if args.distributed:
+                        _iter_ascs, _iter_asc_lens = cls.gather_all_iter_ascii(iterator, device)
+
+                        # recover the codes from all the processes back to the text
+                        for i, asc in enumerate(_iter_ascs):
+                            _iter_text = ''.join([chr(a) for a in asc[:_iter_asc_lens[i]].tolist()])
+                            _iter_message += f"\nThe {dset} iterator of the rank no.{i}: {_iter_text}"
+                    # directly report the message in the single-GPU mode
+                    else:
+                        _iter_message += f"\nThe {dset} iterator: {iterator}"
+
         logger.info(_iter_message)
 
-        # initialize the model
+
+        # --- Initialization of the Model --- #
         assert "model" in train_cfg.keys(), "Please fill in the 'model' tag of your given train_cfg!"
         model = cls.build_model(train_cfg['model'], args=args, device=device)
         logger.info(model_summary(model))
@@ -1090,18 +1235,13 @@ class Runner(object):
             with open(os.path.join(args.result_path, "train_cfg.yaml"), 'w', encoding="utf-8") as f:
                 yaml.dump(train_cfg, f, sort_keys=False)
 
-        # --- The environment initialization above is shared by both the training branch and testing branch --- #
 
-        # Model training branch
+        # --- The pipeline initialization above is shared by both the training branch and testing branch --- #
+        # --- The codes below become different for different branches --- #
+
+
+        # --- The Model Training Branch --- #
         if args.train:
-            # initialize the Optimizers
-            assert "optim_sches" in train_cfg.keys(), "Please fill in the 'optim_sches' tag!"
-            optim_sches = cls.build_optim_sches(model=model, optim_sche_cfg=train_cfg['optim_sches'], args=args)
-
-            # logging the information of the optimschedulers
-            for name, optim_sche in optim_sches.items():
-                logger.info(f"The {name} OptimScheduler: {optim_sche}")
-
             # initialize the Monitor for training and validation
             if not args.distributed or args.rank == 0:
                 train_monitor = TrainMonitor(logger=logger, args=args)
@@ -1111,14 +1251,30 @@ class Runner(object):
                 valid_monitor = None
 
             # loading the model from the existing checkpoint for resuming the training process
-            args.start_epoch = cls.resume(args=args, model=model, optim_sches=optim_sches,
+            args.start_epoch = cls.resume(args=args, model=model,
                                           train_monitor=train_monitor, valid_monitor=valid_monitor)
 
-            # DDP Wrapping of the model must be done after model loading
+            # DDP Wrapping of the model must be done after model checkpoint loading
             if args.distributed:
                 # turn the batchnorm layers into the sync counterparts
                 model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
+                # Here the model buffers and parameters of the master process are broadcast to the other processes
                 model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], output_device=args.gpu)
+
+            # initialize the OptimSchedulers after DDP wrapping (including optimization resuming)
+            assert "optim_sches" in train_cfg.keys(), "Please fill in the 'optim_sches' tag!"
+            optim_sches = cls.build_optim_sches(model=model, optim_sche_cfg=train_cfg['optim_sches'], args=args)
+
+            # logging the information of the optimschedulers
+            # single-optimizer scenario
+            if isinstance(optim_sches, OptimScheduler):
+                logger.info(f"OptimScheduler: {optim_sches}")
+            # multi-optimizer scenario
+            elif isinstance(optim_sches, Dict):
+                for name, optim_sche in optim_sches.items():
+                    logger.info(f"The {name} OptimScheduler: {optim_sche}")
+            else:
+                raise RuntimeError
 
             # start the training process
             cls.train(args=args, iterators=iterators, model=model, optim_sches=optim_sches,
@@ -1126,17 +1282,24 @@ class Runner(object):
 
         # Model testing branch
         elif args.test:
-            # load the target model parameters
-            model.load_state_dict(
-                torch.load(os.path.join(args.result_path, 'models', f'{args.test_model}.mdl'),
-                           map_location=model.device)
-            )
+            if isinstance(args.test_model, str):
+                args.test_model = [args.test_model]
+            elif not isinstance(args.test_model, List):
+                raise ValueError
 
-            # start the testing process
-            cls.test(args=args, iterators=iterators, model=model)
+            # loop each model to be tested
+            for model_name in args.test_model:
+                # load the target model parameters
+                model.load_state_dict(
+                    torch.load(os.path.join(args.result_path, 'models', f'{model_name}.mdl'),
+                               map_location=model.device)
+                )
+
+                # start the testing process
+                cls.test(args=args, test_model=model_name, iterators=iterators, model=model)
 
         # release the computational resource in the multi-GPU training setting
-        if args.distributed:
+        if args.distributed and args.rank == 0:
             torch.distributed.destroy_process_group()
 
 
@@ -1158,18 +1321,33 @@ class Runner(object):
         except RuntimeError:
             pass
 
-        # turn the specified GPUs into a list, they can be given by either arguments or command line
-        # the argument 'gpu' has the higher priority than the command 'CUDA_VISIBLE_DEVICES'
-        if args.gpus is not None:
-            args.gpus = [int(gpu) for gpu in args.gpus.split(',')] if isinstance(args.gpus, str) else [args.gpus]
-        elif 'CUDA_VISIBLE_DEVICES' in os.environ.keys():
+
+        # --- Initialization of the used GPUs in the current experiment --- #
+        # 'CUDA_VISIBLE_DEVICES' has the higher priority than the argument 'gpus'
+        if 'CUDA_VISIBLE_DEVICES' in os.environ.keys():
             args.gpus = os.environ['CUDA_VISIBLE_DEVICES']
-            args.gpus = [idx for idx, _ in enumerate(args.gpus.split(','))] if isinstance(args.gpus, str) else [args.gpus]
-        # automatically generate available GPUs
+            if not isinstance(args.gpus, str):
+                args.gpus = str(args.gpus)
+
+        # if 'CUDA_VISIBLE_DEVICES' is not given, initialize it by args.gpus
+        elif args.gpus is not None:
+            if isinstance(args.gpus, List):
+                args.gpus = ','.join([str(g) if not isinstance(g, str) else g for g in args.gpus])
+            elif isinstance(args.gpus, int):
+                args.gpus = str(args.gpus)
+            else:
+                assert isinstance(args.gpus, str)
+            os.environ['CUDA_VISIBLE_DEVICES'] = args.gpus
+
+        # if both 'CUDA_VISIBLE_DEVICES' and args.gpus are not given, automatically select available GPUs
         else:
             args.gpus = sorted(GPUtil.getGPUs(), key=lambda g: g.memoryUtil)[:args.ngpu]
             # make sure that GPU no.0 is the first GPU if it is selected
-            args.gpus = sorted([gpu.id for gpu in args.gpus])
+            args.gpus = ','.join(sorted([str(gpu.id) for gpu in args.gpus]))
+            os.environ['CUDA_VISIBLE_DEVICES'] = args.gpus
+
+        # convert the GPU number to the relative index to fit 'CUDA_VISIBLE_DEVICES'
+        args.gpus = [idx for idx, _ in enumerate(args.gpus.split(','))]
 
         # check the GPU configuration
         assert len(args.gpus) >= args.ngpu, \
@@ -1177,9 +1355,12 @@ class Runner(object):
         if len(args.gpus) == 1:
             args.gpus = args.gpus[0]
 
+
+        # --- Initialization of DDP distribution pipeline --- #
         # get the world_size from the command line, world_size here means the number of nodes
-        if args.dist_url == "env://" and args.world_size == -1:
+        if args.dist_url == "env://":
             args.world_size = int(os.environ["WORLD_SIZE"])
+            raise NotImplementedError("Multi-node DDP distributed training is not supported now.....")
 
         # distributed is set to true if multiple GPUs are specified or multiple nodes are specified
         args.distributed = args.world_size > 1 or args.ngpu > 1
@@ -1208,7 +1389,7 @@ class Runner(object):
 
         # CPU testing with the multiprocessing strategy
         elif args.test:
-            raise NotImplementedError("Multiprocessing CPU testing function has not been implemented yet......")
+            raise NotImplementedError("Multiprocessing CPU testing part has not been implemented yet......")
 
         # CPU training is not supported
         else:
@@ -1225,19 +1406,63 @@ class Runner(object):
         # obtain the input arguments
         args = cls.parse()
 
-        # overwrite the configuration from the args.config
-        # Note: args.config has the higher priority than the command line arguments
-        if args.config is not None:
-            config = yaml.load(open(args.config, mode='r', encoding='utf-8'))
-            for c in config:
-                setattr(args, c, config[c])
+        # Currently, 'world_size' and 'rank' are set to fixed values
+        given_args = ['world_size', 'rank']
+        # The arguments that users give in the command line should not be refreshed by the argument '--config'
+        for i in sys.argv:
+            if i.startswith('--'):
+                given_args.append(i.replace('-', ''))
 
-        # ToDo(heli-qi): The configuration should be refreshed by the new arguments entered in the terminal
+        # check the train and test flags
+        if 'train' in given_args and 'test' in given_args:
+            raise ValueError(
+                "A running job can only conduct either training process or testing process, "
+                "so '--train' and '--test' cannot be used at the same time. "
+                "If you want to conduct training and testing sequentially, "
+                "please make two running jobs where "
+                "the first job has '--train' only and the second job has '--test' only."
+            )
+        elif 'train' in given_args:
+            given_args.append('test')
+            args.test = False
+        elif 'test' in given_args:
+            given_args.append('train')
+            args.train = False
+
+        # the command 'CUDA_VISIBLE_DEVICES' has the higher priority than the argument 'gpus'
+        if 'CUDA_VISIBLE_DEVICES' in os.environ.keys():
+            given_args.append('gpus')
+            args.gpus = None
+
+        # overwrite the configuration from the args.config
+        # Note: the command line arguments has the higher priority than args.config
+        if args.config is not None:
+            args.config = os.path.abspath(args.config)
+            config = load_yaml(open(args.config, mode='r', encoding='utf-8'))
+            for c in config:
+                if c not in given_args:
+                    # remove the port number in 'dist_url' if given
+                    if c == 'dist_url' and len(config[c].split(':')) >= 3:
+                        config[c] = ':'.join(config[c].split(':')[:-1])
+                    setattr(args, c, config[c])
+
+        # make sure that all the paths are absoluate paths
+        if args.result_path is not None:
+            args.result_path = os.path.abspath(args.result_path)
+        if args.data_cfg is not None:
+            args.data_cfg = os.path.abspath(args.data_cfg)
+        if args.train_cfg is not None:
+            args.train_cfg = os.path.abspath(args.train_cfg)
+        if args.test_cfg is not None:
+            args.test_cfg = os.path.abspath(args.test_cfg)
 
         # start the experiment pipeline
         assert (args.train and args.test) is False, \
-            "A runner job can only deal with either training or testing. " \
-            "If you want to conduct training and testing sequentially, please use two runner jobs."
+            "A running job can only conduct either training process or testing process, " \
+            "so args.train and args.test cannot be True at the same time. " \
+            "If you want to conduct training and testing sequentially, " \
+            "please make two running jobs where the first job has args.train=True and args.test=False and " \
+            "the second job has args.train=False and args.test=True."
         cls.main(args)
 
 

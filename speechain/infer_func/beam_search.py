@@ -97,7 +97,7 @@ class BeamHypotheses(object):
             curr_score = best_sum_logprobs / curr_len ** self.length_penalty
 
             # whether the current score is worse than the worst score
-            return curr_score <= self.worst_score
+            return curr_score < self.worst_score
 
 
 def beam_searching(enc_feat: torch.Tensor,
@@ -105,46 +105,74 @@ def beam_searching(enc_feat: torch.Tensor,
                    decode_one_step,
                    vocab_size: int,
                    sos_eos: int = None,
+                   padding_idx: int = 0,
                    beam_size: int = 1,
                    maxlen_ratio: float = 1.0,
                    length_penalty: float = 1.0,
-                   padding_idx: int = 0,
+                   temperature: float = 1.0,
+                   eos_filtering: bool = False,
+                   eos_threshold: float = 1.5,
                    sent_per_beam: int = 1):
     """
-    Batch version of beam searching to enable parallel computation.
-    The basic idea is reshaping batch_size sentences into (batch_size * beam_size) sentences.
+    Batch version of beam searching to enable parallel computation. The basic idea is reshaping batch_size sentences
+    into (batch_size * beam_size) sentences.
 
-    batch_size > 1 is mainly used to speed up the pseudo text generation during training.
-    For testing, usually set batch_size=1 for evaluating the processing time to mimic real-world application.
+    However, the hypothesis text probabilities calculated by a batch of inputs and a single input are slightly
+    different due to the model accuracy. in rare cases, the best hypothesis with the highest probability may be different
+    when the beam searching process is performed in the batch level.
+
+    Therefore, batch-level beam searching is mainly used to speed up the pseudo text generation. For model visualization
+    during training or evaluation after training, we recommend you to perform the beam searching for each single input.
 
     Args:
-        enc_feat: (batch_size, feat_maxlen, edim)
-            The encoded features.
+        enc_feat: (batch_size, feat_maxlen, enc_dim)
+            The final hidden representations from the encoder.
         enc_feat_mask: (batch_size, 1, feat_maxlen)
-            The masks for the encoded features.
+            The masks for the encoder representations.
         decode_one_step:
             The function that decodes the hypothesis for one time step and get the next prediction.
         vocab_size: int
             The number of tokens in the vocabulary dictionary
         sos_eos: int
             The index of the <sos/eos> token.
+        padding_idx: int
+            The index of the padding token.
         beam_size: int
             The number of beams used for each hypothesis sentence.
         maxlen_ratio: float
-            The ratio of the hypothesis max length to encoded feature length.
+            The ratio of the hypothesis max length to encoder representation length (feat_maxlen).
             Postive values mean the relative ratio.
             Negative values mean the absolute max length of the hypothesis sentence.
-        padding_idx: int
-            The index of the padding token.
+        length_penalty: float
+            The hypothesis score is divided by its length to prevent the short hypothesis.
+            length_penalty is the penalty on the hypothesis length.
+            The larger the value is, the longer hypothesis you will get.
+        temperature: float
+            The temperature coefficient used for calculating the log-softmax probability. The higher temperature is (>1),
+            the more even token probability distribution you will get. Vice versa for the lower temperature (<1).
+            Usually, raising the temperature up helps ASR in better decoding. The temperature value needs to be tuned on
+            your validation sets. The common practice is to start from 1.3 and search other values in (1.0, 1.5].
+        eos_filtering: bool
+            Controls whether the eos filtering is performed.
+            If True, the algorithm will only emit an eos when the eos probability is larger than some times the
+            maximum probability of the other tokens.
+            This function is default to be off since it may reversely aggravate the n-gram phrase repeating problem.
+            reference: 'Sequence-to-Sequence Speech Recognition with Time-Depth Separable Convolutions'
+                Section 3.1.2 in https://arxiv.org/pdf/1904.02619
+        eos_threshold: float
+            The eos filtering threshold used for eos filtering. This threshold will be multiplied with the
+            maximum probability of the other tokens when deciding whether to emit an eos. The larger this threshold is (>1),
+            the easier the hypothesis emits an eos. Vice versa for the smaller temperature (<1).
+            The default value 1.5 comes from the reference paper above.
         sent_per_beam: int
             The number of sentences in each beam that are returned in this function.
-            Mainly used for data augmentation.
-
-    Returns:
+            sent_per_beam > 1 is mainly used for data augmentation (under development).
 
     """
     # para init
     batch_size = enc_feat.size(0)
+    enc_feat_len = enc_feat_mask.sum(dim=-1).squeeze()
+
     feat_maxlen = enc_feat.size(1)
     hypo_maxlen = int(feat_maxlen * maxlen_ratio) if maxlen_ratio > 0 else int(-maxlen_ratio)
     cuda_device = enc_feat.device
@@ -183,11 +211,12 @@ def beam_searching(enc_feat: torch.Tensor,
         curr_outputs = decode_one_step(enc_feat=enc_feat, enc_feat_mask=enc_feat_mask,
                                        text=hypo_text, text_len=hypo_text_len)['output'].detach()
 
-        # (batch_size × beam_size, curr_len, vocab_size) -> (batch_size × beam_size, 1, vocab_size)
-        scores = curr_outputs[:, -1, :]
+        # (batch_size × beam_size, curr_len, vocab_size) -> (batch_size × beam_size, vocab_size)
+        curr_outputs = curr_outputs[:, -1, :]
+        next_token_scores = torch.log_softmax(curr_outputs / temperature, dim=-1)
 
-        # Calculate the score of the obtained token predictions
-        next_scores = torch.log_softmax(scores, dim=-1) + beam_scores.unsqueeze(-1).expand_as(scores)
+        # Calculate the score of the obtained token sequences so far
+        next_scores = next_token_scores + beam_scores.unsqueeze(-1).expand_as(next_token_scores)
 
         # Arrange all beams of the same sentence into a single row to pick up the best predictions across all beams.
         # (batch_size × beam_size, vocab_size) -> (batch_size, beam_size × vocab_size)
@@ -222,7 +251,7 @@ def beam_searching(enc_feat: torch.Tensor,
                 beam_id = torch.div(beam_token_id, vocab_size, rounding_mode='floor')
                 # the index number of the real token, range from 0 to vocab_size-1
                 token_id = beam_token_id % vocab_size
-                # the index number of the beam across all sentences, range from 0 to batch_size*beam_size-1
+                # the index number of the beam across the current batch, ∈ {batch_idx * beam_size, ..., (batch_idx + 1) * beam_size - 1}
                 effective_beam_id = batch_idx * beam_size + beam_id
 
                 # if the eos token is met, the predictions will be either saved as a hypothesis or simple removed.
@@ -231,7 +260,20 @@ def beam_searching(enc_feat: torch.Tensor,
                     # so the ones other than the first beam_size elements will be ignored even though eos is met.
                     if beam_token_rank >= beam_size:
                         continue
-                    generated_hyps[batch_idx].add(hypo_text[effective_beam_id].clone(), beam_token_score.item())
+                    # conduct EOS filtering
+                    elif eos_filtering:
+                        eos_score = next_token_scores[effective_beam_id][sos_eos]
+                        # the largest token score other than eos is the reference score
+                        vocab_idx = torch.arange(0, vocab_size, dtype=torch.int)
+                        ref_score = next_token_scores[effective_beam_id][vocab_idx != sos_eos].max()
+                        # only consider the eos whose score is larger than eos_threshold * reference score
+                        if eos_score <= eos_threshold * ref_score:
+                            continue
+
+                    generated_hyps[batch_idx].add(
+                        hyp=hypo_text[effective_beam_id][1:].detach().cpu(),
+                        sum_logprobs=beam_token_score.item()
+                    )
                 # add the predictions into the temporary results.
                 else:
                     # make sure that different tokens are selected for different beams in the first time step
@@ -249,9 +291,11 @@ def beam_searching(enc_feat: torch.Tensor,
                     break
 
             # update the done flag of the current sentence
-            done[batch_idx] = done[batch_idx] or generated_hyps[batch_idx].is_done(
-                next_scores[batch_idx].max().item(), curr_len=hypo_text_len.max().item()
-            )
+            if not done[batch_idx]:
+                done[batch_idx] = generated_hyps[batch_idx].is_done(
+                    best_sum_logprobs=next_scores[batch_idx].max().item(),
+                    curr_len=hypo_text_len[batch_idx * beam_size: (batch_idx + 1) * beam_size].max().item() - 1
+                )
             next_batch_beam.extend(next_sent_beam)
 
         if all(done):
@@ -267,21 +311,21 @@ def beam_searching(enc_feat: torch.Tensor,
         hypo_text = torch.cat([hypo_text[beam_idx], beam_tokens.unsqueeze(1)], dim=1)
         hypo_text_len = torch.sum(hypo_text != padding_idx, dim=-1)
 
-        # align encoder_out with input_tokens
+        # align encoder_out with input_tokens (not necessary, just in case)
         enc_feat = enc_feat[beam_idx]
         enc_feat_mask = enc_feat_mask[beam_idx]
 
     # --- Post-processing --- #
     # for the predictions that end without an eos token at the end because of the max length
     for batch_idx in range(batch_size):
-        # pass the hypothesis sentence that ends with eos
+        # skip the sentences that get enough hypotheses ending with eos
         if done[batch_idx]:
             continue
         # check whether they can be added into final beam searching results
         for beam_id in range(beam_size):
             effective_beam_id = batch_idx * beam_size + beam_id
             final_score = beam_scores[effective_beam_id].item()
-            final_tokens = hypo_text[effective_beam_id].clone()
+            final_tokens = hypo_text[effective_beam_id][1:].detach().cpu()
             generated_hyps[batch_idx].add(final_tokens, final_score)
 
     # --- Length Calculation --- #
@@ -297,14 +341,14 @@ def beam_searching(enc_feat: torch.Tensor,
             _hypo = sorted_hyps.pop()
 
             # remove the sos tokens at the beginning of hyp
-            best_hyp = _hypo[1][1:]
+            best_hyp = _hypo[1]
             hypo_text_len[effective_batch_idx] = len(best_hyp)
             hypo_text_list.append(best_hyp)
             hypo_text_prob.append(_hypo[0])
 
     # --- Padding --- #
-    # the sentences shorter than the maximal length or there is only one sentence in a single batch
-    if hypo_text_len.min().item() != hypo_text_len.max().item() or batch_size == 1:
+    # some sentences are shorter than the maximal length
+    if hypo_text_len.min().item() != hypo_text_len.max().item():
         sent_max_len = min(hypo_text_len.max().item(), hypo_maxlen)
         hypo_text = torch.full((batch_size * sent_per_beam, sent_max_len), padding_idx,
                                dtype=torch.long, device=cuda_device)
@@ -312,13 +356,12 @@ def beam_searching(enc_feat: torch.Tensor,
             # padding pseudo transcripts
             hypo_text[i, :hypo_text_len[i]] = hypo_text_list[i]
     # all the sentences are equally long
-    elif batch_size > 1:
-        hypo_text = torch.stack(hypo_text_list).to(cuda_device)
     else:
-        raise RuntimeError
+        hypo_text = torch.stack(hypo_text_list).to(cuda_device)
 
     return dict(
         hypo_text=hypo_text,
         hypo_text_len=hypo_text_len,
+        hypo_len_ratio=hypo_text_len / enc_feat_len,
         hypo_text_prob=torch.Tensor(hypo_text_prob)
     )

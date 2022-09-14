@@ -29,10 +29,10 @@ class PieceIterator(Iterator):
 
         # divide the data into individual batches with equal amount of samples
         batches = [self.sorted_data[i: i + self.batch_size]
-                        for i in range(0, len(self.sorted_data) - self.batch_size, self.batch_size)]
+                   for i in range(0, len(self.sorted_data) - self.batch_size + 1, self.batch_size)]
         # in case that there are several uncovered samples at the end of self.sorted_data
         if len(self.sorted_data) % self.batch_size != 0:
             remaining = len(self.sorted_data) % self.batch_size
-            batches += self.sorted_data[-remaining:]
+            batches.append(self.sorted_data[-remaining:])
 
         return batches

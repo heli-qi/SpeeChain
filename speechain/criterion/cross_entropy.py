@@ -81,20 +81,25 @@ class CrossEntropy(Criterion):
             The cross entropy between logits and text
 
         """
-        if text_len.max() == text.size(1):
-            text_len -= 1
-        elif text_len.max() != text.size(1) - 1:
-            raise ValueError(f"There is a mismatch of the sentence length between text and text_len. "
-                             f"Expect text_len.max() is either equal to or 1 smaller than text.size(1), "
-                             f"but got text_len.max()={text_len.max()} and text.size(1)={text.size(1)}.")
+        # For the text attached by a <sos/eos> at the beginning
+        if logits.size(1) == text.size(1) - 1:
+            # text_len must match the sequence dimension of text
+            assert text_len.max() == text.size(1), \
+                f"There is a mismatch of the sentence length between text and text_len. "\
+                f"Expect text_len.max() is either equal to or 1 smaller than text.size(1), "\
+                f"but got text_len.max()={text_len.max()} and text.size(1)={text.size(1)}."
+            # remove the <sos/eos> at the beginning
+            text = text[:, 1:].squeeze()
+            # don't use text_len -= 1 here because it will also change the text_len outside this function
+            text_len = text_len - 1
+        # Otherwise, text must not have a <sos/eos> at the beginning (equal in length with logits)
+        elif logits.size(1) != text.size(1):
+            raise RuntimeError
 
         # mask generation for the input text length
         text_mask = make_mask_from_len(text_len).squeeze()
         if text.is_cuda:
             text_mask = text_mask.cuda(text.device)
-
-        # remove the <sos/eos> at the beginning of each sentenc
-        text = text[:, 1:].squeeze()
 
         # reshape predictions and do log-softmax
         batch, seq_maxlen, vocab_size = logits.size()
@@ -104,7 +109,7 @@ class CrossEntropy(Criterion):
         log_prob_target = log_prob.gather(1, text.contiguous().view(-1, 1)).squeeze()
         if self.label_smoothing > 0:
             smooth_pos = 1 - self.label_smoothing
-            smooth_neg = self.label_smoothing / log_prob.size(-1)
+            smooth_neg = self.label_smoothing / vocab_size
             loss = (log_prob_target * smooth_pos) + (log_prob * smooth_neg).sum(dim=1)
         else:
             loss = log_prob_target
@@ -115,7 +120,7 @@ class CrossEntropy(Criterion):
 
         # mask the padding parts in the loss before summing up each sentence in the batch
         if text_mask is not None:
-            loss = loss.masked_fill(~text_mask.reshape(-1), 0)
+            loss = loss.masked_fill(~text_mask.reshape(-1), 0.0)
         loss = loss.reshape(batch, seq_maxlen).sum(dim=-1)
 
         # normalize the loss by the token sequence length if specified
@@ -124,6 +129,6 @@ class CrossEntropy(Criterion):
                 "If you want to normalize the cross_entropy loss, " \
                 "you need to give the masks of target sequences (text_mask)."
 
-            loss /= text_mask.sum(dim=-1, keepdim=False)
+            loss /= text_len
 
         return -loss.mean()

@@ -1,3 +1,8 @@
+"""
+    Author: Heli Qi
+    Affiliation: NAIST
+    Date: 2022.07
+"""
 import edit_distance
 from speechain.utilbox.md_util import get_table_strings
 

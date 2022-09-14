@@ -17,7 +17,8 @@ If you want to contribute a new dataset, we would appreciate it if you could fol
         5. [text](https://github.com/ahclab/SpeeChain/tree/main/datasets/speech_text#text)
     2. [Meta data](https://github.com/ahclab/SpeeChain/tree/main/datasets/speech_text#meta-data)
         1. [idx2spk](https://github.com/ahclab/SpeeChain/tree/main/datasets/speech_text#idx2spk)
-        2. [idx2gen](https://github.com/ahclab/SpeeChain/tree/main/datasets/speech_text#idx2gen)
+        2. [spk_list](https://github.com/ahclab/SpeeChain/tree/main/datasets/speech_text#spk_list)
+        3. [idx2gen](https://github.com/ahclab/SpeeChain/tree/main/datasets/speech_text#idx2gen)
 3. [**The Procedure of Dumping a Dataset on your Machine**](https://github.com/ahclab/SpeeChain/tree/main/datasets/speech_text#the-procedure-of-dumping-a-dataset-on-your-machine)
 3. [**How to Contribute a New Dataset**](https://github.com/ahclab/SpeeChain/tree/main/datasets/speech_text#how-to-contribute-a-new-dataset)
 
@@ -175,6 +176,23 @@ For example,
 103-1240-0004 103
 ```
 
+#### spk_list
+In _spk_list_, speaker corresponds a row and each row is made up of a _speaker ID_. 
+
+For example, 
+```
+116
+1255
+1272
+1462
+1585
+1630
+1650
+1651
+1673
+1686
+```
+
 #### idx2gen
 In _idx2gen_, each waveform file corresponds to a row and each row should be in the form of _file name + blank + gender_. 
 
@@ -191,34 +209,24 @@ For example,
 There are 6 steps to dump your target dataset from the internet to your local machine:
 1. **Data downloading**: 
     In this step, the original data of the target dataset is downloaded from the internet to _/datasets/speech_text/dataset_name/wav_ by **_data_download.sh_**. 
-
 2. **Data preparation**: 
     In this step, the statistical information of the target dataset is extracted from _/datasets/speech_text/dataset_name/wav_ by **_stat_info_generator.py_**. 
-
     The statistical files will be saved to _/datasets/speech_text/dataset_name/wav/(subset_name/)_ with the names of _idx2wav_, _idx2sent_, _text_, and perhaps _idx2spk_ and _idx2gen_.
-
 3. **Waveform downsampling (optional)**:
     In this step, the original waveform files are downsampled to your target frequency. 
     This step is not mandatory if the frequency of the original files is OK for your research.
-    
     The downsampled waveform files will be save to _/datasets/speech_text/dataset_name/wavXXXXX_ where _XXXXX_ is your target frequency.
-
 4. **Acoustic feature extraction (optional)**:
     In this step, the acoustic feature vectors are extracted by your given configuration.
     This step is not mandatory since our toolkit supports on-the-fly acoustic feature extraction during training.
-    
     The extracted acoustic features will be save to _/datasets/speech_text/dataset_name/XXXX_ where _XXXX_ is the name of your given configuration.
-
 5. **Data length generation**:
     In this step, the length of your specified source data will be extracted. 
     If the source data is waveform, the number of sampling points of each waveform file will be recorded.
     If the source data is acoustic feature vectors, the number of time frames of each feature file will be recorded.
-    
     The extracted data length will be saved to _/datasets/speech_text/dataset_name/wav/idx2wav_len_ or _/datasets/speech_text/dataset_name/XXXX/idx2feat_len_.
-
 6. **Vocabulary generation**:
     In this step, the vocabulary list and sentence length will be extracted based on _/datasets/speech_text/dataset_name/wav/(subset_name/)text_ and _/datasets/speech_text/dataset_name/wav/(subset_name/)idx2sent_.
-    
     The extracted vocabulary list will be saved to _/datasets/speech_text/dataset_name/token_type/(subset_name/)(token_config/)vocab_. 
     The extracted sentence length will be saved to _/datasets/speech_text/dataset_name/token_type/(subset_name/)(token_config/)(tgt_subset/)idx2sent_len_.
     

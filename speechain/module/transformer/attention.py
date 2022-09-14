@@ -96,7 +96,8 @@ class MultiHeadedAttention(Module):
         # back to [B, M, D]
         context = torch.matmul(attention, v)
         context = context.transpose(1, 2).contiguous().view(
-            batch_size, -1, self.num_heads * self.head_size)
+            batch_size, -1, self.num_heads * self.head_size
+        )
 
         output = self.output_layer(context)
 

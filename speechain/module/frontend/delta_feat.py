@@ -15,6 +15,7 @@ class DeltaFeature(Module):
                     delta_order: int = 1,
                     delta_N: int = 2):
         """
+        modified from https://github.com/jameslyons/python_speech_features/blob/master/python_speech_features/base.py#L195
 
         Args:
             delta_order:
@@ -28,9 +29,9 @@ class DeltaFeature(Module):
         self.delta_order = delta_order
 
         # initialze the filters for extracting delta features
-        # modified from https://github.com/jameslyons/python_speech_features/blob/master/python_speech_features/base.py#L195
         assert isinstance(delta_N, int) and delta_N >= 1, \
             f"delta_N must be a positive integer equal to or larger than 1"
+        self.delta_N = delta_N
         _filter_weights = torch.arange(-delta_N, delta_N + 1) / (2 * sum([i ** 2 for i in range(1, delta_N + 1)]))
         _delta_filters = torch.nn.Conv2d(in_channels=1, out_channels=1,
                                          kernel_size=(2 * delta_N + 1, 1), padding=(delta_N, 0), bias=False)
@@ -56,20 +57,22 @@ class DeltaFeature(Module):
 
         # first-order derivative
         feat_stack = [feat]
-        delta_feat = self.delta_filters(feat.unsqueeze(1)).squeeze()
+        delta_feat = self.delta_filters(feat.unsqueeze(1)).squeeze(1)
         feat_stack.append(delta_feat)
 
         # (Optional) second-order derivative
         if self.delta_order == 2:
-            delta2_feat = self.delta_filters(delta_feat.unsqueeze(1)).squeeze()
+            delta2_feat = self.delta_filters(delta_feat.unsqueeze(1)).squeeze(1)
             feat_stack.append(delta2_feat)
 
         # combine the original features with all delta features
         feat = torch.cat(feat_stack, dim=-1)
 
-        # make sure the silence parts are zeros
-        for i in range(feat.size(0)):
-            if feat_len[i] < feat.size(1):
-                feat[i][feat_len[i]:] = 0.0
-
         return feat, feat_len
+
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}(\n" \
+               f"delta_order={self.delta_order}, " \
+               f"delta_N={self.delta_N}" \
+               f"\n)"

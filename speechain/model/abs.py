@@ -13,9 +13,7 @@ from typing import Dict
 from abc import ABC, abstractmethod
 from collections import OrderedDict
 
-import yaml
-
-from speechain.utilbox.import_util import import_class
+from speechain.utilbox.yaml_util import load_yaml
 
 
 class Model(torch.nn.Module, ABC):
@@ -53,11 +51,11 @@ class Model(torch.nn.Module, ABC):
     ]
 
     def __init__(self,
-                 model_conf: Dict[str, Dict],
-                 module_conf: Dict[str, Dict],
-                 criterion_conf: Dict[str, Dict],
+                 model_conf: Dict,
+                 module_conf: Dict,
                  args: argparse.Namespace,
-                 device: torch.device):
+                 device: torch.device,
+                 criterion_conf: Dict = None):
         """
         Initialization function of Model. The main body of the model is initialized by self.model_init() and
         the criteria (loss functions and metrics) are initialized by self.criterion_init().
@@ -79,27 +77,34 @@ class Model(torch.nn.Module, ABC):
         """
         assert model_conf is not None, "model_conf cannot be None!"
         assert module_conf is not None, "module_conf cannot be None!"
-        assert criterion_conf is not None, "criterion_conf cannot be None!"
 
         super(Model, self).__init__()
 
         # general arguments
         self.non_blocking = args.non_blocking
         self.distributed = args.distributed
-        self.use_amp = args.use_amp
         self.device = device
 
         # model snapshotting-related arguments
         self.result_path = args.result_path
+        if "visual_infer_conf" in model_conf.keys():
+            # configuration is given as a .yaml file
+            if isinstance(model_conf["visual_infer_conf"], str):
+                self.visual_infer_conf = load_yaml(open(model_conf["visual_infer_conf"]))
+            # configuration is explicitly given
+            elif isinstance(model_conf["visual_infer_conf"], Dict):
+                self.visual_infer_conf = model_conf["visual_infer_conf"]
+            else:
+                raise RuntimeError
+        else:
+            self.visual_infer_conf = dict()
 
         # initialize the model
-        self.model_init(model_conf=model_conf, module_conf=module_conf)
-
-        # initialize the criteria (training loss and validation metric)
-        self.criterion_init(criterion_conf=criterion_conf)
+        criterion_conf = dict() if criterion_conf is None else criterion_conf
+        self.model_init(model_conf=model_conf, criterion_conf=criterion_conf, module_conf=module_conf)
 
 
-    def model_init(self, model_conf: Dict, module_conf: Dict):
+    def model_init(self, model_conf: Dict, criterion_conf: Dict, module_conf: Dict):
         """
         The initialization function for the main body of the model. The initialization is done automatically by the
         input module configuration.
@@ -138,12 +143,14 @@ class Model(torch.nn.Module, ABC):
                 Module configuration.
 
         """
-        # initialize all the input modules
-        for name, module in module_conf.items():
-            module_class = import_class('speechain.module.' + module['type'])
-            self.__setattr__(name, module_class(**module['conf']))
+        # --- Model Construction --- #
+        self.bad_cases_selection = None
+        if 'customize_conf' not in model_conf.keys():
+            model_conf['customize_conf'] = dict()
+        self.model_construction(**module_conf, **criterion_conf, **model_conf['customize_conf'])
 
-        # load the pretrained model parameters if given
+
+        # --- Pretrained Model Loading --- #
         pretrained_model = model_conf['pretrained_model'] if 'pretrained_model' in model_conf.keys() else None
         if pretrained_model is not None:
             pretrained_model = pretrained_model if isinstance(pretrained_model, list) else [pretrained_model]
@@ -171,7 +178,7 @@ class Model(torch.nn.Module, ABC):
                                 _src_modules[name] = para
                     self.load_state_dict(_src_modules)
 
-        # otherwise, initialize the model parameters
+        # --- Model Parameter Initialization --- #
         else:
             # the default initialization method is xavier (i.e. xavier_normal)
             init = model_conf["init"] if "init" in model_conf.keys() else 'xavier'
@@ -180,7 +187,7 @@ class Model(torch.nn.Module, ABC):
 
             for name, para in self.named_parameters():
                 # initialize all the bias vectors to zero
-                if "bias" in name:
+                if ".bias" in name and para.dim() == 1:
                     torch.nn.init.zeros_(para)
                 # initialize all the weight vectors except for those of normalization layers (BatchNorm & LayerNorm)
                 elif para.dim() > 1:
@@ -191,7 +198,8 @@ class Model(torch.nn.Module, ABC):
                 if isinstance(module, tuple(self.default_init_modules)):
                     module.reset_parameters()
 
-        # freeze the specified modules if needed
+
+        # --- Model Parameter Freezing --- #
         frozen_modules = model_conf['frozen_modules'] if 'frozen_modules' in model_conf.keys() else None
         if frozen_modules is not None:
             frozen_modules = frozen_modules if isinstance(frozen_modules, list) else [frozen_modules]
@@ -206,64 +214,17 @@ class Model(torch.nn.Module, ABC):
                 else:
                     raise RuntimeError(f"frozen_modules: Parameters of {name} are not found in the model!")
 
-        # initialize the model snapshotting members
-        if "visual_infer_conf" in model_conf.keys():
-            # configuration is given as a .yaml file
-            if isinstance(model_conf["visual_infer_conf"], str):
-                self.visual_infer_conf = yaml.load(open(model_conf["visual_infer_conf"]))
-            # configuration is explicitly given
-            elif isinstance(model_conf["visual_infer_conf"], Dict):
-                self.visual_infer_conf = model_conf["visual_infer_conf"]
-            else:
-                raise RuntimeError
-        else:
-            self.visual_infer_conf = dict()
-
-        # customizing interface leave for users to add more things to their models
-        if 'customize_conf' in model_conf.keys():
-            self.model_customize(**model_conf['customize_conf'])
-
-
-    def model_customize(self, **customize_conf):
-        pass
-
-
-    def criterion_init(self, criterion_conf: Dict[str, Dict]):
+    @abstractmethod
+    def model_construction(self, **kwargs):
         """
-        The initialization function for the criteria of the model. The initialization is done automatically by the
-        input criterion configuration. The criteria in the model are two parts: loss functions for training and
-        evaluation metrics for validation and testing.
-
-        The tag name of each criterion is used as the name of the corresponding built-in member. The value of the
-        sub-tag 'type' is used as the query to pick up the target Criterion class. Then, the values of the
-        sub-tag 'conf' will be fed into the chosen class to initialize the target criterion.
 
         Args:
-            criterion_conf: Dict
-                Criterion Configuration
+            **kwargs:
+
+        Returns:
 
         """
-
-        def get_criterion_from_conf(criterion: Dict):
-            assert criterion['type'] is not None
-            loss_class = import_class('speechain.criterion.' + criterion['type'])
-            criterion['conf'] = dict() if 'conf' not in criterion.keys() else criterion['conf']
-            return loss_class(**criterion['conf'])
-
-        # initialize all the loss functions
-        for name, criterion in criterion_conf.items():
-            # standalone criterion
-            if 'type' in criterion.keys():
-                self.__setattr__(name, get_criterion_from_conf(criterion))
-            # combined criterion
-            else:
-                _combined_criterion = dict()
-                for sub_name, sub_criterion in criterion.items():
-                    assert 'weight' in sub_criterion.keys()
-                    _combined_criterion[sub_name] = dict()
-                    _combined_criterion[sub_name]['weight'] = sub_criterion['weight']
-                    _combined_criterion[sub_name]['criterion'] = get_criterion_from_conf(sub_criterion)
-                self.__setattr__(name, _combined_criterion)
+        raise NotImplementedError
 
 
     def batch_to_cuda(self, data: Dict or torch.Tensor):
@@ -289,57 +250,70 @@ class Model(torch.nn.Module, ABC):
             return data
 
 
-    def forward(self, batch_data: Dict, **kwargs):
+    def forward(self, batch_data: Dict, epoch: int = None, **kwargs):
         """
 
         Args:
             batch_data: Dict
                 The input batch data.
+            epoch: int
 
         Returns:
             The loss functions will be returned in the training phase.
             The evaluation metrics will be returned in the validation phase.
 
         """
+        # --- Batch Data Preparation --- #
         # preprocess the batch data if needed
         batch_data = self.batch_preprocess(batch_data)
 
         # put the batch data onto GPUs
         batch_data = self.batch_to_cuda(batch_data)
+        # --- data preparation above is shared by all the three branches: training, validation, and visualization --- #
 
-        # if other information are given, the visualization branch is activated
+
+        # --- Model Visualization Branch --- #
+        # if there are additional arguments other than batch_data and epoch, the visualization branch is activated
         if len(kwargs) != 0:
-            return self.visualize(**batch_data, **kwargs)
+            return self.visualize(epoch=epoch, **batch_data, **kwargs)
 
-        # Feed the input batch into the model and get the outputs.
-        # copy.deepcopy() here is for the data safety
-        model_outputs = self.model_forward(**copy.deepcopy(batch_data))
+
+        # --- Model Forward Calculation --- #
+        # Feed the input batch into the model and get the outputs, copy.deepcopy() here is for the data safety
+        model_outputs = self.model_forward(epoch=epoch, **copy.deepcopy(batch_data))
 
         # copy.deepcopy() cannot receive the non-leaf nodes in the computation graph (model_outputs).
         # Since model_outputs cannot be detached from the graph (gradients necessary), copy.deepcopy() is not used below.
         def combine_input_output(_batch_data: Dict, _model_outputs: Dict):
             combination = dict()
-            # if the input batch and mode outputs are in the form of Dict, it means there are multiple iterators
+            # if the input batch data is in the form of Dict, it means there are multiple dataloaders
             if isinstance(_batch_data[list(_batch_data.keys())[0]], Dict):
                 combination.update(
                     batch_data=_batch_data,
                     model_outputs=_model_outputs
                 )
-            # if the input batch and mode outputs are in the form of Tensor, it means there is only one iterator.
+            # if the input batch data is in the form of Tensor, it means there is only one dataloader.
             else:
                 combination.update(_batch_data)
                 combination.update(_model_outputs)
             return combination
+        # --- model forward is shared by both the training and validation branches --- #
 
+
+        # --- Model Training Branch --- #
         if self.training:
-            # In the training stage, feed the outputs to loss criteria and calculate the losses
+            # In the training stage, both the trainable losses and non-trainable metrics will be returned
             losses, metrics = self.loss_calculation(**combine_input_output(batch_data, model_outputs))
+            # the non-trainable metrics will be averaged across all the processes in the distributed mode
             if self.distributed:
                 metrics = self.aver_metrics_across_procs(metrics, batch_data)
             return losses, metrics
+
+        # --- Model Validation Branch --- #
         else:
-            # In the validation stage, feed the outputs to judges and calculate the evaluation metrics
+            # In the validation stage, only the non-trainable metrics will be returned
             metrics = self.metrics_calculation(**combine_input_output(batch_data, model_outputs))
+            # the non-trainable metrics will be averaged across all the processes in the distributed mode
             if self.distributed:
                 metrics = self.aver_metrics_across_procs(metrics, batch_data)
             return metrics
@@ -363,7 +337,7 @@ class Model(torch.nn.Module, ABC):
         """
         This function averages the input metrics across all processes in the multi-GPU distributed training setting.
         This function doesn't need to be overridden if you are doing single-dataloader supervised training.
-        For other training scheme, you need to override it to fit your model.
+        For multi-dataloader training & validation scheme, you need to override it to fit your model.
 
         Args:
             metrics:
@@ -372,7 +346,7 @@ class Model(torch.nn.Module, ABC):
         Returns:
 
         """
-        # obtain the batch size
+        # check the batch size
         batch_size = None
         for key, value in batch_data.items():
             assert isinstance(value, torch.Tensor), \
@@ -384,27 +358,25 @@ class Model(torch.nn.Module, ABC):
                 assert value.size(0) == batch_size
         batch_size = torch.tensor([batch_size], dtype=torch.long, device=self.device)
 
+        # sum up all the weighed metrics at rank no.0
         for key in metrics.keys():
-            # check the dimension of each metric
+            # each metric should be one-dimensional scalar
             if metrics[key].dim() == 0:
                 metrics[key] = metrics[key][None]
             elif metrics[key].dim() != 1:
                 raise RuntimeError
 
-            # recover each object value from the batch-level to the sample-level
+            # batch_size acts as the weight for each metric value in the current process
             metrics[key] *= batch_size.type(metrics[key].dtype)
-            # sum up the object values across all the processes
-            # print(f"rank no.{torch.distributed.get_rank()}: Before all_reduce {key}={metrics[key]}")
-            torch.distributed.all_reduce(metrics[key], op=torch.distributed.ReduceOp.SUM)
-            # print(f"rank no.{torch.distributed.get_rank()}: After all_reduce {key}={metrics[key]}")
+            # sum up the weighted metric values at rank no.0
+            torch.distributed.reduce(metrics[key], dst=0, op=torch.distributed.ReduceOp.SUM)
 
-        # sum up the batch size across all the processes to get the overall batch size
-        # print(f"rank no.{torch.distributed.get_rank()}: Before all_reduce batch_size={batch_size}")
-        torch.distributed.all_reduce(batch_size, op=torch.distributed.ReduceOp.SUM)
-        # print(f"rank no.{torch.distributed.get_rank()}: After all_reduce batch_size={batch_size}")
-        for key in metrics.keys():
-            # turn the object value to the overall batch-level
-            metrics[key] /= batch_size.type(metrics[key].dtype)
+        # sum up the batch size across at rank no.0 to get the overall batch size
+        torch.distributed.reduce(batch_size, dst=0, op=torch.distributed.ReduceOp.SUM)
+        if torch.distributed.get_rank() == 0:
+            for key in metrics.keys():
+                # turn the object value to the overall batch-level
+                metrics[key] /= batch_size.type(metrics[key].dtype)
 
         return metrics
 
@@ -459,14 +431,14 @@ class Model(torch.nn.Module, ABC):
         raise NotImplementedError
 
 
-    def evaluate(self, test_batch: Dict, **infer_conf):
+    def evaluate(self, test_batch: Dict, infer_conf: Dict):
         """
         The function that is called in each testing step.
 
         Args:
             test_batch: Dict
                 The input testing batch data
-            **infer_conf:
+            infer_conf:
 
         Returns:
             A Dict of the evaluation results that you want to save to the disk.
@@ -479,11 +451,11 @@ class Model(torch.nn.Module, ABC):
         test_batch = self.batch_to_cuda(test_batch)
 
         # return the inference results
-        return self.inference(**test_batch, **infer_conf)
+        return self.inference(infer_conf, **test_batch)
 
 
     @abstractmethod
-    def inference(self, **kwargs) -> Dict[str, Dict]:
+    def inference(self, infer_conf, **kwargs) -> Dict[str, Dict]:
         """
         This function receives the test data and test configuration. After obtaining the inference results,
         all the results will be packaged into a Dict[str, Dict] which is passed to TestMonitor.

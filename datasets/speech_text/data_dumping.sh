@@ -2,20 +2,23 @@
 #  Affiliation: NAIST
 #  Date: 2022.07
 
-# the absolute path of the speechain folder on your machine
+# --- Reference Values --- #
+# the absolute path of the speechain folder on your machine, please change to the place on your local machine
 speechain=/ahc/work4/heli-qi/euterpe-heli-qi/speechain
-# the absolute path of the config folder on your machine
+# the absolute path of the config folder on your machine, please change to the place on your local machine
 config=/ahc/work4/heli-qi/euterpe-heli-qi/config
-# the absolute path of the python complier on your machine
+# the absolute path of the python complier on your machine, please change to the place on your local machine
 python=/home/is/heli-qi/anaconda3/envs/speechain/bin/python3.8
 
+
+# --- Default Arguments --- #
 # Note that the value of the following two arguments must end with a space. Otherwise, the last element will not be used.
-# the name of all the subsets, used for step3, step4, and step5
+# the name of the subsets used for step3, step4, and step5
 subsets=" "
 # the name of the subsets used for vocabulary generation in step6
 vocab_subsets=" "
 
-# the additional arguments that you want to give to stat_info_generator.py for custimized statistic information generation
+# the additional arguments that you want to give to stat_info_generator.py for your customization
 stat_info_args=""
 # the additional arguments that you want to give to vocab_generator.py for customized token vocabulary generation
 vocab_args=""

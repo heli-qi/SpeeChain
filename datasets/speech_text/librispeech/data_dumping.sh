@@ -11,7 +11,7 @@ python=/home/is/heli-qi/anaconda3/envs/speechain/bin/python3.8
 
 # Note that the value of the following two arguments must end with a space. Otherwise, the last element will not be used.
 # the name of all the subsets, used for step3, step4, and step5
-subsets="train_clean_100 train_clean_360 train_clean_460 train_other_500 train_960 dev_clean dev_other test_clean test_other "
+subsets="train_clean_100 train_clean_360 train_clean_460 train_other_500 train_960 dev_clean dev_other dev test_clean test_other "
 # the name of the subsets used for vocabulary generation in step6
 vocab_subsets="train_clean_100 train_clean_360 train_clean_460 train_other_500 train_960 "
 
