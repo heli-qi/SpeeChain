@@ -37,7 +37,7 @@ Anytime you encounter problems when using our toolkit, please don't hesitate to 
     1. [Current Developers](https://github.com/ahclab/SpeeChain#current-developers)
     2. [Development Documentation](https://github.com/ahclab/SpeeChain#development-documentation)
     3. [Development Specifications](https://github.com/ahclab/SpeeChain#development-specifications)
-8. [**Common Q&A**](https://github.com/ahclab/SpeeChain#common-q&a)
+8. [**Common Q&A**](https://github.com/ahclab/SpeeChain#common-qa)
 
 ## Toolkit Characteristics
 ### General services
@@ -251,7 +251,7 @@ It communicates with _Monitor_ by _multiprocessing.Queue_ and _multiprocessing.E
 
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain#table-of-contents)
 
-### Data Loading Part ([reference](https://github.com/ahclab/SpeeChain/tree/main/speechain/iterator#data-loading-part))
+### [Data Loading Part](https://github.com/ahclab/SpeeChain/tree/main/speechain/iterator#data-loading-part)
 This part plays the role of extracting the raw data on the disk and providing the model with trainable batches. 
 The architecture of the data loading part of this toolkit is shown in the figure below.
 ![image](data_loading_arch.png)
@@ -268,7 +268,7 @@ After receiving the sample index from the _Dataloader_, it loads the chosen data
 
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain#table-of-contents)
 
-### Model Calculation Part ([reference](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#model-calculation-part))
+### [Model Calculation Part](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#model-calculation-part)
 This part receives the batch from the data loading part and outputs the training losses or evaluation metrics. 
 The architecture of the model calculation part of this toolkit is shown in the figure below.
 ![image](model_calculation_arch.png)
@@ -292,7 +292,7 @@ Users can create their customized criteria by overriding its initialization and 
 
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain#table-of-contents)
 
-### Parameter Optimization Part ([reference](https://github.com/ahclab/SpeeChain/tree/main/speechain/optim_sche#parameter-optimization-part))
+### [Parameter Optimization Part](https://github.com/ahclab/SpeeChain/tree/main/speechain/optim_sche#parameter-optimization-part)
 This part does the job of updating the model parameters by the received losses. 
 The architecture of the parameter optimization part of this toolkit is shown in the figure below.
 ![image](parameter_optimization_arch.png)

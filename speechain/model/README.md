@@ -20,8 +20,8 @@ The input batch is processed by all *Module* in a *Model* sequentially to become
     2. [Criterion](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#criterion)
     3. [Model](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#model)
 3. [**How to Construct a Model**](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#how-to-construct-a-model)
-    1. [ASR]()
-    2. [TTS]()
+    1. [ASR](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#asr)
+    2. [TTS](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#tts)
 4. [**How to Freeze a Specific Part of your Model**](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#how-to-freeze-a-specific-part-of-your-model)
 5. [**How to Initialize your Model by the Pretrained Model**](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#how-to-initialize-your-model-by-the-pretrained-model)
 
@@ -148,11 +148,11 @@ For more details, please refer to [*Model*](https://github.com/ahclab/SpeeChain/
 ## How to Construct a Model
 ### ASR
 **model_type:**
-   1. [asr.ASR]()  
+   1. [asr.ASR](https://github.com/ahclab/SpeeChain/blob/main/speechain/model/asr.py#L27)  
       * Encoder-Decoder ASR model.  
       * Receive one set of speech-text paired data (_feat_, _feat_len_, _text_, _text_len_) in _model_forward()_.  
       * Return a single cross-entropy loss calculated on the supervised data in _loss_calculation()_.
-   2. [asr.SemiASR]() (_under development_)   
+   2. [asr.SemiASR](https://github.com/ahclab/SpeeChain/blob/main/speechain/model/asr.py#L691) (_under development_)   
       * Semi-supervised Encoder-Decoder ASR model.  
       * Receive multiple sets of speech-text paired data  (_feat_, _feat_len_, _text_, _text_len_) in _model_forward()_. 
       One of them is the real speech-text paired data and the others are pseudo speech-text paired data.
