@@ -279,6 +279,21 @@ class HistPlotter(Plotter):
         # plot the histogram
         ax.hist(material, **self.plot_conf)
 
+        # calculate the median (50%), quartiles (25% & 75%) and ten-fold points (10% & 90%) of the distribution
+        sorted_material, material_len = sorted(material), len(material)
+        first_tenfold, first_quat, median, last_quat, last_tenfold = \
+            sorted_material[int(material_len / 10)], sorted_material[int(material_len / 4)], \
+            sorted_material[int(material_len / 2)], \
+            sorted_material[int(material_len / 4 * 3)], sorted_material[int(material_len / 10 * 9)]
+        # plot the median as the red vertical line with '--' style
+        ax.axvline(median, c='red', ls='--')
+        # plot the fist and last quartiles as the red vertical line with '-.' style
+        ax.axvline(first_quat, c='orange', ls='-.')
+        ax.axvline(last_quat, c='orange', ls='-.')
+        # plot the fist and last ten-fold points as the red vertical line with ':' style
+        ax.axvline(first_tenfold, c='yellow', ls=':')
+        ax.axvline(last_tenfold, c='yellow', ls=':')
+
 
     def save(self, save_path: str, **kwargs):
         pass

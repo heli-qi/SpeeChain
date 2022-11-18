@@ -15,8 +15,7 @@ class Conv2dPrenet(Module):
     """
         The Conv2d prenet. Usually used before the Transformer ASR encoder.
         There are two parts in this prenet:
-            1. Conv2d layers. Each Conv2d layer is followed by a BatchNorm2d layer and an activation function.
-                We don't include a Dropout layer after each Conv2d layer.
+            1. Conv2d layers. Each Conv2d layer is followed by a BatchNorm2d layer, an activation function, and a Dropout layer.
             2. Linear layers. Each Linear layer is followed by an activation function and a Dropout layer.
 
         Reference:
@@ -25,14 +24,15 @@ class Conv2dPrenet(Module):
     """
 
     def module_init(self,
-                    conv_dims: int or List[int],
                     feat_dim: int = None,
+                    conv_dims: int or List[int] = [64, 64],
                     conv_kernel: int or List[int] = 3,
                     conv_stride: int or List[int] = 2,
-                    conv_activation: str = 'ReLU',
                     conv_batchnorm: bool = True,
-                    lnr_dims: int or List[int] = None,
-                    lnr_activation: str = 'ReLU',
+                    conv_activation: str = 'ReLU',
+                    conv_dropout: float or List[float] = None,
+                    lnr_dims: int or List[int] = 512,
+                    lnr_activation: str = None,
                     lnr_dropout: float or List[float] = None):
         """
 
@@ -52,35 +52,44 @@ class Conv2dPrenet(Module):
                 The value of stride of all Conv2d layers.
                 An integer means the same stride for time and frequency dimension.
                 List[int] is needed if you would like to make different dimensions have different strides.
+            conv_batchnorm: bool
+                Whether a BatchNorm2d layer is added after each Conv2d layer
             conv_activation: str
                 The type of the activation function after all Conv2d layers.
                 None means no activation function is needed.
-            conv_batchnorm: bool
-                Whether a BatchNorm2d layer is added between a Conv2d layer and a Dropout layer
+            conv_dropout: float or List[float]
+                The values of p rate of the Dropout layer after each Linear layer.
             lnr_dims: int or List[int]
                 The values of out_features of each Linear layer.
                 The first value in the List represents the out_features of the first Linear layer.
             lnr_activation: str
-                The type of the activation function after all Linear layers.
-                None means no activation function is needed.
+                The type of the activation function after all Linear layers. None means no activation function is needed.
+                For transformer training, it's better not to add a non-negative ReLU activation function to the last
+                linear layer because the ReLU activation will make the range of the output (>= 0) different from the
+                sinusoidal positional encoding [-1, 1]. For more details, please refer to Section 3.3 of the paper below:
+                    'Neural Speech Synthesis with Transformer Network'
+                    https://ojs.aaai.org/index.php/AAAI/article/view/4642/4520
             lnr_dropout: float or List[float]
                 The values of p rate of the Dropout layer after each Linear layer.
 
         """
         # Convolution arguments checking
         assert isinstance(conv_dims, (List, int)), \
-            "The dimensions of convolution layers must be given as a list of integers or an integer!"
+            "The dimensions of convolutional layers must be given as a list of integers or an integer!"
         assert isinstance(conv_kernel, (List, int)), \
-            "The sizes of convolution kernels must be given as a list of integers or an integer!"
+            "The sizes of convolutional kernels must be given as a list of integers or an integer!"
         assert isinstance(conv_stride, (List, int)), \
-            "The lengths of convolution strides must be given as a list of integers or an integer!"
+            "The lengths of convolutional strides must be given as a list of integers or an integer!"
+        if conv_dropout is not None:
+            assert isinstance(conv_dropout, (List, float)), \
+                "The dropout rates of convolutional layers must be given as a list of integers or an integer!"
         # Linear arguments checking
+        if lnr_dropout is not None:
+            assert isinstance(lnr_dropout, (List, float)), \
+                "The dropout rates of linear layers must be given as a list of integers or an integer!"
         if lnr_dims is not None:
             assert isinstance(lnr_dims, (List, int)), \
                 "The dimensions of linear layers must be given as a list of integers or an integer!"
-            if lnr_dropout is not None:
-                assert isinstance(lnr_dropout, (List, float)), \
-                    "The dropout rates of linear layers must be given as a list of integers or an integer!"
 
         # input_size initialization
         if self.input_size is not None:
@@ -92,10 +101,11 @@ class Conv2dPrenet(Module):
         self.conv_dims = conv_dims if isinstance(conv_dims, List) else [conv_dims]
         self.conv_kernel = tuple(conv_kernel) if isinstance(conv_kernel, List) else (conv_kernel, conv_kernel)
         self.conv_stride = tuple(conv_stride) if isinstance(conv_stride, List) else (conv_stride, conv_stride)
+        self.conv_dropout = conv_dropout
         # register linear arguments
         if lnr_dims is not None:
             self.lnr_dims = lnr_dims if isinstance(lnr_dims, List) else [lnr_dims]
-        self.lnr_dropout = lnr_dropout if lnr_dropout is not None else 0.0
+        self.lnr_dropout = lnr_dropout
 
         # Conv2d layers initialization
         _prev_dim = 1
@@ -108,15 +118,20 @@ class Conv2dPrenet(Module):
                                 out_channels=self.conv_dims[i],
                                 kernel_size=self.conv_kernel,
                                 stride=self.conv_stride,
-                                bias=not conv_batchnorm))
+                                bias=not conv_batchnorm)
+            )
             # BatchNorm is better to be placed before activation
             # reference: https://stackoverflow.com/questions/39691902/ordering-of-batch-normalization-and-dropout
             if conv_batchnorm:
                 _tmp_conv.append(torch.nn.BatchNorm2d(self.conv_dims[i]))
-            _tmp_conv.append(generator_act_module(conv_activation))
-            # we do not apply a dropout layer after each conv layer
-
+            if conv_activation is not None:
+                _tmp_conv.append(getattr(torch.nn, conv_activation)())
+            if conv_dropout is not None:
+                _tmp_conv.append(torch.nn.Dropout(
+                    p=self.conv_dropout if not isinstance(self.conv_dropout, List) else self.conv_dropout[i]
+                ))
             _prev_dim = self.conv_dims[i]
+
         self.conv = torch.nn.Sequential(*_tmp_conv)
 
         # feature dimension recalculation after convolutional layers
@@ -133,10 +148,12 @@ class Conv2dPrenet(Module):
                 _tmp_lnr.append(torch.nn.Linear(in_features=_prev_dim, out_features=self.lnr_dims[i]))
                 # The order of activation function and dropout layer is somewhat not a big deal
                 # a useful blog: https://sebastianraschka.com/faq/docs/dropout-activation.html
-                _tmp_lnr.append(generator_act_module(lnr_activation))
-                _tmp_lnr.append(torch.nn.Dropout(
-                    p=self.lnr_dropout if not isinstance(self.lnr_dropout, List) else self.lnr_dropout[i]
-                ))
+                if lnr_activation is not None:
+                    _tmp_lnr.append(getattr(torch.nn, lnr_activation)())
+                if lnr_dropout is not None:
+                    _tmp_lnr.append(torch.nn.Dropout(
+                        p=self.lnr_dropout if not isinstance(self.lnr_dropout, List) else self.lnr_dropout[i]
+                    ))
                 _prev_dim = self.lnr_dims[i]
 
             self.linear = torch.nn.Sequential(*_tmp_lnr)

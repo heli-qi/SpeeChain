@@ -18,8 +18,11 @@ class Dataset(torch.utils.data.Dataset, ABC):
     class.
 
     """
-    def __init__(self, src_data: str or List[str], tgt_label: str or List[str],
-                 meta_info: Dict[str, str or List[str]] = None, **dataset_conf):
+    def __init__(self,
+                 src_data: str or List[str] = None,
+                 tgt_label: str or List[str] = None,
+                 meta_info: Dict[str, str or List[str]] = None,
+                 **dataset_conf):
         """
         If we want to initialize some member variables in our implementations, it's mandatory for us to first write
         the code 'super(Dataset, self).__init__()'.
@@ -45,25 +48,41 @@ class Dataset(torch.utils.data.Dataset, ABC):
         super(Dataset, self).__init__()
 
         # --- Source Data and Target Label Reading and Processing --- #
+        assert (src_data is not None) or (tgt_label is not None), \
+            "A Dataset must contain at least one of src_data and tgt_label, or both of them!"
+
         # source data init, make sure that self.src_data is a list of str where each str corresponds to a file
-        assert isinstance(src_data, (str, list)), \
-            f"src_data must be given in str or List[str], but got type(src_data)={type(src_data)}"
-        self.src_data = [src_data] if isinstance(src_data, str) else src_data
+        if src_data is not None:
+            assert isinstance(src_data, (str, list)), \
+                f"src_data must be given in str or List[str], but got type(src_data)={type(src_data)}"
+            self.src_data = [src_data] if isinstance(src_data, str) else src_data
+
+            # transform self.src_data into a single dictionary
+            # data file reading, List[str] -> List[Dict[str, str]]
+            self.src_data = [self.read_data_file(_data_file) for _data_file in self.src_data]
+            # data Dict combination, List[Dict[str, str]] -> Dict[str, str]
+            self.src_data = {key: value for _data_dict in self.src_data for key, value in _data_dict.items()}
+            # sort the key-value items in the dict by their key names for the scenario of multiple data sources
+            self.src_data = dict(sorted(self.src_data.items(), key=lambda x: x[0]))
+        else:
+            self.src_data = None
 
         # target label init, make sure that self.tgt_label is a list of str where each str corresponds to a file
-        assert isinstance(tgt_label, (str, list)), \
-            f"tgt_label must be given in str or List[str], but got type(tgt_label)={type(tgt_label)}"
-        self.tgt_label = [tgt_label] if isinstance(tgt_label, str) else tgt_label
+        if tgt_label is not None:
+            assert isinstance(tgt_label, (str, list)), \
+                f"tgt_label must be given in str or List[str], but got type(tgt_label)={type(tgt_label)}"
+            self.tgt_label = [tgt_label] if isinstance(tgt_label, str) else tgt_label
 
-        # transform self.src_data and self.tgt_label into a single dictionary
-        # data file reading, List[str] -> List[Dict[str, str]]
-        self.src_data = [self.read_data_file(_data_file) for _data_file in self.src_data]
-        # data Dict combination, List[Dict[str, str]] -> Dict[str, str]
-        self.src_data = {key: value for _data_dict in self.src_data for key, value in _data_dict.items()}
-        # label file reading, List[str] -> List[Dict[str, str]]
-        self.tgt_label = [self.read_label_file(_label_file) for _label_file in self.tgt_label]
-        # label Dict combination, List[Dict[str, str]] -> Dict[str, str]
-        self.tgt_label = {key: value for _label_dict in self.tgt_label for key, value in _label_dict.items()}
+            # transform self.tgt_label into a single dictionary
+            # label file reading, List[str] -> List[Dict[str, str]]
+            self.tgt_label = [self.read_label_file(_label_file) for _label_file in self.tgt_label]
+            # label Dict combination, List[Dict[str, str]] -> Dict[str, str]
+            self.tgt_label = {key: value for _label_dict in self.tgt_label for key, value in _label_dict.items()}
+            # sort the key-value items in the dict by their key names for the scenario of multiple data sources
+            self.tgt_label = dict(sorted(self.tgt_label.items(), key=lambda x: x[0]))
+        else:
+            self.tgt_label = None
+
 
         # --- Extra Information Reading and Processing --- #
         self.meta_info = None
@@ -77,17 +96,35 @@ class Dataset(torch.utils.data.Dataset, ABC):
             # loop each kind of information
             for meta_type in self.meta_info.keys():
                 # information file reading, List[str] -> List[Dict[str, str]]
-                self.meta_info[meta_type] = [self.read_meta_file(_meta_file, meta_type=meta_type) for _meta_file in self.meta_info[meta_type]]
+                self.meta_info[meta_type] = [self.read_meta_file(_meta_file, meta_type=meta_type)
+                                             for _meta_file in self.meta_info[meta_type]]
                 # information Dict combination, List[Dict[str, str]] -> Dict[str, str]
-                self.meta_info[meta_type] = {key: value for _meta_dict in self.meta_info[meta_type] for key, value in _meta_dict.items()}
+                self.meta_info[meta_type] = {key: value for _meta_dict in self.meta_info[meta_type]
+                                             for key, value in _meta_dict.items()}
+                # sort the key-value items in the dict by their key names for the scenario of multiple data sources
+                self.meta_info[meta_type] = dict(sorted(self.meta_info[meta_type].items(), key=lambda x: x[0]))
 
         # --- Dict keys mismatch checking of self.src_data, self.tgt_label, and self.meta_info --- #
         # combine the key lists of all data sources
-        src_data_keys, tgt_label_keys = set(self.src_data.keys()), set(self.tgt_label.keys())
-        dict_keys = [src_data_keys, tgt_label_keys]
+        dict_keys = []
+        # collect the data index keys from the source data
+        if self.src_data is not None:
+            src_data_keys = set(self.src_data.keys())
+            dict_keys.append(src_data_keys)
+        else:
+            src_data_keys = None
+        # collect the data index keys from the target labels
+        if self.tgt_label is not None:
+            tgt_label_keys = set(self.tgt_label.keys())
+            dict_keys.append(tgt_label_keys)
+        else:
+            tgt_label_keys = None
+        # collect the data index keys from the metadata information
         if self.meta_info is not None:
             meta_info_keys = {key: set(value.keys()) for key, value in self.meta_info.items()}
             dict_keys += list(meta_info_keys.values())
+        else:
+            meta_info_keys = None
 
         # get the intersection of the key lists of all data sources
         key_intersection = dict_keys[0]
@@ -95,12 +132,14 @@ class Dataset(torch.utils.data.Dataset, ABC):
             key_intersection &= dict_keys[i]
 
         # remove the redundant key-value pairs that are in self.src_data but not in the intersection
-        for redundant_key in src_data_keys.difference(key_intersection):
-            self.src_data.pop(redundant_key)
+        if src_data_keys is not None:
+            for redundant_key in src_data_keys.difference(key_intersection):
+                self.src_data.pop(redundant_key)
         # remove the redundant key-value pairs that are in self.tgt_label but not in the intersection
-        for redundant_key in tgt_label_keys.difference(key_intersection):
-            self.tgt_label.pop(redundant_key)
-
+        if tgt_label_keys is not None:
+            for redundant_key in tgt_label_keys.difference(key_intersection):
+                self.tgt_label.pop(redundant_key)
+        # remove the redundant key-value pairs that are in self.meta_info but not in the intersection
         if self.meta_info is not None:
             # loop each type of extra information
             for meta_type in self.meta_info.keys():
@@ -239,7 +278,9 @@ class Dataset(torch.utils.data.Dataset, ABC):
             returns the list of the indices of all data samples in this dataset.
 
         """
-        return list(self.src_data.keys())
+        if self.src_data is not None:
+            return list(self.src_data.keys())
+        return list(self.tgt_label.keys())
 
 
     def remove_data_by_index(self, index: str):
@@ -248,8 +289,11 @@ class Dataset(torch.utils.data.Dataset, ABC):
         solving the index mismatch of data samples with the iterator during training.
 
         """
-        self.src_data.pop(index)
-        self.tgt_label.pop(index)
+        if self.src_data is not None:
+            self.src_data.pop(index)
+
+        if self.tgt_label is not None:
+            self.tgt_label.pop(index)
 
         if self.meta_info is not None:
             for meta_type in self.meta_info.keys():

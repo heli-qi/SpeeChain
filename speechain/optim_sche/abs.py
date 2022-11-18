@@ -145,9 +145,12 @@ class OptimScheduler(ABC):
             if real_step % self.step_per_update == 0:
                 # pick up the target training loss
                 if self.optim_loss is None:
-                    loss_keys = list(losses.keys())
-                    assert len(loss_keys) == 1, f"An optimizer can only deal with one loss, but get {loss_keys}."
-                    loss = losses[loss_keys[0]]
+                    assert len(losses) == 1 or 'loss' in losses.keys(), \
+                        f"In this toolkit when optim_loss is set to None, " \
+                        f"the optimizer will automatically optimize the input loss when there is only one received " \
+                        f"or select the one named 'loss' if there are multiple received losses. " \
+                        f"Therefore, please specify the one you would like to optimize by optim_loss or name one of them as 'loss'."
+                    loss = losses[list(losses.keys())[0] if len(losses) == 1 else 'loss']
                 else:
                     loss = losses[self.optim_loss]
 

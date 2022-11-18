@@ -190,11 +190,11 @@ class SpecAugment(Module):
                       f"time_warp_mode={self.time_warp_mode}, "
 
         if self.freq_mask:
-            output += f"freq_mask_width={self.freq_mask_width}, " \
+            output += f"\nfreq_mask_width={self.freq_mask_width}, " \
                       f"freq_mask_num={self.freq_mask_num}, "
 
         if self.time_mask:
-            output += f"time_mask_width={self.time_mask_width}, " \
+            output += f"\ntime_mask_width={self.time_mask_width}, " \
                       f"time_mask_num={self.time_mask_num}, " \
                       f"time_mask_ratio={self.time_mask_ratio}"
 

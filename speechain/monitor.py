@@ -26,6 +26,8 @@ from speechain.model.abs import Model
 from speechain.snapshooter import snapshot_logs
 from speechain.utilbox.md_util import get_table_strings, get_list_strings
 
+from speechain.utilbox.tensor_util import to_cpu
+
 
 class Monitor(ABC):
     """
@@ -511,22 +513,49 @@ class ValidMonitor(Monitor):
         self.mode = 'valid'
 
         # best models-related members
-        assert args.best_model_mode.lower() in ['max', 'min'], \
-            f"The best_model_mode you give to the monitor must be either 'max' or 'min', but got {args.best_model_mode}."
-        self.best_model_num = args.best_model_num
-        self.best_model_mode = args.best_model_mode.lower()
-        self.best_model_metric = args.best_model_metric
+        self.best_model_selection = args.best_model_selection
+        # receive a single metric as a standalone list or tuple
+        if isinstance(self.best_model_selection, (List, tuple)) and \
+            isinstance(self.best_model_selection[0], str):
+            self.best_model_selection = [self.best_model_selection]
+        else:
+            assert isinstance(self.best_model_selection, List), \
+                f"best_model_selection must be given as a list, " \
+                f"but got type(best_model_selection)={self.best_model_selection}."
+
+        for i in range(len(self.best_model_selection)):
+            # checking the argument types
+            assert isinstance(self.best_model_selection[i], (List, tuple)), \
+                "Each element of best_model_selection must be either a list or a tuple, " \
+                f"but got type={type(self.best_model_selection[i])}."
+            assert len(self.best_model_selection[i]) == 4, \
+                f"Each element of best_model_selection must be a quad-tuple or qual-list, " \
+                f"but got length={len(self.best_model_selection[i])}."
+
+            if isinstance(self.best_model_selection[i], tuple):
+                self.best_model_selection[i] = list(self.best_model_selection[i])
+            self.best_model_selection[i][2] = self.best_model_selection[i][2].lower()
+            assert self.best_model_selection[i][2] in ['max', 'min'], \
+                f"The best_model_mode must be either 'max' or 'min', but got {self.best_model_selection[i][2]}."
+
         self.best_model_performance = dict()
+        for metric in self.best_model_selection:
+            self.best_model_performance['_'.join(metric[:2])] = dict()
 
         self.model_save_path = os.path.join(self.result_path, 'models')
         if not os.path.exists(self.model_save_path):
             os.makedirs(self.model_save_path, exist_ok=True)
 
-        # early stopping-related members
+        # early stopping-related members, the first metric in self.best_model_selection is used
+        self.early_stopping_metric = '_'.join(self.best_model_selection[0][:2])
+        self.early_stopping_mode = self.best_model_selection[0][2]
         self.early_stopping_patience = args.early_stopping_patience
         self.early_stopping_threshold = args.early_stopping_threshold
         self.early_stopping_epochs = 0
-        self.last_best_performance = 0.0 if self.best_model_mode == 'max' else torch.inf
+        self.last_best_performance = 0.0 if self.early_stopping_mode == 'max' else torch.inf
+
+        # last models-related members
+        self.last_model_number = args.last_model_number
 
         # initialize the snapshooter of this validation monitor
         self.model_snapshot_interval = args.model_snapshot_interval
@@ -593,103 +622,145 @@ class ValidMonitor(Monitor):
         self.enqueue(vis_logs)
 
 
-    def is_better(self, query: int or float, target: int or float, threshold: float = 0.0):
+    @staticmethod
+    def is_better(query: int or float, target: int or float, mode: str, threshold: float = 0.0):
         """
         Judge whether the query performance is better than the target performance given a threshold.
-
-        Args:
-            query:
-            target:
-            threshold:
-
-        Returns:
 
         """
         _target = target
         # relative threshold if the argument value is positive
         if threshold > 0:
-            _target *= 1 + threshold if self.best_model_mode == 'max' else 1 - threshold
+            _target *= 1 + threshold if mode == 'max' else 1 - threshold
         # absolute threshold if the argument value is negative
         elif threshold < 0:
-            _target += -threshold if self.best_model_mode == 'max' else threshold
+            _target += -threshold if mode == 'max' else threshold
 
         # the threshold is applied to the better comparison
-        return query > _target if self.best_model_mode.lower() == 'max' else query < _target
+        return query > _target if mode == 'max' else query < _target
 
 
-    def model_insert(self, curr_performance: int or float):
+    def model_insert(self, train_records: Dict):
         """
         Control whether to insert the model of the current epoch into the best models so far
 
-        Args:
-            curr_performance:
-
         """
-        # controls whether to insert the current model into self.best_model_performance or not
-        model_insert_flag = False
+        # loop each metric for best model selection
+        for metric in self.best_model_selection:
+            _metric_name, _metric_mode, _model_num = '_'.join(metric[:2]), metric[2], metric[3]
+            _criteria_dict = train_records['criteria'] if metric[0] == 'train' else self.epoch_records['criteria']
+            curr_performance = _criteria_dict[metric[1]][-1]
 
-        # if no empty positions for the best models
-        if len(self.best_model_performance) == self.best_model_num:
-            # as long as the current performance is better than one existing record, it should be inserted.
-            for performance in self.best_model_performance.values():
-                if self.is_better(curr_performance, performance):
-                    model_insert_flag = True
-                    break
-        # True if there are some empty positions for the best models
-        else:
-            model_insert_flag = True
+            # controls whether to insert the current model into self.best_model_performance or not
+            model_insert_flag = False
 
-        if model_insert_flag:
-            # save the model of the current epoch to the disk
-            torch.save(self.model.state_dict(), os.path.join(self.model_save_path, f"epoch_{self.epoch}.mdl"))
-            # record the performance of the current epoch
-            self.best_model_performance[self.epoch] = curr_performance
+            # if there is no empty positions for the model of the current epoch
+            if len(self.best_model_performance[_metric_name]) == _model_num:
+                # as long as the current performance is better than one existing record, it should be inserted.
+                for performance in self.best_model_performance[_metric_name].values():
+                    if self.is_better(query=curr_performance, target=performance, mode=_metric_mode):
+                        model_insert_flag = True
+                        break
+            # True if there are some empty positions for the best models
+            else:
+                model_insert_flag = True
+
+            # record the current model performance
+            if model_insert_flag:
+                # record the performance of the current epoch
+                self.best_model_performance[_metric_name][self.epoch] = curr_performance
+
+        # save the model of the latest epoch onto the disk
+        epoch_save_path = os.path.join(self.model_save_path, f"epoch_{self.epoch}.mdl")
+        if not os.path.exists(epoch_save_path):
+            torch.save(self.model.state_dict(), epoch_save_path)
 
 
     def update_best_and_pop_worst(self, epoch_message: str):
         """
         Controls whether to pop out the worst model from the best models so far and update the current best model
 
-        Args:
-            epoch_message:
-
-        Returns:
-
         """
-        # find the best epoch and worst epoch in self.best_model_performance
-        sorted_epochs = dict(sorted(self.best_model_performance.items(), key=lambda x: x[1],
-                                    reverse=True if self.best_model_mode == 'max' else False))
-        sorted_epochs = list(sorted_epochs.keys())
-        worst_epoch = sorted_epochs[-1]
+        def whether_remove(remove_epoch: int):
+            """
+            Whether to remove the model file of a given epoch.
+            As long as the epoch number exists in the metric_epoch_records, the model file will be retained.
+            """
+            # retain the last several models within self.last_model_number
+            if self.epoch - remove_epoch < self.last_model_number:
+                return False
+            else:
+                remove_flag = True
+                # access metric_epoch_records from the outer scope
+                for _epoch_record in metric_epoch_records.values():
+                    if remove_epoch in _epoch_record['sorted_epochs']:
+                        remove_flag = False
+                        break
+                return remove_flag
 
-        # controls whether the worst model has been pooped out or not
-        worst_pop_flag = False
-        # pop out the worst model if there is a redundant one in self.best_model_performance
-        if len(self.best_model_performance) > self.best_model_num:
-            self.best_model_performance.pop(worst_epoch)
-            sorted_epochs.remove(worst_epoch)
-            os.remove(os.path.join(self.model_save_path, f"epoch_{worst_epoch}.mdl"))
-            worst_pop_flag = True
+        # --- Gather the epoch record information for each metric --- #
+        metric_epoch_records = dict()
+        # loop each metric for best model selection
+        for metric in self.best_model_selection:
+            _metric_name, _metric_mode, _model_num = '_'.join(metric[:2]), metric[2], metric[3]
 
-        # update the symbol links of all the best models so far
-        for i, epoch in enumerate(sorted_epochs):
-            _best_model_pointer = f"{self.best_model_metric}_best.mdl" if i == 0 else \
-                f"{self.best_model_metric}_best_{i + 1}.mdl"
+            # find the best epoch and worst epoch in self.best_model_performance
+            sorted_epochs = dict(sorted(self.best_model_performance[_metric_name].items(), key=lambda x: x[1],
+                                        reverse=True if _metric_mode == 'max' else False))
+            metric_epoch_records[_metric_name] = dict(
+                sorted_epochs=list(sorted_epochs.keys()),
+                metric_mode=_metric_mode,
+                model_num=_model_num
+            )
+
+
+        # --- Pop out the worst model and Update the model symbol links --- #
+        metric_pop_flags = dict()
+        for metric_name, epoch_record in metric_epoch_records.items():
+            # controls whether the worst model has been pooped out or not
+            metric_pop_flags[metric_name] = False
+            # pop out the worst model if there is a redundant one in self.best_model_performance
+            if len(epoch_record['sorted_epochs']) > epoch_record['model_num']:
+                # pick up the epoch number of the worst model
+                worst_epoch = epoch_record['sorted_epochs'][-1]
+                self.best_model_performance[metric_name].pop(worst_epoch)
+                epoch_record['sorted_epochs'].remove(worst_epoch)
+                metric_pop_flags[metric_name] = True
+
+                # remove the actual model file of the worst epoch
+                epoch_model_path = os.path.join(self.model_save_path, f"epoch_{worst_epoch}.mdl")
+                if whether_remove(worst_epoch) and os.path.exists(epoch_model_path):
+                    os.remove(epoch_model_path)
+
+            # update the symbol links of all the best models so far
+            for i, epoch in enumerate(epoch_record['sorted_epochs']):
+                _best_model_pointer = f"{metric_name}_best.mdl" if i == 0 else f"{metric_name}_best_{i + 1}.mdl"
+                # create a soft link from the best model pointer to the model file of the current epoch
+                symlink_dst = os.path.join(self.model_save_path, _best_model_pointer)
+                if os.path.islink(symlink_dst) or os.path.exists(symlink_dst):
+                    os.unlink(symlink_dst)
+                os.symlink(os.path.join(self.model_save_path, f"epoch_{epoch}.mdl"), symlink_dst)
+
+        # update the symbol links of the last several models
+        for epoch in range(self.epoch, max(0, self.epoch - self.last_model_number), -1):
+            _last_model_pointer = f"latest.mdl" if epoch == self.epoch else f"last_{self.epoch - epoch + 1}.mdl"
             # create a soft link from the best model pointer to the model file of the current epoch
-            symlink_dst = os.path.join(self.model_save_path, _best_model_pointer)
+            symlink_dst = os.path.join(self.model_save_path, _last_model_pointer)
             if os.path.islink(symlink_dst) or os.path.exists(symlink_dst):
                 os.unlink(symlink_dst)
             os.symlink(os.path.join(self.model_save_path, f"epoch_{epoch}.mdl"), symlink_dst)
 
-        # early-stopping epoch number updating
-        best_epoch = sorted_epochs[0]
+
+        # --- Early-Stopping epoch number checking for the early-stopping metric --- #
+        best_epoch = metric_epoch_records[self.early_stopping_metric]['sorted_epochs'][0]
         # refresh to 0 or add 1 depending on the comparison the best one and the second best one
         if best_epoch == self.epoch:
-            epoch_message += f"{self.best_model_metric} of the current epoch no.{self.epoch} is the best so far.\n"
+            epoch_message += f"{self.early_stopping_metric} of the current epoch no.{self.epoch} is the best so far.\n"
 
             # compare the current performance and the last best performance
-            best_performance = self.best_model_performance[best_epoch]
-            if self.is_better(best_performance, self.last_best_performance, threshold=self.early_stopping_threshold):
+            best_performance = self.best_model_performance[self.early_stopping_metric][best_epoch]
+            if self.is_better(best_performance, self.last_best_performance,
+                              mode=self.early_stopping_mode, threshold=self.early_stopping_threshold):
                 epoch_message += f"The early-stopping threshold {self.early_stopping_threshold} is reached, " \
                                  "so the early-stopping epoch number is refreshed.\n"
                 self.early_stopping_epochs = 0
@@ -700,7 +771,7 @@ class ValidMonitor(Monitor):
                 self.early_stopping_epochs += 1
         # directly add 1 if the current epoch is not the best
         else:
-            epoch_message += f"No improvement of {self.best_model_metric} in the current epoch no.{self.epoch}.\n"
+            epoch_message += f"No improvement of {self.early_stopping_metric} in the current epoch no.{self.epoch}.\n"
             self.early_stopping_epochs += 1
 
         # report the updated early-stopping epoch number
@@ -713,10 +784,10 @@ class ValidMonitor(Monitor):
                              f"so the training process stops here.\n"
             early_stopping_flag = True
 
-        return epoch_message, early_stopping_flag, worst_pop_flag
+        return epoch_message, early_stopping_flag, metric_pop_flags
 
 
-    def save_aver_model(self, epoch_message: str, worst_pop_flag: bool):
+    def save_aver_model(self, epoch_message: str, metric_pop_flags: Dict[str, bool]):
         """
         save the average models of the best models so far if there is a model being pooped out in the current epoch
 
@@ -727,12 +798,12 @@ class ValidMonitor(Monitor):
         Returns:
 
         """
-        # average the recorded best models so far
-        if len(self.best_model_performance) == self.best_model_num and worst_pop_flag:
+        def save_aver_models(aver_epoch_list: List, aver_num: int, aver_model_name: str):
             # sum up the parameters of all best models
             avg_model = None
-            for epoch in self.best_model_performance.keys():
+            for epoch in aver_epoch_list:
                 _avg = None
+                # access self.model_save_path from the outer scope
                 if avg_model is not None:
                     _avg = torch.load(os.path.join(self.model_save_path, f"epoch_{epoch}.mdl"), map_location="cpu")
                 else:
@@ -746,21 +817,40 @@ class ValidMonitor(Monitor):
             # reference: https://github.com/espnet/espnet/blob/5fa6dcc4e649dc66397c629d0030d09ecef36b80/espnet2/main_funcs/average_nbest_models.py#L90
             for key in avg_model.keys():
                 if not str(avg_model[key].dtype).startswith("torch.int"):
-                    avg_model[key] /= len(self.best_model_performance)
+                    avg_model[key] /= aver_num
 
             # save the average model
-            _aver_model_path = os.path.join(self.model_save_path,
-                                            f"{self.best_model_num}_{self.best_model_metric}_average.mdl")
+            _aver_model_path = os.path.join(self.model_save_path, aver_model_name)
             torch.save(avg_model, _aver_model_path)
 
-            # report to the logger
-            epoch_message += f"Best {self.best_model_num:d} models so far has been updated to {list(self.best_model_performance.keys())}. " \
-                             f"The average model has been stored to {_aver_model_path}."
+            return f"{aver_model_name} has been updated to the average of epochs {aver_epoch_list}.\n"
+
+
+        # --- Save the average model for the best models of each metric --- #
+        # loop each metric for best model selection
+        for metric in self.best_model_selection:
+            _metric_name, _metric_mode, _model_num = '_'.join(metric[:2]), metric[2], metric[3]
+
+            # average the recorded best models so far
+            if len(self.best_model_performance[_metric_name]) == _model_num and metric_pop_flags[_metric_name]:
+                epoch_message += save_aver_models(
+                    aver_epoch_list=list(self.best_model_performance[_metric_name].keys()),
+                    aver_num=len(self.best_model_performance[_metric_name]),
+                    aver_model_name=f"{_model_num}_{_metric_name}_average.mdl"
+                )
+
+        # --- Save the average model of the last models --- #
+        if self.epoch >= self.last_model_number:
+            epoch_message += save_aver_models(
+                aver_epoch_list=list(range(self.epoch, self.epoch - self.last_model_number, -1))[::-1],
+                aver_num=self.last_model_number,
+                aver_model_name=f"{self.last_model_number}_last_average.mdl"
+            )
 
         return epoch_message
 
 
-    def finish_epoch(self):
+    def finish_epoch(self, train_records: Dict):
         """
         This function contains the logic of early stopping, best models updating, models averaging.
 
@@ -801,17 +891,14 @@ class ValidMonitor(Monitor):
         # ---- The Model Saving and Early Stopping Part ---- #
         early_stopping_flag = False
         if not self.dry_run:
-            assert self.best_model_metric in self.step_records['criteria'].keys(), \
-                f"The best_model_metric {self.best_model_metric} has not been calculated during the validation."
-
             # insert the current model into self.best_model_performance if needed
-            self.model_insert(self.epoch_records['criteria'][self.best_model_metric][-1])
+            self.model_insert(train_records)
 
             # After inserting, deal with the worst model performance so far and check the early-stopping
-            epoch_message, early_stopping_flag, worst_pop_flag = self.update_best_and_pop_worst(epoch_message)
+            epoch_message, early_stopping_flag, metric_pop_flags = self.update_best_and_pop_worst(epoch_message)
 
             # save the average models of the best models so far if needed
-            epoch_message = self.save_aver_model(epoch_message, worst_pop_flag)
+            epoch_message = self.save_aver_model(epoch_message, metric_pop_flags)
 
         # log the information of the current validation epoch
         self.logger.info(epoch_message)
@@ -832,6 +919,65 @@ class ValidMonitor(Monitor):
             last_best_performance=self.last_best_performance
         )
 
+
+class TrainValidMonitor(object):
+    """
+    A wrapper class for TrainMonitor and ValidMonitor.
+    The motivations of wrapping TrainMonitor and ValidMonitor together are two-folds:
+        1. enable multi-metric best model recording among training and validatio metrics.
+        2. decouple TrainMonitor and ValidMonitor from Runner to improve cohesion and code readability.
+    """
+    def __init__(self, logger, args: argparse.Namespace, model: Model):
+        self.logger = logger
+
+        self.train_monitor = TrainMonitor(logger=logger, args=args)
+        self.valid_monitor = ValidMonitor(logger=logger, args=args, model=model)
+
+    def start_train_epoch(self, epoch: int):
+        self.train_monitor.start_epoch(epoch)
+
+    def train_step(self, step_num: int, optim_lr: Dict[str, float], train_metrics: Dict[str, torch.Tensor]):
+        self.train_monitor.step(step_num=step_num, optim_lr=optim_lr, train_metrics=train_metrics)
+
+    def finish_train_epoch(self):
+        self.train_monitor.finish_epoch()
+
+    def start_valid_epoch(self, epoch: int):
+        self.valid_monitor.start_epoch(epoch)
+
+    def valid_step(self, valid_metrics: Dict[str, torch.Tensor]):
+        self.valid_monitor.step(valid_metrics=valid_metrics)
+
+    def valid_model_snapshot(self, epoch: int, sample_index: str, used_sample: Dict):
+        self.valid_monitor.model_snapshot(epoch=epoch, sample_index=sample_index, used_sample=used_sample)
+
+    def finish_valid_epoch(self):
+        return self.valid_monitor.finish_epoch(train_records=self.train_monitor.epoch_records)
+
+    def wait_empty_queues(self, sleep_time: int = 60):
+        """
+        Check whether the snapshooters of train_monitor and valid_monitor are still working.
+        wait until the material queues of the snapshooters become empty.
+
+        """
+        while not self.train_monitor.empty_queue() or not self.valid_monitor.empty_queue():
+            message = ""
+            if not self.train_monitor.empty_queue():
+                message += "The training snapshooter is still snapshotting. "
+            if not self.valid_monitor.empty_queue():
+                message += "The validation snapshooter is still snapshotting. "
+            self.logger.info(message + "Waiting for 1 minute......")
+            time.sleep(sleep_time)
+
+    def state_dict(self):
+        return dict(
+            train_monitor=self.train_monitor.state_dict(),
+            valid_monitor=self.valid_monitor.state_dict()
+        )
+
+    def load_state_dict(self, state_dict):
+        self.train_monitor.load_state_dict(state_dict['train_monitor'])
+        self.valid_monitor.load_state_dict(state_dict['valid_monitor'])
 
 
 class TestMonitor(Monitor):
@@ -867,16 +1013,17 @@ class TestMonitor(Monitor):
         # para init
         self.prev_test_time = time.time()
         self.total_step_num = total_step_num
-        self.step_info = dict(
-            group_time=[],
-            total_time=0
-        )
-        self.finished_group_num = 0
 
-        self.logger.info(f"The evaluation stage starts. The number of total testing steps is {total_step_num}.\n")
+        if not hasattr(self, 'step_info'):
+            self.step_info = dict(
+                group_time=[],
+                total_time=0
+            )
+        if not hasattr(self, 'finished_group_num'):
+            self.finished_group_num = 0
 
 
-    def step(self, step_num: int, test_results: Dict[str, List], test_index: List[str]):
+    def step(self, step_num: int, test_results: Dict[str, Dict], test_index: List[str]):
         """
 
         Args:
@@ -905,26 +1052,28 @@ class TestMonitor(Monitor):
                 # save the feature vectors as .npz files
                 if result['format'].lower() == 'npz':
                     for index, feat in zip(test_index, result['content']):
+                        if isinstance(feat, torch.Tensor):
+                            feat = to_cpu(feat, tgt='numpy')
                         feat = feat.astype(np.float32)
                         np.savez(os.path.join(folder_path, f'{index}.npz'), feat=feat, index=index)
                 # save the waveforms as .wav files, sampling rate needs to be given in the result Dict as 'sample_rate'
                 elif result['format'].lower() == 'wav':
                     for index, wav in zip(test_index, result['content']):
+                        if isinstance(wav, torch.Tensor):
+                            wav = to_cpu(wav, tgt='numpy')
                         sf.write(file=os.path.join(folder_path, f'{index}.wav'), data=wav,
                                  samplerate=result['sample_rate'], format='WAV', subtype=sf.default_subtype('WAV'))
                 # save the waveforms as .flac files, sampling rate needs to be given in the result Dict as 'sample_rate'
                 elif result['format'].lower() == 'flac':
                     for index, wav in zip(test_index, result['content']):
+                        if isinstance(wav, torch.Tensor):
+                            wav = to_cpu(wav, tgt='numpy')
                         sf.write(file=os.path.join(folder_path, f'{index}.flac'), data=wav,
                                  samplerate=result['sample_rate'], format='FLAC', subtype=sf.default_subtype('FLAC'))
 
                 # other file formats are not supported now
                 else:
                     raise NotImplementedError
-
-        # save the checkpoint of the current step for both resuming and multi-GPU evaluation
-        torch.save(dict(start_step=step_num, monitor=self.state_dict()),
-                   os.path.join(self.result_path, 'checkpoint.pth'))
 
         # --- Report the testing midway information to users --- #
         test_step_message = None
@@ -1077,7 +1226,7 @@ class TestMonitor(Monitor):
         result_string = ""
 
         # The overall evaluation performance
-        result_string += "***Overall Evaluation:***\n\n"
+        result_string += "***Overall Evaluation (mean ± std):***\n\n"
         content_dict = dict()
         # loop each metric and record the overall model performance
         for metric, result_dict in self.step_info.items():
@@ -1086,7 +1235,7 @@ class TestMonitor(Monitor):
             if not isinstance(result_list[0], (int, float)):
                 continue
 
-            content_dict[metric] = f"{np.mean(list(result_dict.values())):.4f}"
+            content_dict[metric] = f"{np.mean(result_list):.4f} ± {np.std(result_list):.4f}"
         result_string += get_list_strings(content_dict=content_dict)
 
         # record the portion-level model performance
@@ -1120,23 +1269,23 @@ class TestMonitor(Monitor):
 
 
         # --- Top-N Bad Cases Presentation --- #
-        # loop each tri-tuple
-        for metric, mode, num in self.bad_cases_selection:
-            assert 'sample_reports.md' in self.step_info.keys(), \
-                "Please give make 'sample_reports.md' in your model inference function " \
-                "if you want to present top-N bad cases."
-            result_path = os.path.join(final_path, f"top{num}_{mode}_{metric}.md")
+        # only present topn bad cases if sample_reports.md is given
+        if 'sample_reports.md' in self.step_info.keys():
+            # loop each tri-tuple
+            for metric, mode, num in self.bad_cases_selection:
+                result_path = os.path.join(final_path, f"top{num}_{mode}_{metric}.md")
 
-            # get the indices of the topn samples
-            selected_samples = sorted(self.step_info[metric].items(), key=lambda x: x[1],
-                                      reverse=True if mode.lower() == 'max' else False)[:num]
-            selected_samples = [s[0] for s in selected_samples]
+                if metric in self.step_info.keys():
+                    # get the indices of the topn samples
+                    selected_samples = sorted(self.step_info[metric].items(), key=lambda x: x[1],
+                                              reverse=True if mode.lower() == 'max' else False)[:num]
+                    selected_samples = [s[0] for s in selected_samples]
 
-            # make the .md string for all the top-n bad samples
-            sample_reports = ""
-            for s_index in selected_samples:
-                sample_reports += f"***{s_index}***" + self.step_info['sample_reports.md'][s_index]
-            np.savetxt(result_path, [sample_reports], fmt="%s")
+                    # make the .md string for all the top-n bad samples
+                    sample_reports = ""
+                    for s_index in selected_samples:
+                        sample_reports += f"***{s_index}***" + self.step_info['sample_reports.md'][s_index]
+                    np.savetxt(result_path, [sample_reports], fmt="%s")
 
 
         # --- Histograms Plotting --- #
@@ -1170,5 +1319,6 @@ class TestMonitor(Monitor):
 
         """
         return dict(
-            step_info=self.step_info
+            step_info=self.step_info,
+            finished_group_num=self.finished_group_num
         )

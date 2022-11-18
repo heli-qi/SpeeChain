@@ -14,14 +14,14 @@ class PositionalEncoding(Module):
     Pre-compute position encodings (PE). In forward pass, this module adds the positional encodings to the embedded
     feature vectors to make the Transformer aware of the positional information of the sequences.
 
-    Implementation based on OpenNMT-py.
-    https://github.com/OpenNMT/OpenNMT-py
     """
 
     def module_init(self,
                     posenc_type: str = 'mix',
                     d_model: int = 512,
                     emb_scale: bool = True,
+                    emb_layernorm: bool = False,
+                    posenc_scale: bool = False,
                     max_len: int = 5000,
                     dropout: float = 0.0):
         """
@@ -35,15 +35,35 @@ class PositionalEncoding(Module):
                     PE(pos, 2i) = sin(pos / 10000^{2i / d_model}), i ∈ {0, ..., d_model / 2 - 1}
                     PE(pos, 2i + 1) = cos(pos / 10000^{2i / d_model}), i ∈ {0, ..., d_model / 2 - 1}
                     Reference:
-                        'Attention Is All You Need' (https://proceedings.neurips.cc/paper/2017/file/3f5ee243547dee91fbd053c1c4a845aa-Paper.pdf)
-                For the 'sep' type, sin is applied to the first half of dimensions and cos is applied to the second half of dimensions.
-                The equations are as below:
+                        'Attention Is All You Need'
+                        https://proceedings.neurips.cc/paper/2017/file/3f5ee243547dee91fbd053c1c4a845aa-Paper.pdf
+                For the 'sep' type, sin is applied to the first half of dimensions and cos is applied to the second half
+                of dimensions. The equations are as below:
                     PE(pos, i) = sin(pos / 10000^{2i / d_model}), i ∈ {0, ..., d_model / 2 - 1}
                     PE(pos, i) = cos(pos / 10000^{2i / d_model}), i ∈ {d_model / 2, ..., d_model - 1}
                     Reference:
-                        'Speech-transformer: a no-recurrence sequence-to-sequence model for speech recognition' (https://ieeexplore.ieee.org/abstract/document/8462506/)
+                        'Speech-transformer: a no-recurrence sequence-to-sequence model for speech recognition'
+                        https://ieeexplore.ieee.org/abstract/document/8462506/
             d_model: int
                 The dimension of the hidden feature vectors of the Transformer layers.
+            emb_scale: bool
+                Controls whether the embedding vectors are scaled up by sqrt(d_model) before adding into the positional
+                encoding or not.
+                References:
+                    Section 3.4 in 'Attention Is All You Need'
+                    https://proceedings.neurips.cc/paper/2017/file/3f5ee243547dee91fbd053c1c4a845aa-Paper.pdf
+                In most cases, we don't recommend you to turn it on especially when you don't have a large training set
+                (e.g. LibriSpeech-train_clean_100) because it may make your model hard to converge. Please consider it
+                only when you want to emphasize the embedded features over the positional encodings.
+            emb_layernorm: bool
+                Controls whether the embedding vectors are normalized by LayerNorm before adding into the positional
+                encoding or not.
+            posenc_scale: bool
+                Controls whether the positional encodings are scaled up by a trainable scalar before adding into the
+                embedded features or not.
+                Reference:
+                    'Neural Speech Synthesis with Transformer Network'
+                    https://ojs.aaai.org/index.php/AAAI/article/view/4642/4520
             max_len: int
                 The maximum length of the input feature sequences.
             dropout: float
@@ -58,12 +78,24 @@ class PositionalEncoding(Module):
         self.posenc_type = posenc_type
         self.d_model = d_model
         self.emb_scale = emb_scale
+        if emb_layernorm:
+            self.emb_layernorm = torch.nn.LayerNorm(d_model)
+        if posenc_scale:
+            self.posenc_scalar = torch.nn.Parameter(torch.tensor(1.0))
 
         # positional encoding matrix
         self.update_posenc(max_len, d_model)
 
         # positional encoding Dropout layer
         self.dropout = torch.nn.Dropout(p=dropout)
+
+
+    def reset_parameters(self):
+        """
+        Make sure that the scalar value is not influenced by different model initialization methods.
+        """
+        if hasattr(self, 'posenc_scalar'):
+            self.posenc_scalar.data = torch.tensor(1.0)
 
 
     def update_posenc(self, max_len: int, d_model: int):
@@ -100,7 +132,11 @@ class PositionalEncoding(Module):
 
     def forward(self, emb_feat):
         """
-        Embed inputs.
+        Embedded feature
+            -> LayerNorm(Embedded feature)
+                -> LayerNorm(Embedded feature) * sqrt(d_model)
+                    -> LayerNorm(Embedded feature) * sqrt(d_model) + Positional Encoding * learnable scalar
+                        -> Dropout(LayerNorm(Embedded feature) * sqrt(d_model) + Positional Encoding * learnable scalar)
 
         Args:
             emb_feat: (batch_size, seq_len, d_model)
@@ -114,9 +150,24 @@ class PositionalEncoding(Module):
         if emb_feat.size(1) > self.posenc.size(1):
             self.update_posenc(emb_feat.size(1), self.d_model)
 
-        # 1. (optional) scale the embedded feature up by d_model
+        # 1. (optional) normalize the embedded feature by LayerNorm
+        if hasattr(self, 'emb_layernorm'):
+            emb_feat = self.emb_layernorm(emb_feat)
+
+        # 2. (optional) scale the embedded feature up by sqrt(d_model)
         if self.emb_scale:
             emb_feat *= math.sqrt(self.d_model)
 
-        # 2. add the positional encoding; 3. apply the dropout
-        return self.dropout(emb_feat + self.posenc[:, :emb_feat.size(1)])
+        # 3. (optional) scale the positional encoding vectors
+        posenc = self.posenc[:, :emb_feat.size(1)]
+        if hasattr(self, 'posenc_scalar'):
+            # avoid posenc *= self.posenc_scalar to protect the original positional encoding
+            posenc = posenc * self.posenc_scalar
+
+        # 4. (mandatory) add positional encoding into embedded feature and apply the dropout
+        return self.dropout(emb_feat + posenc)
+
+
+    def extra_repr(self) -> str:
+        return f"emb_scale={self.emb_scale}" \
+               f"\nposenc_scale={hasattr(self, 'posenc_scalar')}"

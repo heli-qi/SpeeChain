@@ -3,6 +3,8 @@
     Affiliation: NAIST
     Date: 2022.07
 """
+from typing import Dict
+
 import torch
 
 from abc import ABC, abstractmethod
@@ -54,3 +56,11 @@ class Module(torch.nn.Module, ABC):
     @abstractmethod
     def forward(self, **kwargs):
         raise NotImplementedError
+
+
+    def recover(self, **kwargs):
+        raise NotImplementedError
+
+
+    def get_trainable_scalars(self) -> Dict or None:
+        return None

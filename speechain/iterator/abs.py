@@ -15,6 +15,7 @@ from abc import ABC, abstractmethod
 
 from speechain.utilbox.import_util import import_class
 
+
 def worker_init_fn(worker_id, base_seed: int = 0):
     """
     Set random seed for each worker in DataLoader.
@@ -39,11 +40,11 @@ class Iterator(ABC):
                  dataset_conf: Dict,
                  batches_per_epoch: int = None,
                  data_len: str or List[str] = None,
-                 selection_mode: str = None,
-                 selection_num: float or int = None,
+                 data_selection: List = None,
                  is_descending: bool = True,
                  shuffle: bool = True,
                  seed: int = 0,
+                 ngpu: int = 1,
                  num_workers: int = 1,
                  pin_memory: bool = True,
                  distributed: bool = False,
@@ -98,18 +99,19 @@ class Iterator(ABC):
 
         # initialize the general part of the iterator
         if batches_per_epoch is not None:
-            assert batches_per_epoch > 0, f"batches_per_epoch must be a positive integer, but got {batches_per_epoch}."
-        self.batches_per_epoch = batches_per_epoch
+            assert batches_per_epoch > 0, f"batches_per_epoch must be a positive number, but got {batches_per_epoch}."
+        self.batches_per_epoch = int(batches_per_epoch) if batches_per_epoch is not None else batches_per_epoch
         self.is_descending = is_descending
         self.shuffle = shuffle
         self.seed = seed
+        self.ngpu = ngpu
         self.num_workers = num_workers
         self.pin_memory = pin_memory
         self.distributed = distributed
-
         # remain the original order of the data indices if data_len not specified
         self.sorted_data = self.dataset.get_data_index()
 
+        # --- 1. Loading the Data Length Information --- #
         # initialize the data lengths if given
         if data_len is not None:
             data_len = [data_len] if isinstance(data_len, str) else data_len
@@ -127,24 +129,43 @@ class Iterator(ABC):
             for redundant_key in dataset_keys.difference(data_len_keys):
                 self.dataset.remove_data_by_index(redundant_key)
 
+        # --- 2. Performing the Data Selection --- #
         # select a portion of data samples to generate batches if specified
-        if selection_mode is not None:
-            mode_list = ['random', 'order', 'rev_order']
-            assert selection_mode is not None and selection_mode in mode_list, \
-                f"portion_mode should be one of {mode_list}, but got {selection_mode}."
-            assert selection_num < 1 and selection_num != 0, \
-                f"selection_num should be either a float number between 0 and 2 or a negative number. " \
-                f"But got {selection_num:.2f}"
-            if selection_num < 0:
-                assert -selection_num < len(self.sorted_data), \
-                    "The absolute value of selection_num cannot be larger than the total number of data samples. " \
-                    f"You give {len(self.sorted_data)} samples but give selection_num={selection_num}."
+        if data_selection is not None:
+            nometa_modes, meta_modes = ['random', 'order', 'rev_order'], ['min', 'max', 'middle']
+            if not isinstance(data_selection[0], List):
+                data_selection = [data_selection]
 
-            # portion the old self.sorted_data to get the new self.sorted_data
-            self.sorted_data = self.data_selection(selection_num, selection_mode)
+            # loop each data selection strategy in order of the input list
+            for i in data_selection:
+                # non-meta selection
+                if len(i) == 2:
+                    selection_mode, selection_num, meta_info = i[0], i[1], None
+                    assert selection_mode in nometa_modes
+                # meta-required selection
+                elif len(i) == 3:
+                    selection_mode, selection_num, meta_info = i[0], i[1], i[2]
+                    assert selection_mode in meta_modes
+                else:
+                    raise RuntimeError
 
+                assert (isinstance(selection_num, float) and 0 < selection_num < 1) or \
+                       (isinstance(selection_num, int) and selection_num < 0) or \
+                       isinstance(selection_num, str), \
+                    f"Data selection number should be either a float number between 0 and 1, a negative integer, " \
+                    f"or a number in the string format. But got selection_num={selection_num}"
+
+                if not isinstance(selection_num, str) and selection_num < 0:
+                    assert -selection_num < len(self.sorted_data), \
+                        "The data selection amount cannot be larger than the total number of data samples. " \
+                        f"You have {len(self.sorted_data)} samples but give selection_num={-selection_num}."
+
+                # portion the old self.sorted_data to get the new self.sorted_data
+                self.sorted_data = self.data_selection(selection_mode, selection_num, meta_info)
+
+        # --- 3. Sorting the Remaining Data Samples in order --- #
         # sorting the data indices by their lengths if specified
-        if self.data_len is not None:
+        if hasattr(self, 'data_len'):
             # shrink the data_len by sorted_data if necessary
             self.data_len = {index: self.data_len[index] for index in self.sorted_data}
             self.data_len = dict(sorted(self.data_len.items(), key=lambda x: x[1], reverse=self.is_descending))
@@ -152,9 +173,27 @@ class Iterator(ABC):
             # record the keys of the data samples for batch generation
             self.sorted_data = list(self.data_len.keys())
 
+        # --- 4. Initialize the Customized Part (batching strategy) of the Iterator --- #
         # initialize the customized part of the iterator and get the batches of data indices
         self.batches = self.iter_init(**iter_conf)
+        # make sure that each batch has self.ngpu data indices for even workload on each GPU
+        if self.ngpu > 1:
+            _tmp_indices = None
+            for i in range(len(self.batches)):
+                # attach the redundant ones from the last batch to the beginning of the current batch
+                if _tmp_indices is not None:
+                    self.batches[i] = _tmp_indices + self.batches[i]
+                    _tmp_indices = None
+                # check whether there are some redundant ones in the current batch
+                _remain = len(self.batches[i]) % self.ngpu
+                if _remain != 0:
+                    _tmp_indices = self.batches[i][-_remain:]
+                    self.batches[i] = self.batches[i][:-_remain]
+            # check whether there are extra ones not included
+            if _tmp_indices is not None:
+                self.batches.append(_tmp_indices)
 
+        # --- 5. Separate the Dataset into Multiple Non-overlapping Sections in the DDP Mode --- #
         # clip the batch view for distributed training
         if self.distributed:
             # set stride to the number of processes
@@ -168,7 +207,6 @@ class Iterator(ABC):
             # delete all the empty elements in the multi-GPU distributed mode
             while [] in self.batches:
                 self.batches.remove([])
-
 
     @abstractmethod
     def iter_init(self, **kwargs) -> List[List[Any]]:
@@ -197,8 +235,7 @@ class Iterator(ABC):
         """
         raise NotImplementedError
 
-
-    def data_selection(self, selection_num: float or int, selection_mode: str):
+    def data_selection(self, selection_mode: str, selection_num: float or int or str, meta_info: str = None):
         """
         This function performs the data selection by the given selection_num and selection_mode
 
@@ -212,28 +249,75 @@ class Iterator(ABC):
             A list of indices of the selected data samples
 
         """
-        # 0 < selection_num < 1 means that we relatively select data samples by a percentage number
-        # selection_num < 0 means that we absolutely select data samples by the given value
-        selection_num = -selection_num if selection_num < 0 else len(self.sorted_data) * selection_num
-        selection_num = int(selection_num)
-
         # turn into numpy.array for clipping operations
         sorted_data = np.array(self.sorted_data, dtype=str)
-        # 'order' means we select the data samples from the beginning to the end
-        if selection_mode == 'order':
-            sorted_data = sorted_data[:selection_num]
-        # 'rev_order' means we select the data samples from the end to the beginning
-        elif selection_mode == 'rev_order':
-            sorted_data = sorted_data[-selection_num:]
-        # 'random' means we randomly select the data samples
-        elif selection_mode == 'random':
-            sorted_data = sorted_data[np.random.randint(0, len(sorted_data), selection_num)]
+
+        # for non-meta selection strategies
+        if meta_info is None:
+            assert isinstance(selection_num, (int, float))
+            # 0 < selection_num < 1 means that we relatively select data samples by a percentage number
+            # selection_num < 0 means that we absolutely select data samples by the given value
+            selection_num = int(-selection_num if selection_num < 0 else len(sorted_data) * selection_num)
+            # 'order' means we select the data samples from the beginning to the end
+            if selection_mode == 'order':
+                sorted_data = sorted_data[:selection_num]
+            # 'rev_order' means we select the data samples from the end to the beginning
+            elif selection_mode == 'rev_order':
+                sorted_data = sorted_data[-selection_num:]
+            # 'random' means we randomly select the data samples
+            elif selection_mode == 'random':
+                sorted_data = sorted_data[np.random.randint(0, len(sorted_data), selection_num)]
+
+        # for meta-required selection strategies
         else:
-            raise ValueError
+            # read the metadata information for data selection
+            meta_info = np.loadtxt(meta_info, dtype=str, delimiter=" ")
+            # initialize the sorted indices and metadata values of the data samples
+            meta_sorted_data = meta_info[:, 0][np.argsort(meta_info[:, 1].astype(float))]
+            meta_sorted_value = np.sort(meta_info[:, 1].astype(float))
+            # retain only the intersection of data samples in case that there is a index mismatch
+            intsec_indices = np.in1d(meta_sorted_data, sorted_data)
+            meta_sorted_data, meta_sorted_value = meta_sorted_data[intsec_indices], meta_sorted_value[intsec_indices]
+
+            # select a certain amount of data samples
+            if isinstance(selection_num, (int, float)):
+                # 0 < selection_num < 1 means that we relatively select data samples by a percentage number
+                # selection_num < 0 means that we absolutely select data samples by the given value
+                selection_num = int(-selection_num if selection_num < 0 else len(meta_sorted_data) * selection_num)
+                # 'min' means the samples with the minimal meta values will be selected
+                if selection_mode == 'min':
+                    removed_sorted_data = meta_sorted_data[selection_num:]
+                # 'max' means the samples with the maximal meta values will be selected
+                elif selection_mode == 'max':
+                    removed_sorted_data = meta_sorted_data[:-selection_num]
+                # 'middle' means the samples with the minimal and maximal meta values will be excluded
+                elif selection_mode == 'middle':
+                    removed_sorted_data = meta_sorted_data[:int((meta_sorted_data.shape[0] - selection_num) / 2)] + \
+                                          meta_sorted_data[-int((meta_sorted_data.shape[0] - selection_num) / 2):]
+                else:
+                    raise ValueError
+
+            # select the data samples by a certain threshold
+            elif isinstance(selection_num, str):
+                selection_num = float(selection_num)
+                # 'min' means the samples whose metadata is lower than the given threshold will be selected
+                if selection_mode == 'min':
+                    removed_sorted_data = meta_sorted_data[meta_sorted_value > selection_num]
+                # 'max' means the samples whose metadata is larger than the given threshold will be selected
+                elif selection_mode == 'max':
+                    removed_sorted_data = meta_sorted_data[meta_sorted_value < selection_num]
+                # 'middle' is not supported for the threshold selection
+                else:
+                    raise ValueError
+
+            else:
+                raise TypeError
+
+            # remove the undesired samples from the accessible sample indices
+            sorted_data = np.setdiff1d(sorted_data, removed_sorted_data)
 
         # return the list of indices
         return sorted_data.tolist()
-
 
     def __len__(self):
         """
@@ -248,7 +332,6 @@ class Iterator(ABC):
         else:
             return len(self.batches)
 
-
     def get_sample_indices(self):
         """
 
@@ -256,7 +339,6 @@ class Iterator(ABC):
 
         """
         return self.batches
-
 
     def get_meta_info(self):
         """
@@ -266,8 +348,7 @@ class Iterator(ABC):
         """
         return self.dataset.meta_info if hasattr(self.dataset, 'meta_info') else None
 
-
-    def build_loader(self, epoch: int = 1):
+    def build_loader(self, epoch: int = 1, start_step: int = 0):
         """
         cut a segment of batches off from self.batches and generate a DataLoader based on this segment of batches in
         each epoch.
@@ -283,6 +364,8 @@ class Iterator(ABC):
         Args:
             epoch: int
                 The number of the current epoch. Used as the random seed to shuffle the batches.
+            start_step: int
+                The start point for the dataloader of the current epoch. Used for resuming from a checkpoint during testing.
 
         Returns:
             A DataLoader built on the chosen window in this epoch.
@@ -326,6 +409,9 @@ class Iterator(ABC):
         if self.shuffle:
             np.random.RandomState(epoch + self.seed).shuffle(batches)
 
+        if start_step > 0:
+            batches = batches[start_step:]
+
         return DataLoader(dataset=self.dataset,
                           batch_sampler=batches,
                           num_workers=self.num_workers,
@@ -333,11 +419,12 @@ class Iterator(ABC):
                           collate_fn=self.dataset.collate_fn,
                           worker_init_fn=partial(worker_init_fn, base_seed=epoch + self.seed))
 
-
     def __repr__(self):
         batch_len = [len(batch) for batch in self.batches]
         return f"{self.__class__.__name__}(" \
                f"dataset={self.dataset.__class__.__name__}, " \
+               f"seed={self.seed}, " \
+               f"ngpu={self.ngpu}, " \
                f"num_workers={self.num_workers}, " \
                f"pin_memory={self.pin_memory}, " \
                f"is_descending={self.is_descending}, " \

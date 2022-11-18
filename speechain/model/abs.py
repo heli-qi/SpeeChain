@@ -14,6 +14,8 @@ from abc import ABC, abstractmethod
 from collections import OrderedDict
 
 from speechain.utilbox.yaml_util import load_yaml
+from speechain.module.transformer.pos_enc import PositionalEncoding
+from speechain.module.prenet.spk_embed import SpeakerEmbedPrenet
 
 
 class Model(torch.nn.Module, ABC):
@@ -47,7 +49,9 @@ class Model(torch.nn.Module, ABC):
         torch.nn.Embedding,
         torch.nn.LayerNorm,
         torch.nn.BatchNorm1d,
-        torch.nn.BatchNorm2d
+        torch.nn.BatchNorm2d,
+        PositionalEncoding,
+        SpeakerEmbedPrenet
     ]
 
     def __init__(self,
@@ -285,13 +289,11 @@ class Model(torch.nn.Module, ABC):
         # copy.deepcopy() cannot receive the non-leaf nodes in the computation graph (model_outputs).
         # Since model_outputs cannot be detached from the graph (gradients necessary), copy.deepcopy() is not used below.
         def combine_input_output(_batch_data: Dict, _model_outputs: Dict):
-            combination = dict()
+            combination, batch_keys = dict(), list(_batch_data.keys())
             # if the input batch data is in the form of Dict, it means there are multiple dataloaders
-            if isinstance(_batch_data[list(_batch_data.keys())[0]], Dict):
-                combination.update(
-                    batch_data=_batch_data,
-                    model_outputs=_model_outputs
-                )
+            if isinstance(_batch_data[batch_keys[0]], Dict):
+                for key in batch_keys:
+                    combination[key] = dict(**_batch_data[key], **_model_outputs[key])
             # if the input batch data is in the form of Tensor, it means there is only one dataloader.
             else:
                 combination.update(_batch_data)
@@ -346,16 +348,23 @@ class Model(torch.nn.Module, ABC):
         Returns:
 
         """
+        def get_batch_size(input_dict: Dict):
+            _batch_size = None
+            for value in input_dict.values():
+                # len() considers all types of array: torch.Tensor, np.ndarray, List, ...
+                if _batch_size is None:
+                    _batch_size = len(value)
+                else:
+                    assert _batch_size == len(value)
+            return _batch_size
+
         # check the batch size
-        batch_size = None
-        for key, value in batch_data.items():
-            assert isinstance(value, torch.Tensor), \
-                "The default aver_metrics_across_procs() function is only designed for single-dataloader training. " \
-                "You need to override this function if you want to conduct the multi-dataloader training."
-            if batch_size is None:
-                batch_size = value.size(0)
-            else:
-                assert value.size(0) == batch_size
+        multi_flag = sum([isinstance(value, Dict) for value in batch_data.values()]) == len(batch_data)
+        # we take the summation of all data-labels pairs in a single batch made by multiple dataloaders
+        if multi_flag:
+            batch_size = sum([get_batch_size(value) for value in batch_data.values()])
+        else:
+            batch_size = get_batch_size(batch_data)
         batch_size = torch.tensor([batch_size], dtype=torch.long, device=self.device)
 
         # sum up all the weighed metrics at rank no.0
@@ -451,7 +460,7 @@ class Model(torch.nn.Module, ABC):
         test_batch = self.batch_to_cuda(test_batch)
 
         # return the inference results
-        return self.inference(infer_conf, **test_batch)
+        return self.inference(infer_conf=infer_conf, **test_batch)
 
 
     @abstractmethod

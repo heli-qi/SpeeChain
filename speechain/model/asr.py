@@ -19,6 +19,7 @@ from speechain.utilbox.md_util import get_list_strings
 from speechain.module.encoder.asr import ASREncoder
 from speechain.module.decoder.asr import ASRDecoder
 
+from speechain.criterion.abs import Criterion
 from speechain.criterion.cross_entropy import CrossEntropy
 from speechain.criterion.accuracy import Accuracy
 from speechain.criterion.error_rate import ErrorRate
@@ -40,7 +41,6 @@ class ASR(Model):
                            normalize: Dict or bool = None,
                            specaug: Dict or bool = None,
                            cross_entropy: Dict = None,
-                           spk_list: str = None,
                            sample_rate: int = 16000,
                            audio_format: str = 'wav'):
         """
@@ -84,9 +84,6 @@ class ASR(Model):
                 The type of the built-in tokenizer.
             (mandatory) token_vocab:
                 The absolute path of the vocabulary for the built-in tokenizer.
-            (conditionally optional) spk_list:
-                The absolute path of the speaker list that contains all the speaker ids.
-                If you would like to train a speaker-aware ASR, you need to give a spk_list.
             (optional) sample_rate:
                 The sampling rate of the input speech.
                 Currently it's used for acoustic feature extraction frontend initialization and tensorboard register of
@@ -97,6 +94,12 @@ class ASR(Model):
                 It's only used for tensorboard register of the input speech during model visualization.
 
         """
+        def recur_criterion_init(curr_input, criterion_class):
+            if sum([isinstance(value, Dict) for value in curr_input.values()]) == len(curr_input):
+                return {key: recur_criterion_init(value, criterion_class) for key, value in curr_input.items()}
+            else:
+                return criterion_class(**curr_input)
+
         # --- Model-Customized Part Initialization --- #
         # initialize the tokenizer
         if token_type.lower() == 'char':
@@ -108,20 +111,6 @@ class ASR(Model):
         else:
             raise NotImplementedError
 
-        # initialize the speaker list if given
-        if spk_list is not None:
-            spk_list = np.loadtxt(spk_list, dtype=str)
-            # when the input file is idx2spk, only retain the column of speaker ids
-            if len(spk_list.shape) == 2:
-                assert spk_list.shape[1] == 2
-                spk_list = spk_list[:, 1]
-            # otherwise, the input file must be spk_list which is a single-column file and each row is a speaker id
-            elif len(spk_list.shape) != 1:
-                raise RuntimeError
-            # 1. remove redundant elements; 2. sort up the speaker ids in order
-            # 3. get the corresponding indices; 4. exchange the positions of indices and speaker ids
-            self.spk2idx = dict(map(reversed, enumerate(sorted(set(spk_list.tolist())))))
-
         # initialize the sampling rate, mainly used for visualizing the input audio during training
         self.sample_rate = sample_rate
         self.audio_format = audio_format.lower()
@@ -130,9 +119,10 @@ class ASR(Model):
         self.bad_cases_selection = [
             ['wer', 'max', 30],
             ['cer', 'max', 30],
-            ['deletion', 'max', 30],
-            ['insertion', 'max', 30],
-            ['substitution', 'max', 30]
+            ['len_ratio', 'min', 30],
+            ['len_ratio', 'max', 30],
+            ['sent_prob', 'min', 30],
+            ['sent_prob', 'max', 30]
         ]
 
 
@@ -167,7 +157,7 @@ class ASR(Model):
 
         # --- Criterion Part Initialization --- #
         # training loss
-        self.cross_entropy = CrossEntropy(**cross_entropy)
+        self.cross_entropy = recur_criterion_init(cross_entropy, CrossEntropy)
         # validation metrics
         self.accuracy = Accuracy()
         self.error_rate = ErrorRate()
@@ -206,27 +196,13 @@ class ASR(Model):
             data_dict['text'] = text
             data_dict['text_len'] = text_len
 
-            # --- Process the Speaker ID String --- #
-            if 'speaker' in data_dict.keys() and hasattr(self, 'spk2idx'):
-                assert isinstance(data_dict['speaker'], List)
-                # turn the speaker id strings into the trainable tensors
-                data_dict['spk_ids'] = torch.LongTensor([self.spk2idx[spk] if spk in self.spk2idx.keys()
-                                                         else len(self.spk2idx) for spk in data_dict['speaker']])
-                data_dict.pop('speaker')
+            # data_dict['spk_ids'] still remains in data_dict in the form of strings as metainfo
             return data_dict
 
-        batch_keys = list(batch_data.keys())
-        # if the elements are still Dict (multiple dataloaders)
-        if isinstance(batch_data[batch_keys[0]], Dict):
-            for key in batch_keys:
-                batch_data[key] = process_strings(batch_data[key])
-        # if the elements are tensors (single dataloader)
-        elif isinstance(batch_data[batch_keys[0]], torch.Tensor):
-            batch_data = process_strings(batch_data)
-        else:
-            raise ValueError
-
-        return batch_data
+        # check whether the batch_data is made by multiple dataloaders
+        multi_flag = sum([isinstance(value, Dict) for value in batch_data.values()]) == len(batch_data)
+        return process_strings(batch_data) if not multi_flag else \
+            {key: process_strings(value) for key, value in batch_data.items()}
 
 
     def model_forward(self,
@@ -234,8 +210,8 @@ class ASR(Model):
                       text: torch.Tensor,
                       feat_len: torch.Tensor,
                       text_len: torch.Tensor,
-                      spk_ids: torch.Tensor = None,
                       epoch: int = None,
+                      domain: str = None,
                       return_att: bool = False,
                       return_hidden: bool = False,
                       return_enc: bool = False,
@@ -251,8 +227,6 @@ class ASR(Model):
                 The input text data with <sos/eos> at the beginning and end
             text_len: (batch,)
                 The lengths of input text data
-            spk_ids: (batch,)
-                The speaker ids of each speech data. In the form of integer values.
             epoch: int
                 The number of the current training epoch.
                 Mainly used for mean&std calculation in the feature normalization
@@ -284,8 +258,7 @@ class ASR(Model):
         text, text_len = text[:, :-1], text_len - 1
 
         # Encoding
-        enc_outputs = self.encoder(feat=feat, feat_len=feat_len,
-                                   spk_ids=spk_ids, epoch=epoch)
+        enc_outputs = self.encoder(feat=feat, feat_len=feat_len, epoch=epoch, domain=domain)
 
         # Decoding
         dec_outputs = self.decoder(enc_feat=enc_outputs['enc_feat'],
@@ -341,6 +314,8 @@ class ASR(Model):
                          logits: torch.Tensor,
                          text: torch.Tensor,
                          text_len: torch.Tensor,
+                         domain: str = None,
+                         return_scalars: bool = True,
                          **kwargs) -> (Dict[str, torch.Tensor], Dict[str, torch.Tensor]):
         """
 
@@ -348,18 +323,36 @@ class ASR(Model):
             logits:
             text:
             text_len:
+            domain:
+            return_scalars:
             **kwargs:
 
         Returns:
 
         """
-        loss = self.cross_entropy(logits=logits, text=text, text_len=text_len)
+        if isinstance(self.cross_entropy, Criterion):
+            loss = self.cross_entropy(logits=logits, text=text, text_len=text_len)
+        else:
+            loss = self.cross_entropy[domain](logits=logits, text=text, text_len=text_len)
         accuracy = self.accuracy(logits=logits, text=text, text_len=text_len)
 
         # the loss and accuracy must be calculated before being assigned to the returned dict
         # it's better not to use dict(loss=self.cross_entropy(...)) in the dict because it may slow down the program
         losses = dict(loss=loss)
+        # .clone() here prevents the loss from being modified by accum_grad
         metrics = dict(loss=loss.clone().detach(), accuracy=accuracy.detach())
+
+        # whether to also return the trainable scalars in the model
+        if return_scalars:
+            # get the values of trainable scalars from the encoder
+            encoder_scalars = self.encoder.get_trainable_scalars()
+            if encoder_scalars is not None:
+                metrics.update(**{'enc_' + key: value.clone().detach() for key, value in encoder_scalars.items()})
+            # get the values of trainable scalars from the decoder
+            decoder_scalars = self.decoder.get_trainable_scalars()
+            if decoder_scalars is not None:
+                metrics.update(**{'dec_' + key: value.clone().detach() for key, value in decoder_scalars.items()})
+
         return losses, metrics
 
 
@@ -379,13 +372,8 @@ class ASR(Model):
         Returns:
 
         """
-        loss = self.cross_entropy(logits=logits, text=text, text_len=text_len)
-        accuracy = self.accuracy(logits=logits, text=text, text_len=text_len)
-
-        return dict(
-            loss=loss.detach(),
-            accuracy=accuracy.detach()
-        )
+        _, metrics = self.loss_calculation(logits=logits, text=text, text_len=text_len)
+        return metrics
 
 
     def matrix_snapshot(self, vis_logs: List, hypo_attention: Dict, subfolder_names: List[str] or str, epoch: int):
@@ -544,6 +532,7 @@ class ASR(Model):
                   feat_len: torch.Tensor,
                   text: torch.Tensor,
                   text_len: torch.Tensor,
+                  domain: str = None,
                   return_att: bool = False,
                   decode_only: bool = False,
                   teacher_forcing: bool = False,
@@ -556,6 +545,7 @@ class ASR(Model):
             feat_len:
             text:
             text_len:
+            domain:
             meta_info:
             # --- General inference arguments --- #
             return_att:
@@ -564,10 +554,18 @@ class ASR(Model):
             # --- Beam searching arguments --- #
             infer_conf:
 
-        Returns:
-
         """
-        # go through beam searching process
+        # --- Hyperparameter & Model Preparation Stage --- #
+        # in-place replace infer_conf to protect the original information
+        infer_conf = copy.deepcopy(infer_conf)
+        if 'decode_only' in infer_conf.keys():
+            decode_only = infer_conf.pop('decode_only')
+        if 'teacher_forcing' in infer_conf.keys():
+            teacher_forcing = infer_conf.pop('teacher_forcing')
+        hypo_text, hypo_text_len, hypo_len_ratio, hypo_text_prob, hypo_att = None, None, None, None, None
+
+
+        # --- The 1st Pass: ASR Decoding by Beam Searching --- #
         if not teacher_forcing:
             # copy the input data in advance for data safety
             model_input = copy.deepcopy(
@@ -575,7 +573,7 @@ class ASR(Model):
             )
 
             # Encoding input speech
-            enc_outputs = self.encoder(**model_input)
+            enc_outputs = self.encoder(domain=domain, **model_input)
 
             # generate the model hypothesis
             infer_results = beam_searching(enc_feat=enc_outputs['enc_feat'],
@@ -590,7 +588,8 @@ class ASR(Model):
             hypo_len_ratio = infer_results['hypo_len_ratio']
             hypo_text_prob = infer_results['hypo_text_prob']
 
-        # calculate the attention matrix
+
+        # --- The 2nd Pass: ASR Decoding by Teacher Forcing --- #
         if teacher_forcing or return_att:
             infer_results = self.model_forward(feat=feat, feat_len=feat_len,
                                                text=text if teacher_forcing else hypo_text,
@@ -603,45 +602,32 @@ class ASR(Model):
             # update the hypothesis text-related data in the teacher forcing mode
             if teacher_forcing:
                 # the last token is meant to be eos which should not appear in the hypothesis text
-                infer_results['logits'] = torch.log_softmax(infer_results['logits'][:, :-1], dim=-1)
+                infer_results['logits'] = torch.log_softmax(infer_results['logits'][:, :-1] / infer_conf['temperature'],
+                                                            dim=-1)
                 hypo_text_prob, hypo_text = torch.max(infer_results['logits'], dim=-1)
                 # the original text contains both sos at the beginning and eos at the end
                 hypo_text_len = text_len - 2
                 hypo_len_ratio = torch.ones_like(hypo_text_len)
-                hypo_text_prob = torch.sum(hypo_text_prob, dim=-1) / (hypo_text_len ** length_penalty)
+                hypo_text_prob = torch.sum(hypo_text_prob, dim=-1) / (hypo_text_len ** infer_conf['length_penalty'])
 
-        # check the data
-        assert hypo_text.size(0) == text.size(0), \
-            f"The first dimension of text and hypo_text doesn't match! " \
-            f"Got text.size(0)={text.size(0)} and hypo_text.size(0)={hypo_text.size(0)}."
+        # turn the data all the unsupervised metrics into the cpu version (List)
+        # consider one <sos/eos> at the end, so hypo_text_len is added to 1
+        hypo_text_len, hypo_len_ratio, hypo_text_prob = \
+            to_cpu(hypo_text_len + 1), to_cpu(hypo_len_ratio), to_cpu(hypo_text_prob)
 
-        # obtain the cer and wer metrics
-        cer_wer = self.error_rate(hypo_text=hypo_text, real_text=text, tokenizer=self.tokenizer)
-
+        # --- Unsupervised Metrics Calculation (Reference is not involved here) --- #
         # recover the text tensors back to text strings (removing the padding and sos/eos tokens)
-        hypo_text = [self.tokenizer.tensor2text(hypo[torch.logical_and(hypo != self.tokenizer.ignore_idx,
-                                                                       hypo != self.tokenizer.sos_eos_idx)])
-                     for hypo in hypo_text]
-        text = [self.tokenizer.tensor2text(real[torch.logical_and(real != self.tokenizer.ignore_idx,
-                                                                  real != self.tokenizer.sos_eos_idx)])
-                for real in text]
-        text_len -= 2
+        hypo_text = [self.tokenizer.tensor2text(hypo[(hypo != self.tokenizer.ignore_idx) &
+                                                     (hypo != self.tokenizer.sos_eos_idx)]) for hypo in hypo_text]
 
         # in the decoding-only mode, only the hypothesis-related results will be returned
         outputs = dict(
             sent=dict(format='txt', content=hypo_text),
-            sent_len=dict(format='txt', content=to_cpu(hypo_text_len + 1)), # consider one <sos/eos> at the end
-            len_ratio=dict(format='txt', content=to_cpu(hypo_len_ratio)),
-            sent_prob=dict(format='txt', content=to_cpu(hypo_text_prob))
+            sent_len=dict(format='txt', content=hypo_text_len),
+            len_ratio=dict(format='txt', content=hypo_len_ratio),
+            sent_prob=dict(format='txt', content=hypo_text_prob)
         )
-        if decode_only:
-            return outputs
 
-        # in the normal mode, return all the information calculated by the reference
-        outputs.update(
-            cer=dict(format='txt', content=cer_wer['cer']),
-            wer=dict(format='txt', content=cer_wer['wer'])
-        )
         # add the attention matrix into the output Dict, only used for model visualization during training
         # because it will consume too much time for saving the attention matrices of all testing samples during testing
         if return_att:
@@ -649,42 +635,58 @@ class ASR(Model):
                 hypo_att=hypo_att
             )
 
+        # recover the text tensors back to text strings (removing the padding and sos/eos tokens)
+        text = [self.tokenizer.tensor2text(real[(real != self.tokenizer.ignore_idx) &
+                                                (real != self.tokenizer.sos_eos_idx)]) for real in text]
         # evaluation reports for all the testing samples
-        sample_reports, insertion, deletion, substitution = [], [], [], []
+        sample_reports, cer, wer, insertion, deletion, substitution = [], [], [], [], [], []
+        # loop each sentence
         for i in range(len(text)):
-            i_num, d_num, s_num, align_table = \
-                get_word_edit_alignment(hypo_text[i], text[i])
-            md_list = get_list_strings(
+            # initialize the report string by the unsupervised metrics
+            _curr_report = '\n\n' + get_list_strings(
                 {
-                    'CER': f"{cer_wer['cer'][i]:.2%}",
-                    'WER': f"{cer_wer['wer'][i]:.2%}",
-                    'Hypothesis Probability': f"{to_cpu(hypo_text_prob)[i]:.6f}",
-                    'Length Offset': f"{'+' if to_cpu(hypo_text_len - text_len)[i] >= 0 else ''}"
-                                     f"{to_cpu(hypo_text_len - text_len)[i]:d}",
-                    'Length Ratio': f"{to_cpu(hypo_len_ratio)[i]:.2f}",
-                    'Word Insertion': f"{i_num}",
-                    'Word Deletion': f"{d_num}",
-                    'Word Substitution': f"{s_num}"
+                    'Hypothesis Probability': f"{hypo_text_prob[i]:.6f}",
+                    'Length Ratio': f"{hypo_len_ratio[i]:.2f}",
                 }
             )
 
-            sample_reports.append(
-                '\n\n' +
-                md_list +
-                '\n' +
-                align_table +
-                '\n'
-            )
-            insertion.append(i_num)
-            deletion.append(d_num)
-            substitution.append(s_num)
+            # --- Supervised Metrics Calculation (Reference is involved here)  --- #
+            if not decode_only:
+                # obtain the cer and wer metrics
+                cer_wer = self.error_rate(hypo_text=hypo_text[i], real_text=text[i], tokenizer=self.tokenizer)
+                i_num, d_num, s_num, align_table = get_word_edit_alignment(hypo_text[i], text[i])
 
+                # update the report string by the supervised metrics and hypo-real alignment tables
+                _curr_report += get_list_strings(
+                    {
+                        'CER': f"{cer_wer['cer'][0]:.2%}",
+                        'WER': f"{cer_wer['wer'][0]:.2%}",
+                        'Word Insertion': f"{i_num}",
+                        'Word Deletion': f"{d_num}",
+                        'Word Substitution': f"{s_num}"
+                    }
+                ) + '\n' + align_table
+
+                cer.append(cer_wer['cer'][0])
+                wer.append(cer_wer['wer'][0])
+                insertion.append(i_num)
+                deletion.append(d_num)
+                substitution.append(s_num)
+
+            # update the current report with a line break at the end
+            sample_reports.append(_curr_report + '\n')
+
+        # For both decoding-only mode or normal evaluation mode, sample_reports.md will be given
         outputs['sample_reports.md'] = dict(format='txt', content=sample_reports)
-        outputs.update(
-            insertion=dict(format='txt', content=insertion),
-            deletion=dict(format='txt', content=deletion),
-            substitution=dict(format='txt', content=substitution)
-        )
+        # not return the supervised metrics in the decoding-only mode
+        if not decode_only:
+            outputs.update(
+                cer=dict(format='txt', content=cer),
+                wer=dict(format='txt', content=wer),
+                insertion=dict(format='txt', content=insertion),
+                deletion=dict(format='txt', content=deletion),
+                substitution=dict(format='txt', content=substitution)
+            )
         return outputs
 
 
@@ -692,6 +694,38 @@ class SemiASR(ASR):
     """
 
     """
+    def model_construction(self,
+                           token_type: str,
+                           token_vocab: str,
+                           frontend: Dict,
+                           enc_prenet: Dict,
+                           encoder: Dict,
+                           dec_prenet: Dict,
+                           decoder: Dict,
+                           normalize: Dict or bool = None,
+                           specaug: Dict or bool = None,
+                           cross_entropy: Dict = None,
+                           sample_rate: int = 16000,
+                           audio_format: str = 'wav',
+                           **loss_weights):
+        # call the model construction function of the original ASR class to build the main body of the model
+        super(SemiASR, self).model_construction(token_type=token_type,
+                                                token_vocab=token_vocab,
+                                                frontend=frontend,
+                                                enc_prenet=enc_prenet,
+                                                encoder=encoder,
+                                                dec_prenet=dec_prenet,
+                                                decoder=decoder,
+                                                normalize=normalize,
+                                                specaug=specaug,
+                                                cross_entropy=cross_entropy,
+                                                sample_rate=sample_rate,
+                                                audio_format=audio_format)
+        # implicitly register all the
+        for key, value in loss_weights.items():
+            self.__setattr__(key, value)
+
+
     def model_forward(self, **batch_data) -> Dict[str, Dict or torch.Tensor]:
         """
 
@@ -701,58 +735,111 @@ class SemiASR(ASR):
         Returns:
 
         """
-        # if the sub-batches are not Dict, go through the supervised training process
-        batch_keys = list(batch_data.keys())
-        if not isinstance(batch_data[batch_keys[0]], Dict):
-            return super().model_forward(**batch_data)
+        multi_flag = sum([not isinstance(value, torch.Tensor) for value in batch_data.values()]) == len(batch_data)
 
-        # otherwise, go through the semi-supervised training process
-        outputs = dict()
-        for name, sub_batch in batch_data.items():
-            outputs[name] = super().model_forward(**sub_batch)
+        # Single-dataloader scenario
+        # probably for the validation stage of in-domain semi-supervised ASR where we only have one data-label pair
+        if not multi_flag:
+            return super(SemiASR, self).model_forward(**batch_data)
+        # Multi-dataloader scenario
+        # For semi-supervised training or validation of out-domain semi-supervised ASR where we may have multiple
+        # data-label pairs in a single batch, we need to go through forward function once for each pair.
+        else:
+            # pop the non-Dict arguments from the input batch data
+            general_args, data_keys = dict(), list(batch_data.keys())
+            for key in data_keys:
+                if not isinstance(batch_data[key], Dict):
+                    general_args[key] = batch_data.pop(key)
 
-        return outputs
+            # otherwise, go through the normal training process once for all the sub-batches
+            # (each sub-batch corresponds to a dataloader)
+            return {key: super(SemiASR, self).model_forward(domain=key, **general_args, **value)
+                    for key, value in batch_data.items()}
 
-    def loss_calculation(self,
-                         batch_data: Dict[str, Dict[str, torch.Tensor]],
-                         model_outputs: Dict[str, Dict[str, torch.Tensor]],
-                         **kwargs) -> Dict[str, torch.Tensor]:
+
+    def loss_calculation(self, **data_output_dict) -> (Dict[str, torch.Tensor], Dict[str, torch.Tensor]):
         """
 
         Args:
-            batch_data:
-            model_outputs:
-            **kwargs:
+            **data_output_dict:
 
         Returns:
 
         """
-        # supervised criteria calculation
-        sup_criterion = self.cross_entropy['sup']['criterion']
-        sup_loss = sup_criterion(pred=model_outputs['sup']['logits'],
-                                 text=batch_data['sup']['text'],
-                                 text_len=batch_data['sup']['text_len'])
-        sup_accuracy = self.accuracy(pred=model_outputs['sup']['logits'],
-                                     text=batch_data['sup']['text'],
-                                     text_len=batch_data['sup']['text_len'])
+        multi_flag = sum([isinstance(value, Dict) for value in data_output_dict.values()]) == len(data_output_dict)
 
-        # unsupervised criteria calculation
-        unsup_criterion = self.cross_entropy['unsup']['criterion']
-        unsup_loss = unsup_criterion(pred=model_outputs['unsup']['logits'],
-                                     text=batch_data['unsup']['text'],
-                                     text_len=batch_data['unsup']['text_len'])
-        unsup_accuracy = self.accuracy(pred=model_outputs['unsup']['logits'],
-                                       text=batch_data['unsup']['text'],
-                                       text_len=batch_data['unsup']['text_len'])
+        # Single-dataloader scenario
+        # probably for the validation stage of in-domain semi-supervised ASR where we only have one data-label pair
+        if not multi_flag:
+            losses, metrics = super(SemiASR, self).loss_calculation(**data_output_dict)
+        # Multi-dataloader scenario
+        # For semi-supervised training or validation of out-domain semi-supervised ASR where we may have multiple
+        # data-label pairs in a single batch, we need to go through forward function once for each pair.
+        else:
+            losses, metrics, return_scalars = dict(), dict(), True
+            for key, value in data_output_dict.items():
+                # only return the trainable scalars at the first time of calling
+                _losses, _metrics = super(SemiASR, self).loss_calculation(
+                    domain=key, return_scalars=return_scalars, **value
+                )
+                return_scalars &= False
 
-        # total loss calculation
-        total_loss = sup_loss * self.cross_entropy['sup']['weight'] + \
-                     unsup_loss * self.cross_entropy['unsup']['weight']
+                # update the losses and metrics of each data-label pair to the result dict
+                losses.update(
+                    **{f"{key}_{_key}": _value for _key, _value in _losses.items()}
+                )
+                metrics.update(
+                    **{f"{key}_{_key}": _value for _key, _value in _metrics.items()}
+                )
 
-        return dict(
-            total_loss=total_loss,
-            sup_loss=sup_loss,
-            unsup_loss=unsup_loss,
-            sup_accuracy=sup_accuracy,
-            unsup_accuracy=unsup_accuracy
-        )
+            # normalize the combination of losses by their number, default loss weight is 1
+            losses.update(
+                loss=sum(
+                    [value * self.__getattribute__(f"{key.split('_')[0]}_weight")
+                     if hasattr(self, f"{key.split('_')[0]}_weight") else value for key, value in losses.items()]
+                ) / sum(
+                    [self.__getattribute__(f"{key.split('_')[0]}_weight")
+                     if hasattr(self, f"{key.split('_')[0]}_weight") else 1 for key in losses.keys()]
+                )
+            )
+        return losses, metrics
+
+
+    def metrics_calculation(self, **data_output_dict) -> Dict[str, torch.Tensor]:
+        """
+
+        Args:
+            **data_output_dict:
+
+        Returns:
+
+        """
+        _, metrics = self.loss_calculation(**data_output_dict)
+        return metrics
+
+
+    def inference(self,
+                  infer_conf: Dict,
+                  **test_batch) -> Dict[str, Any]:
+        """
+
+        Args:
+            infer_conf:
+            **test_batch:
+
+        Returns:
+
+        """
+        domain_flag = sum([isinstance(value, Dict) for value in test_batch.values()]) == len(test_batch)
+        # no sub-Dict means one normal supervised dataloader, go through the inference function of ASR
+        if not domain_flag:
+            return super(SemiASR, self).inference(
+                infer_conf=infer_conf, **test_batch
+            )
+        # sub-Dict means that the domain information is given for ASR inference
+        else:
+            assert len(test_batch) == 1
+            for key, value in test_batch.items():
+                return super(SemiASR, self).inference(
+                    infer_conf=infer_conf, domain=key, **value
+                )

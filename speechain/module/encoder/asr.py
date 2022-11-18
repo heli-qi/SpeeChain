@@ -87,27 +87,30 @@ class ASREncoder(Module):
         self.encoder = encoder_class(input_size=_prev_output_size, **encoder['conf'])
 
 
-    def forward(self, feat: torch.Tensor, feat_len: torch.Tensor, spk_ids: torch.Tensor = None, epoch: int = None):
+    def forward(self, feat: torch.Tensor, feat_len: torch.Tensor, epoch: int = None, domain: str = None):
         """
 
         Args:
             feat:
             feat_len:
-            spk_ids:
+            epoch:
+            domain:
 
         Returns:
 
         """
 
-        # acoustic feature extraction
-        if hasattr(self, 'frontend'):
+        # acoustic feature extraction for the waveform input, do nothing for the feature input
+        if feat.size(-1) == 1:
+            assert hasattr(self, 'frontend'), \
+                "Currently, we don't support time-domain ASR. Please specify a feature extraction frontend."
             # no amp operations for the frontend calculation to make sure the feature accuracy
             with autocast(False):
                 feat, feat_len = self.frontend(feat, feat_len)
 
         # feature normalization
         if hasattr(self, 'normalize'):
-            feat, feat_len = self.normalize(feat, feat_len, group_ids=spk_ids, epoch=epoch)
+            feat, feat_len = self.normalize(feat, feat_len, epoch=epoch, group_ids=domain)
 
         # SpecAugment, only activated during training
         if self.training and hasattr(self, "specaug"):
@@ -140,3 +143,17 @@ class ASREncoder(Module):
                 hidden=enc_results['hidden']
             )
         return enc_outputs
+
+
+    def get_trainable_scalars(self) -> Dict or None:
+        trainable_scalars = dict()
+        # encoder-prenet layers
+        pre_scalars = self.prenet.get_trainable_scalars()
+        if pre_scalars is not None:
+            trainable_scalars.update(**pre_scalars)
+        # encoder layers
+        enc_scalars = self.encoder.get_trainable_scalars()
+        if enc_scalars is not None:
+            trainable_scalars.update(**enc_scalars)
+
+        return trainable_scalars

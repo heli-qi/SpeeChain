@@ -164,6 +164,28 @@ class Speech2MelSpec(Module):
         return feat, feat_len
 
 
+    def recover(self, feat: torch.Tensor, feat_len: torch.Tensor):
+        """
+
+        Args:
+            feat:
+            feat_len:
+
+        Returns:
+
+        """
+        # No delta recovery
+        assert self.delta_order is None
+
+        # Log-Mel Spectrogram -> Linear Spectrogram
+        feat = self.linear2mel.recover(feat, feat_len)
+
+        # Linear Spectrogram -> Waveforms (GL algorithm)
+        wav, wav_len = self.speech2linear.recover(feat, feat_len)
+
+        return wav, wav_len
+
+
     def __repr__(self):
         string = f"{self.__class__.__name__}(\n" + \
             str(self.speech2linear) + '\n' + \

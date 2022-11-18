@@ -57,10 +57,12 @@ def to_cuda(inputs, rank=0):
 
 
 def to_cpu(inputs, tgt: str = 'list', batch_idx: int = None):
-    if isinstance(inputs, tuple) or isinstance(inputs, list):
-        inputs = tuple([to_cpu(x, batch_idx) for x in inputs])
+    if isinstance(inputs, tuple):
+        inputs = tuple([to_cpu(x, tgt, batch_idx) for x in inputs])
+    elif isinstance(inputs, list):
+        inputs = [to_cpu(x, tgt, batch_idx) for x in inputs]
     elif isinstance(inputs, dict):
-        inputs = {k: to_cpu(v, batch_idx) for k, v in inputs.items()}
+        inputs = {k: to_cpu(v, tgt, batch_idx) for k, v in inputs.items()}
     elif isinstance(inputs, torch.Tensor):
         if batch_idx is not None and len(inputs.shape) > 0:
             inputs = inputs[batch_idx]

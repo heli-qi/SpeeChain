@@ -5,14 +5,17 @@
 """
 import math
 import torch
+import torchaudio
 import torch.nn.functional as F
 from speechain.module.abs import Module
+
 
 class Speech2LinearSpec(Module):
     """
     The acoustic frontend where the input is raw speech waveforms and the output is linear spectrogram.
 
     """
+
     def module_init(self,
                     hop_length: int,
                     win_length: int,
@@ -31,7 +34,7 @@ class Speech2LinearSpec(Module):
         """
         The transformation from waveform to linear spectrogram has 4 steps:
             1. (optional) waveform pre-emphasis (implemented by Conv1d layer)
-            2. (optional) waveform pre-normalization
+            2. (optional) waveform pre-normalization (not recommended for TTS model)
             3. STFT processing (implemented by torch.stft())
             4. STFT postprocessing: zero masking, (optional)sqrt for magnitude, (optional)clamping + logging
 
@@ -122,7 +125,6 @@ class Speech2LinearSpec(Module):
         self.logging = logging
         self.log_base = log_base
 
-
     def forward(self, speech: torch.Tensor, speech_len: torch.Tensor):
         """
 
@@ -144,7 +146,6 @@ class Speech2LinearSpec(Module):
                                f"If the speech is given in 3D vectors, the last dimension must be 1. "
                                f"But got speech.shape={speech.shape}.")
 
-
         # --- Waveform Pre-Emphasis --- #
         # apply preemphasis if specified
         if self.preemphasis is not None:
@@ -154,7 +155,6 @@ class Speech2LinearSpec(Module):
             for i in range(speech_len.size(0)):
                 if speech_len[i] < speech.size(1):
                     speech[i][speech_len[i]:] = 0.0
-
 
         # --- Waveform Pre-Normalization --- #
         # normalization for audio signals before STFT
@@ -166,7 +166,6 @@ class Speech2LinearSpec(Module):
                 speech = (speech - speech_min) / (speech_max - speech_min) * 2 - 1
             else:
                 raise ValueError
-
 
         # --- STFT Processing --- #
         # initialize the window function lazily at the first training step
@@ -187,7 +186,6 @@ class Speech2LinearSpec(Module):
         # get the energy spectrogram
         linear_spec = stft_feat.real ** 2 + stft_feat.imag ** 2
 
-
         # --- STFT Post-Processing --- #
         # mask all the silence parts of the linear spectrograms to zeros
         for i in range(feat_len.size(0)):
@@ -207,6 +205,85 @@ class Speech2LinearSpec(Module):
                 linear_spec /= math.log(self.log_base)
 
         return linear_spec, feat_len
+
+    def recover(self, feat: torch.Tensor, feat_len: torch.Tensor, inv_preemph_winlen: int = 100):
+        """
+
+        Args:
+            feat:
+            feat_len:
+            inv_preemph_winlen:
+
+        Returns:
+
+        """
+        # --- STFT Recovery by the GL Algorithm --- #
+        # 1. Randomly initialize the phase between 0 and 2Π
+        # 2. Recover the waveform by the magnitude and phase
+        # 3. Process the synthetic waveform and get the new magnitude and phase
+        # 4. Iteratively do step2 and step3 by the original magnitude and new phase
+        #
+        # Pseudo codes of GL algorithm could be as follow:
+        #     angles = np.exp(2j * np.pi * np.random.rand(*S.shape))
+        #     S_complex = np.abs(S).astype(np.complex)
+        #     y = _istft(S_complex * angles, hparams)
+        #     for i in range(hparams.griffin_lim_iters):
+        #         angles = np.exp(1j * np.angle(_stft(y, hparams)))
+        #         y = _istft(S_complex * angles, hparams)
+        # ----------------------------------------- #
+        if not hasattr(self, 'griffin_lim'):
+            # lazily initialize the linear-to-waveform transformation
+            self.griffin_lim = torchaudio.transforms.GriffinLim(
+                n_fft=self.n_fft,
+                win_length=self.win_length,
+                hop_length=self.hop_length,
+                window_fn=getattr(torch, f"{self.stft_config['window']}_window"),
+                power=1 if self.mag_spec else 2
+            )
+            self.griffin_lim.window = self.griffin_lim.window.cuda(feat.device)
+        wav = self.griffin_lim(feat.transpose(-2, -1))
+        wav_len = (feat_len - 1) * self.hop_length
+        assert wav_len.max() == wav.size(1), \
+            "Something wrong happens when calculating the length of synthetic utterances."
+
+
+        # pre-stft normalization cannot be recovered
+        assert self.pre_stft_norm is None, "waveform pre-stft normalization cannot be recovered for TTS synthesis."
+
+
+        # --- Pre-Emphasis Recovery --- #
+        # Pre-emphasis: Y[n] = X[n] - 0.97 * X[n-1] where Y is the pre-emphasized signal and X is the original signal
+        # Inverse Pre-emphasis: X[n] = Y[n] + 0.97 * X[n-1] = Y[n] + 0.97 * Y[n-1] + ... + (0.97)^n * Y[0]
+        # However, since the signal is usually very long (n is in the unit of 10k), the power of n will infinitely
+        # approach 0 as n grows. So, a slide window is used to perform inverse pre-emphasis which only considers the
+        # previous time steps in a given range.
+        # ----------------------------- #
+        if self.preemphasis is not None:
+            # lazily initialize the inverse preemphasis filters (implemented by Conv1d)
+            if not hasattr(self, 'inv_preemph'):
+                inv_preemph_filter = torch.nn.Conv1d(1, 1, kernel_size=inv_preemph_winlen, bias=False)
+
+                # get the sliding window for the inverse pre-emphasis
+                inv_preemph_win = torch.pow(
+                    torch.full((inv_preemph_winlen,), fill_value=self.preemphasis),
+                    torch.arange(start=inv_preemph_winlen - 1, end=-1, step=-1, dtype=torch.int),
+                ).reshape(1, 1, -1).to(wav.device)
+                inv_preemph_filter.weight = torch.nn.Parameter(inv_preemph_win, requires_grad=False)
+
+                # move the weight from _parameters to _buffers so that these parameters won't influence the training
+                _para_keys = list(inv_preemph_filter._parameters.keys())
+                for name in _para_keys:
+                    inv_preemph_filter._buffers[name] = inv_preemph_filter._parameters.pop(name)
+                self.inv_preemph_filter = inv_preemph_filter
+
+            wav = F.pad(wav.unsqueeze(1), (inv_preemph_winlen - 1, 0))
+            wav = self.inv_preemph_filter(wav).transpose(-2, -1)
+
+        # make sure that the redundant parts are set to silence
+        for i in range(len(wav_len)):
+            wav[i][wav_len[i]:] = 0
+
+        return wav, wav_len
 
 
     def __repr__(self) -> str:

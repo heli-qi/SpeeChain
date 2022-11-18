@@ -1,28 +1,180 @@
 # Recipes Folder of the SpeeChain toolkit
 The recipes of the SpeeChain toolkit are grouped by the task. 
-Each task has a sub-folder in */recipes/*. 
+Each task has a sub-folder in `/speechain/recipes/`. 
 In the sub-folder of each task, each dataset has a second-level sub-folder.
 
 👆[Back to the home page](https://github.com/ahclab/SpeeChain#the-speechain-toolkit)
 
-## Available Recipes
-### [Speech Recognition](https://github.com/ahclab/SpeeChain/tree/main/recipes/asr)
-1. [LibriSpeech](https://github.com/ahclab/SpeeChain/tree/main/recipes/asr/librispeech)
-2. [LJSpeech](https://github.com/ahclab/SpeeChain/tree/main/recipes/asr/ljspeech)
+## Table of Contents
+1. [**Available Models & Datasets**]()
 
-### [Speech Synthesis]()
 
-### [Speaker Recognition]()
+## Available Models & Datasets
+### [Automatic Speech Recognition (ASR)](https://github.com/ahclab/SpeeChain/tree/main/recipes/asr)
+```
+/asr
+    /librispeech            # ASR Recipes for the LibriSpeech dataset
+        /train-clean-100        # Labeled data: train-clean-100
+            /data_cfg               # Data loading configuration files that are shared by different models
+            /transformer            # Transformer-based ASR models
+        /train-clean-460        # Labeled data: train-clean-460 (train-clean-100 + train-clean-360)
+            /data_cfg
+            /transformer            # Transformer-based ASR models
+        /train-960              # Labeled data: train_960 (train-clean-460 + train-other-500)
+            /data_cfg
+            /transformer            # Transformer-based ASR models
+```
+<table>
+	<tr>
+	    <th>Dataset (Test Sets)</th>
+	    <th>Model</th>
+	    <th>Setting</th>  
+	    <th>WER w/o. LM</th>  
+	</tr>
+	<tr>
+	    <td rowspan="3">LibriSpeech (test-clean / test-other)</td>
+	    <td rowspan="3">Speech-Transformer</td>
+	    <td>train-clean-100</td>
+	    <td></td>
+	</tr>
+	<tr>
+	    <td>train-clean-460</td>
+	    <td></td>
+	</tr>
+	<tr>
+	    <td>train-960</td>
+	    <td></td>
+	</tr>
+</table>
+
+### [Text-To-Speech Synthesis (TTS)](https://github.com/ahclab/SpeeChain/tree/main/recipes/tts)
+```
+/tts
+    /libritts               # TTS Recipes for the LibriTTS dataset
+        /train-clean-100        # Labeled data: train-clean-100
+            /data_cfg               # Data loading configuration files that are shared by different models
+            /transformer            # Transformer-based ASR models
+        /train-clean-460        # Labeled data: train-clean-460 (train-clean-100 + train-clean-360)
+            /data_cfg
+            /transformer            # Transformer-based ASR models
+        /train-960              # Labeled data: train_960 (train-clean-460 + train-other-500)
+            /data_cfg
+            /transformer            # Transformer-based ASR models
+```
+<table>
+	<tr>
+	    <th>Dataset (Test Sets)</th>
+	    <th>Model</th>
+	    <th>Setting</th>  
+	    <th>MCD</th>  
+	</tr>
+	<tr>
+	    <td rowspan="3">LibriTTS (test-clean / test-other)</td>
+	    <td rowspan="3">MultiSpeech</td>
+	    <td>train-clean-100</td>
+	    <td></td>
+	</tr>
+	<tr>
+	    <td>train-clean-460</td>
+	    <td></td>
+	</tr>
+	<tr>
+	    <td>train-960</td>
+	    <td></td>
+	</tr>
+</table>
+
+### Speaker Recognition (SPKREC)
+
+### [Offline TTS-to-ASR Chain](https://github.com/ahclab/SpeeChain/tree/main/recipes/offline_tts2asr)
+```
+/offline_tts2asr
+    /libritts_librispeech   # TTS mode use LibriTTS and ASR model use LibriSpeech
+        /train-clean-100-360    # Labeled data: train-clean-100; Unlabeled data: train-clean-360
+            /data_cfg               # Data loading configuration files that are shared by different models
+            /transformer            # Transformer-based ASR models trained by the offline TTS→ASR chain
+        /train-100-860          # Labeled data: train-clean-100; Unlabeled data: train-clean-360 + train-other-500
+            /data_cfg
+            /transformer            # Transformer-based ASR models trained by the offline TTS→ASR chain
+        /train-460-500          # Labeled data: train-clean-460; Unlabeled data: train-other-500
+            /data_cfg
+            /transformer            # Transformer-based ASR models trained by the offline TTS→ASR chain
+```
+<table>
+	<tr>
+	    <th>Dataset (Test Sets)</th>
+	    <th>TTS Model</th>
+	    <th>ASR Model</th>
+	    <th>Setting</th>  
+	    <th>WER w/o. LM</th>  
+	</tr>
+	<tr>
+	    <td rowspan="3">LibriTTS-LibriSpeech (test-clean / test-other)</td>
+	    <td rowspan="3">MultiSpeech</td>
+	    <td rowspan="3">Speech-Transformer</td>
+	    <td>train-clean-100-360</td>
+	    <td></td>
+	</tr>
+	<tr>
+	    <td>train-460-500</td>
+	    <td></td>
+	</tr>
+	<tr>
+	    <td>train-100-860s</td>
+	    <td></td>
+	</tr>
+</table>
+
+### [Offline ASR-to-TTS Chain](https://github.com/ahclab/SpeeChain/tree/main/recipes/offline_asr2tts)
+```
+/offline_asr2tts
+    /librispeech_libritts   # ASR model use LibriSpeech and TTS model use LibriTTS
+        /train-clean-100-360    # Labeled data: train-clean-100; Unlabeled data: train-clean-360
+            /data_cfg               # Data loading configuration files that are shared by different models
+            /transformer            # Transformer-based TTS models trained by the offline ASR→TTS chain
+        /train-100-860          # Labeled data: train-clean-100; Unlabeled data: train-clean-360 + train-other-500
+            /data_cfg
+            /transformer            # Transformer-based TTS models trained by the offline ASR→TTS chain
+        /train-460-500          # Labeled data: train-clean-460; Unlabeled data: train-other-500
+            /data_cfg
+            /transformer            # Transformer-based TTS models trained by the offline ASR→TTS chain
+```
+<table>
+	<tr>
+	    <th>Dataset (Test Sets)</th>
+	    <th>ASR Model</th>
+	    <th>TTS Model</th>
+	    <th>Setting</th>  
+	    <th>MCD</th>  
+	</tr>
+	<tr>
+	    <td rowspan="3">LibriSpeech-LibriTTS (test-clean / test-other)</td>
+	    <td rowspan="3">Speech-Transformer</td>
+	    <td rowspan="3">MultiSpeech</td>
+	    <td>train-clean-100-360</td>
+	    <td></td>
+	</tr>
+	<tr>
+	    <td>train-460-500</td>
+	    <td></td>
+	</tr>
+	<tr>
+	    <td>train-100-860s</td>
+	    <td></td>
+	</tr>
+</table>
 
 ## Experiment Results Structure
 The structure of the result files in an experiment folder is shown as below:
 ```
-exp/                # the 'exp' folder of each model
-    exp_name/           # the name of a specific experiment
-        test_cfg_name/      # the name of a testing configuration file
-            test_model_name/    # the name of the model you want to test the performance
-                test_set_name/      # the name of a test set
-                    figures/                # the folder that contains all the distribution figures of each metric on the test set
+/data_cfg
+/exp                # the 'exp' folder of each model
+    /exp_name           # the name of a specific experiment
+        /test_cfg_name      # the name of a testing configuration file
+            /test_model_name    # the name of the model you want to test the performance
+                /test_set_name      # the name of a test set
+                    /figures                # the folder that contains all the distribution figures of each metric on the test set
+                        ...
                     test.log                # the log file that contains the testing process of a specific test set
                     overall_results.md      # the .md file that contains the model overall performance on the test set
                     sample_reports.md       # the .md file that contains the detailed performance reports of each testing sample

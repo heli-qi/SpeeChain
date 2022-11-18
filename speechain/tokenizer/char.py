@@ -7,28 +7,33 @@ from speechain.tokenizer.abs import Tokenizer
 
 import torch
 
+
 class CharTokenizer(Tokenizer):
     """
+    Tokenizer implementation that converts the input sentence string into a list of graphemes (characters).
 
     """
-    def text2tensor(self, text: str):
+
+    def text2tensor(self, text: str, no_sos: bool = False, no_eos: bool = False):
         """
 
         Args:
             text:
+            no_sos:
+            no_eos:
 
         Returns:
 
         """
-        tokens = [self.sos_eos_idx]
-
-        # loop each character in the text data
-        for char in text:
-            if char not in self.token2idx.keys():
-                tokens.append(self.unk_idx)
-            else:
-                tokens.append(self.token2idx[char])
-
-        tokens.append(self.sos_eos_idx)
-
+        # initialize the tensor as an empty list
+        tokens = []
+        # whether to attach sos at the beginning of the tokens
+        if not no_sos:
+            tokens.append(self.sos_eos_idx)
+        # attach the main body of the text
+        tokens.extend([self.token2idx[char] if char in self.token2idx.keys() else self.unk_idx for char in text])
+        # whether to attach eos at the end of the tokens
+        if not no_eos:
+            tokens.append(self.sos_eos_idx)
+        # turn the token list into a long-type tensor
         return torch.LongTensor(tokens)

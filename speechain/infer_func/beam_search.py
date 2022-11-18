@@ -8,7 +8,8 @@
 
 """
 import torch
-import numpy as np
+
+eps = 1e-10
 
 class BeamHypotheses(object):
     """
@@ -56,7 +57,7 @@ class BeamHypotheses(object):
 
         """
         # normalize the sum of log probability by the hypothesis length
-        score = sum_logprobs / (len(hyp) ** self.length_penalty)
+        score = sum_logprobs / ((len(hyp) + eps) ** self.length_penalty)
 
         # some beams remain undone or the score is better than the worst score so far
         if len(self) < self.beam_size or score > self.worst_score:
@@ -94,7 +95,7 @@ class BeamHypotheses(object):
         else:
             if curr_len is None:
                 curr_len = self.max_length
-            curr_score = best_sum_logprobs / curr_len ** self.length_penalty
+            curr_score = best_sum_logprobs / ((curr_len + eps) ** self.length_penalty)
 
             # whether the current score is worse than the worst score
             return curr_score < self.worst_score
@@ -151,12 +152,13 @@ def beam_searching(enc_feat: torch.Tensor,
             The temperature coefficient used for calculating the log-softmax probability. The higher temperature is (>1),
             the more even token probability distribution you will get. Vice versa for the lower temperature (<1).
             Usually, raising the temperature up helps ASR in better decoding. The temperature value needs to be tuned on
-            your validation sets. The common practice is to start from 1.3 and search other values in (1.0, 1.5].
+            your validation sets. The common practice is to start from 1.5 and search other values in (1.0, 2.0].
         eos_filtering: bool
             Controls whether the eos filtering is performed.
             If True, the algorithm will only emit an eos when the eos probability is larger than some times the
             maximum probability of the other tokens.
             This function is default to be off since it may reversely aggravate the n-gram phrase repeating problem.
+            It's better to turn it on only when your model suffers from meeting eos very early on many testing cases.
             reference: 'Sequence-to-Sequence Speech Recognition with Time-Depth Separable Convolutions'
                 Section 3.1.2 in https://arxiv.org/pdf/1904.02619
         eos_threshold: float
@@ -173,6 +175,8 @@ def beam_searching(enc_feat: torch.Tensor,
     batch_size = enc_feat.size(0)
     enc_feat_len = enc_feat_mask.sum(dim=-1).squeeze()
 
+    # hypo_maxlen is uniformly calculated for all the sentences by the longest utterance
+    # Since the utterances in a batch usually have the similar lengths, it won't be a big problem for text decoding
     feat_maxlen = enc_feat.size(1)
     hypo_maxlen = int(feat_maxlen * maxlen_ratio) if maxlen_ratio > 0 else int(-maxlen_ratio)
     cuda_device = enc_feat.device

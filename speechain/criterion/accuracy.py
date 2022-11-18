@@ -43,7 +43,7 @@ class Accuracy(Criterion):
                 f"Expect text_len.max() is either equal to or 1 smaller than text.size(1), " \
                 f"but got text_len.max()={text_len.max()} and text.size(1)={text.size(1)}."
             # remove the <sos/eos> at the beginning
-            text = text[:, 1:].squeeze()
+            text = text[:, 1:].squeeze(dim=-1)
             # don't use text_len -= 1 here because it will also change the text_len outside this function
             text_len = text_len - 1
         # Otherwise, text must not have a <sos/eos> at the beginning (equal in length with logits)
@@ -51,11 +51,15 @@ class Accuracy(Criterion):
             raise RuntimeError
 
         # mask generation for the input text length
-        text_mask = make_mask_from_len(text_len).squeeze()
+        text_mask = make_mask_from_len(text_len).squeeze(dim=1)
         if text.is_cuda:
             text_mask = text_mask.cuda(text.device)
 
         # calculate the accuracy by the correct prediction
-        correct_num = logits.argmax(dim=-1).eq(text).masked_select(text_mask).sum()
+        if logits.dim() == text.dim() + 1:
+            logits = logits.argmax(dim=-1)
+        elif logits.dim() != text.dim():
+            raise RuntimeError(f"logits.shape={logits.shape} but text.shape={text.shape}!")
+        correct_num = logits.eq(text).masked_select(text_mask).sum()
         total_num = text_len.sum()
         return correct_num / total_num

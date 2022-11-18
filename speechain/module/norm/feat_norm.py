@@ -155,17 +155,20 @@ class FeatureNormalization(Module):
                             curr_aver_std=group_std_dict[group_id].mean(dim=0) if group_std_dict is not None else None,
                             prefix=group_id, epoch=epoch
                         )
+                    # update the average mean & std of all the groups
+                    # (i.e. the average distribution for unknown samples during inference)
+                    self.update_aver_mean_std(epoch)
 
-                # normalize the feature by the group mean and std if group values are registered
-                # normalize the feature by the utterance mean and std if group values are not registered
+                # During training, normalize the known features by the group mean & std
+                # During inference, normalize the unknown features by the average mean & std of all groups
                 for i in range(batch_size):
                     group_id = group_ids[i].item() if group_ids is not None else None
 
                     if self.mean_norm:
-                        feat[i] -= curr_means[i] if not hasattr(self, f"{group_id}_mean") else \
+                        feat[i] -= self.get_buffer("aver_mean") if not hasattr(self, f"{group_id}_mean") else \
                             self.get_buffer(f"{group_id}_mean")
                     if self.std_norm:
-                        feat[i] /= curr_stds[i] if not hasattr(self, f"{group_id}_std") else \
+                        feat[i] /= self.get_buffer("aver_std") if not hasattr(self, f"{group_id}_std") else \
                             self.get_buffer(f"{group_id}_std")
 
             # batch-level & global-level normalization (these two scenarios share the batch-level mean & std)
@@ -196,7 +199,6 @@ class FeatureNormalization(Module):
                     batch_mean = None
                     batch_std = None
 
-
                 # batch-level normalization
                 if self.norm_type == 'batch':
                     # normalize the input utterances by the batch mean and std during training
@@ -223,10 +225,11 @@ class FeatureNormalization(Module):
                     # only update the mean and std during training
                     prefix = 'global' if self.norm_type == 'global' else group_ids
                     if self.training:
-                        self.register_mean_std_batch(curr_aver_mean=batch_mean,
-                                                     curr_aver_std=batch_std,
+                        self.register_mean_std_batch(curr_aver_mean=batch_mean, curr_aver_std=batch_std,
                                                      prefix=prefix, epoch=epoch)
 
+                    # if the group_ids is given as a string or int,
+                    # we assume that there are no unknown testing samples during inference
                     feat = feat - self.get_buffer(f"{prefix}_mean") if curr_means is not None else feat
                     feat = feat / self.get_buffer(f"{prefix}_std") if curr_stds is not None else feat
 
@@ -350,6 +353,69 @@ class FeatureNormalization(Module):
                     prev_aver_std = self.get_buffer(f"{prefix}_std")
                     self.register_buffer(f"{prefix}_std",
                                          curr_weight * curr_aver_std + (1 - curr_weight) * prev_aver_std)
+
+
+    def update_aver_mean_std(self, epoch: int):
+        """
+
+        Args:
+            epoch:
+
+        """
+        if epoch is None or epoch <= self.max_epoch_num:
+            _group_mean_num, _group_std_num = 0, 0
+            _aver_mean, _aver_std = None, None
+            for name, buff in self.named_buffers():
+                if name.endswith('_mean'):
+                    _group_mean_num += 1
+                    _aver_mean = buff.clone() if _aver_mean is None else _aver_mean + buff
+                elif name.endswith('_std'):
+                    _group_std_num += 1
+                    _aver_std = buff.clone() if _aver_std is None else _aver_std + buff
+
+            self.register_buffer('aver_mean', _aver_mean / _group_mean_num)
+            self.register_buffer('aver_std', _aver_std / _group_std_num)
+
+
+    def recover(self, feat: torch.Tensor, group_ids: torch.Tensor or str or int = None):
+        """
+
+        Args:
+            feat:
+            group_ids:
+
+        Returns:
+
+        """
+        assert self.norm_type not in ['utterance', 'batch'], \
+            "If norm_type is either 'utterance' or 'batch', the normalized features cannot be recovered."
+
+        # global normalization or
+        # group-level normalization with str or int group_ids (input utterances belong to the same group)
+        if self.norm_type == 'global' or (self.norm_type == 'group' and isinstance(group_ids, (str, int))):
+            prefix = 'global' if self.norm_type == 'global' else str(group_ids)
+            feat = feat * self.get_buffer(f"{prefix}_std") if self.std_norm else feat
+            feat = feat + self.get_buffer(f"{prefix}_mean") if self.mean_norm else feat
+        # group-level normalization with tensor group_ids (input utterances belong to different groups)
+        # recover by the average mean & std when meeting an unknown group during inference
+        elif self.norm_type == 'group' and isinstance(group_ids, torch.Tensor):
+            feat = feat * torch.stack(
+                [self.get_buffer(f"{g_id.item():d}_std") if hasattr(self, f"{g_id.item():d}_std") else
+                 self.get_buffer("aver_std") for g_id in group_ids], dim=0
+            ).unsqueeze(1) if self.std_norm else feat
+
+            feat = feat + torch.stack(
+                [self.get_buffer(f"{g_id.item():d}_mean") if hasattr(self, f"{g_id.item():d}_mean") else
+                 self.get_buffer("aver_mean") for g_id in group_ids], dim=0
+            ).unsqueeze(1) if self.mean_norm else feat
+        # group-level normalization with None group_ids, recover by the average mean & std
+        elif self.norm_type == 'group' and group_ids is None:
+            feat = feat * self.get_buffer("aver_std").expand(1, 1, -1) if self.std_norm else feat
+            feat = feat + self.get_buffer("aver_mean").expand(1, 1, -1) if self.mean_norm else feat
+        else:
+            raise RuntimeError
+
+        return feat
 
 
     def _load_from_state_dict(self, state_dict, prefix, local_metadata, strict,

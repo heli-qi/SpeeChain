@@ -3,21 +3,36 @@
     Affiliation: NAIST
     Date: 2022.07
 """
-import time
-from typing import Dict
+from typing import List
 
 import editdistance
-import edit_distance
 import torch
 
 from speechain.tokenizer.abs import Tokenizer
 from speechain.criterion.abs import Criterion
 
+
+def text_preprocess(text, tokenizer: Tokenizer):
+    # tensor input need to be recovered to string
+    if isinstance(text, torch.Tensor):
+        # remove the padding and sos/eos tokens
+        proc_text = text[torch.logical_and(text != tokenizer.ignore_idx, text != tokenizer.sos_eos_idx)]
+        # turn text tensors into strings for removing the blanks
+        string = tokenizer.tensor2text(proc_text)
+    # string input, no processing is done here
+    elif isinstance(text, str):
+        string = text
+    else:
+        raise RuntimeError
+
+    return string
+
 class ErrorRate(Criterion):
     """
 
     """
-    def forward(self, hypo_text: torch.Tensor, real_text: torch.Tensor, tokenizer: Tokenizer, do_aver: bool = False):
+    def forward(self, hypo_text: torch.Tensor or List[str] or str, real_text: torch.Tensor or List[str] or str,
+                tokenizer: Tokenizer, do_aver: bool = False):
         """
 
         Args:
@@ -29,17 +44,22 @@ class ErrorRate(Criterion):
         Returns:
 
         """
-        cer_dist, cer_len, wer_dist, wer_len = [], [], [], []
-        for i in range(hypo_text.size(0)):
-            # remove the padding and sos/eos tokens
-            hypo = hypo_text[i][torch.logical_and(hypo_text[i] != tokenizer.ignore_idx,
-                                                  hypo_text[i] != tokenizer.sos_eos_idx)]
-            real = real_text[i][torch.logical_and(real_text[i] != tokenizer.ignore_idx,
-                                                  real_text[i] != tokenizer.sos_eos_idx)]
+        # make sure that hypo_text is a 2-dim tensor or a list of strings
+        if isinstance(hypo_text, torch.Tensor) and hypo_text.dim() == 1:
+            hypo_text = hypo_text.unsqueeze(0)
+        elif isinstance(hypo_text, str):
+            hypo_text = [hypo_text]
+        # make sure that real_text is a 2-dim tensor or a list of strings
+        if isinstance(real_text, torch.Tensor) and real_text.dim() == 1:
+            real_text = real_text.unsqueeze(0)
+        elif isinstance(real_text, str):
+            real_text = [real_text]
 
-            # turn text tensors into strings for removing the blanks
-            hypo_string = tokenizer.tensor2text(hypo)
-            real_string = tokenizer.tensor2text(real)
+        cer_dist, cer_len, wer_dist, wer_len = [], [], [], []
+        for i in range(len(hypo_text)):
+            # obtain the strings
+            hypo_string = text_preprocess(hypo_text[i], tokenizer)
+            real_string = text_preprocess(real_text[i], tokenizer)
 
             # calculate CER
             hypo_chars = hypo_string.replace(" ", "")

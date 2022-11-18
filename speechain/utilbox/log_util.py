@@ -14,6 +14,7 @@ import torch
 from speechain.model.abs import Model
 from contextlib import contextmanager
 
+
 @contextmanager
 def distributed_zero_first(distributed: bool, rank: int):
     """
@@ -31,7 +32,8 @@ def distributed_zero_first(distributed: bool, rank: int):
         torch.distributed.barrier()
 
 
-def logger_stdout_file(log_path, file_name, distributed: bool = False, rank: int = 0, name_candidate: int = 1000):
+def logger_stdout_file(log_path, file_name: str = None, distributed: bool = False,
+                       rank: int = 0, name_candidate: int = 1000):
     """
 
     Args:
@@ -53,13 +55,17 @@ def logger_stdout_file(log_path, file_name, distributed: bool = False, rank: int
     if not os.path.exists(log_path):
         os.makedirs(log_path, exist_ok=True)
 
-    # looping all the candidate names
-    result_log = None
-    for i in range(name_candidate):
-        result_log = os.path.join(log_path, f'{file_name}.log' if i == 0 else f'{file_name}{i}.log')
-        # non-existing file is the target
-        if not os.path.exists(result_log):
-            break
+    # return empty logger if no specified file
+    if file_name is None:
+        return rootLogger
+    else:
+        # looping all the candidate names
+        result_log = None
+        for i in range(name_candidate):
+            result_log = os.path.join(log_path, f'{file_name}.log' if i == 0 else f'{file_name}{i}.log')
+            # non-existing file is the target
+            if not os.path.exists(result_log):
+                break
 
     # the logger is only functional for single-GPU training or master process of the multi-GPU training
     if not distributed or rank == 0:
@@ -68,14 +74,13 @@ def logger_stdout_file(log_path, file_name, distributed: bool = False, rank: int
         fileHandler.setFormatter(logFormatter)
         rootLogger.addHandler(fileHandler)
 
-        # # initialize the console handler for showing the info on the console
+        # we don't initialize the console handler because showing the info on the console may have some problems
         # consoleHandler = logging.StreamHandler(sys.stdout)
         # consoleHandler.setFormatter(logFormatter)
         # rootLogger.addHandler(consoleHandler)
 
-    # For the other processes of multi-GPU training, an empty logger will be returned
+    # For the non-master multi-GPU training processes or testing processes, an empty logger will be returned
     return rootLogger
-
 
 
 def model_summary(model: Model) -> str:

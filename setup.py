@@ -1,14 +1,14 @@
-from setuptools import find_packages, setup
+from setuptools import setup, find_namespace_packages, find_packages
 
 setup(name="speechain",
       version="0.1",
-      description="The SpeeChain toolkit.",
+      description="The main folder of the SpeeChain toolkit.",
       author="Heli Qi (original codes are from Andros Tjandra & Sashi Novitasari)",
       author_email='qi.heli.qi9@is.naist.jp',
       platforms=["any"],  # or more specific, e.g. "win32", "cygwin", "osx"
       license="BSD",
       url="",
-      packages=find_packages(),
+      packages=find_packages(include=['speechain', 'datasets']),
       install_requires=['numpy',
                         'scipy',
                         'torch',
@@ -27,3 +27,4 @@ setup(name="speechain",
                         'pyyaml',
                         'torchaudio',
                         'sentencepiece'])
+

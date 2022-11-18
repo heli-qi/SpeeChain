@@ -26,26 +26,28 @@ def generator_act_module(name):
         return getattr(torch.nn, name)()
 
 
-def make_mask_from_len(data_len: torch.Tensor):
+def make_mask_from_len(data_len: torch.Tensor, max_len: int = None, mask_type: torch.dtype = torch.bool):
     """
 
     Args:
         data_len: (batch_size,)
             The length of each sequence in the batch
+        max_len: int
+            The max length of the mask matrix. Could be larger than the real length of data_len
+        mask_type: torch.dtype
+            The value type of the mask matric.
 
     Returns:
         The corresponding mask for this batch.
-        The parts at the end of the shorter sequence will be False.
+        The parts at the end of the shorter sequence will be False or 0.0.
 
     """
-    mask = []
+    batch_size = data_len.size(0)
+    if max_len is None:
+        max_len = data_len.max()
+
+    mask = torch.zeros((batch_size, 1, max_len), dtype=mask_type)
     for i in range(data_len.size(0)):
-        _tmp_mask = torch.ones((1, data_len[i]), dtype=torch.bool)
+        mask[i, :, :data_len[i]] = 1.0
 
-        # padding zeros if shorter than the longest utterance
-        if data_len.max() - data_len[i] > 0:
-            pad_zero = torch.zeros((1, data_len.max() - data_len[i]), dtype=torch.bool)
-            _tmp_mask = torch.cat([_tmp_mask, pad_zero], dim=1)
-        mask.append(_tmp_mask)
-
-    return torch.stack(mask)
+    return mask

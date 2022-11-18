@@ -140,8 +140,11 @@ class TransformerDecoder(Module):
 
     def module_init(self,
                     posenc_type: str = 'mix',
+                    posenc_scale: bool = False,
                     posenc_maxlen: int = 5000,
                     posenc_dropout: float = 0.1,
+                    emb_layernorm: bool = False,
+                    emb_scale: bool = True,
                     d_model: int = 512,
                     num_heads: int = 4,
                     num_layers: int = 8,
@@ -155,11 +158,20 @@ class TransformerDecoder(Module):
         Args:
             posenc_type: str
                 Specify the positional encoding type you would like to use in your Transformer blocks.
+            posenc_scale: bool
+                Controls whether the positional encodings are scaled up by a trainable scalar before adding into the
+                embedded features or not.
+                Reference:
+                    'Neural Speech Synthesis with Transformer Network'
+                    https://ojs.aaai.org/index.php/AAAI/article/view/4642/4520
             posenc_maxlen: int
                 Maximal length when calculating the positional encoding.
                 Usually, the default value of this argument is enough for the research.
             posenc_dropout: float
                 The dropout rate for the Dropout layer after adding the positional encoding to the input
+            emb_scale: bool
+                Controls whether the embedding vectors are scaled up by sqrt(d_model) before adding into the positional
+                encoding or not.
             d_model: int
                 The dimension of the hidden feature vector in each Transformer layer
             num_heads: int
@@ -206,6 +218,9 @@ class TransformerDecoder(Module):
         # initialize the positional encoding layer
         self.posenc = PositionalEncoding(posenc_type=posenc_type,
                                          d_model=d_model,
+                                         emb_scale=emb_scale,
+                                         emb_layernorm=emb_layernorm,
+                                         posenc_scale=posenc_scale,
                                          max_len=posenc_maxlen,
                                          dropout=posenc_dropout)
 
@@ -301,3 +316,12 @@ class TransformerDecoder(Module):
             ),
             hidden=hidden
         )
+
+
+    def get_trainable_scalars(self):
+        if hasattr(self.posenc, 'posenc_scalar'):
+            return dict(
+                posenc_scalar=self.posenc.posenc_scalar.data
+            )
+        else:
+            return None

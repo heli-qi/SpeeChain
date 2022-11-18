@@ -209,6 +209,36 @@ class LinearSpec2MelSpec(Module):
 
         return feat, feat_len
 
+
+    def recover(self, feat: torch.Tensor, feat_len: torch.Tensor):
+        """
+
+        Args:
+            feat: (batch_size, feat_maxlen, mel_dim)
+
+        Returns:
+
+        """
+        # recover the logarithm operation
+        if self.logging:
+            feat = torch.pow(
+                torch.full_like(feat, fill_value=torch.e if self.log_base is None else self.log_base), feat
+            )
+
+        # recover the mel spectrograms back to linear spectrograms
+        feat = torch.linalg.lstsq(
+            self.mel_fbanks.weight.data.unsqueeze(0), feat.transpose(-2, -1)
+        ).solution.transpose(-2, -1)
+
+        # turn the silence part of the shorter utterances to zeros
+        for i in range(len(feat_len)):
+            if feat_len[i] != feat_len.max():
+                feat[i][feat_len[i]:] = 0
+
+        # clamp the spectrogram for numerical stability
+        return torch.clamp(feat, min=1e-10)
+
+
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(\n" \
                f"stft_dim={self.stft_dim}, " \

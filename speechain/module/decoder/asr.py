@@ -97,3 +97,21 @@ class ASRDecoder(Module):
                 hidden=dec_results['hidden']
             )
         return dec_outputs
+
+
+    def get_trainable_scalars(self) -> Dict or None:
+        trainable_scalars = dict()
+        # decoder-prenet layers
+        pre_scalars = self.prenet.get_trainable_scalars()
+        if pre_scalars is not None:
+            trainable_scalars.update(**pre_scalars)
+        # decoder layers
+        dec_scalars = self.decoder.get_trainable_scalars()
+        if dec_scalars is not None:
+            trainable_scalars.update(**dec_scalars)
+        # decoder-postnet layers
+        post_scalars = self.postnet.get_trainable_scalars()
+        if post_scalars is not None:
+            trainable_scalars.update(**post_scalars)
+
+        return trainable_scalars

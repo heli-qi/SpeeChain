@@ -55,6 +55,7 @@ dependencies:
     - gpustat==0.6.0
     - gputil==1.4.0
     - grpcio==1.44.0
+    - h5py==3.7.0
     - idna==3.3
     - importlib-metadata==4.11.3
     - iniconfig==1.1.1
