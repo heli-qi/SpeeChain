@@ -9,12 +9,11 @@ If you find our toolkit helpful for your research, we sincerely hope that you ca
 Anytime when you encounter problems when using our toolkit, please don't hesitate to leave us an issue!
 
 ## Table of Contents
-1. [**What is Machine Speech Chain?**](https://github.com/ahclab/SpeeChain#toolkit-overview)
+1. [**What is Machine Speech Chain?**](https://github.com/ahclab/SpeeChain#what-is-machine-speech-chain)
 2. [**Toolkit Overview**](https://github.com/ahclab/SpeeChain#toolkit-overview)
-3. Show-off 
-4. [**Get a Quick Start**](https://github.com/ahclab/SpeeChain#get-a-quick-start)
-5. [**Documentation**](https://github.com/ahclab/SpeeChain#documentation)
-6. [**Contribution**](https://github.com/ahclab/SpeeChain#contribution)
+3. [**Get a Quick Start**](https://github.com/ahclab/SpeeChain#get-a-quick-start)
+4. [**Documentation**](https://github.com/ahclab/SpeeChain#documentation)
+5. [**Contribution**](https://github.com/ahclab/SpeeChain#contribution)
 
 
 ## What is Machine Speech Chain?
@@ -109,14 +108,14 @@ After the installation of *Anaconda*, please follow the steps below to deploy ou
 (don't forget to change the _prefix_ inside this .yaml file to the place in your machine). 
 5. Activate the environment *speechain* by `conda activate speechain`
 6. Run `pip install -e .` to install our toolkit into the environment.
-7. Read the [handbook]() and start your journey in SpeeChain!
+7. Read the [handbook](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#speechain-handbook) and start your journey in SpeeChain!
 
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain#table-of-contents)
 
 
 ## Documentation
 There are 4 types of documents in our toolkit:
-1. [**Overview Handbook**]():   
+1. [**Overview Handbook**](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#speechain-handbook):   
 We provide a _handbook.md_ at the root path to present an overview of our toolkit to our users. 
 This handbook will tell you the detailed learning path from a beginner to a contributor.
 2. **Multi-level README.md**:  

@@ -1,21 +1,21 @@
-# SpeeChain Documentation
+# SpeeChain Handbook
 Our documentation is organized by different roles in this toolkit. 
 You can start the journey of SpeeChain by your current position.
 
 ## Table of Contents
-1. [**For those who just discovered SpeeChain**]()
-   1. [How to dump a dataset to your machine]()
-   2. [How to prepare a configuration file]()
-   3. [How to train a model]()
-   4. [How to interpret the files generated during training]()
-   5. [How to evaluate a trained model]()
-   6. [How to analyse a trained model by the files generated during evaluation]()
-2. [**For those who want to use SpeeChain for research**]()
+1. [**For those who just discovered SpeeChain**](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#for-those-who-just-discovered-speechain)
+   1. [How to dump a dataset to your machine](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#how-to-dump-a-dataset-to-your-machine)
+   2. [How to prepare a configuration file](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#how-to-prepare-configuration-files)
+   3. [How to train a model](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#how-to-train-a-model)
+   4. [How to interpret the files generated during training](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#how-to-interpret-the-files-generated-during-training)
+   5. [How to evaluate a trained model](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#how-to-evaluate-a-trained-model)
+   6. [How to analyse a trained model by the files generated during evaluation](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#how-to-analyse-a-trained-model-by-the-files-generated-after-testing)
+2. [**For those who want to use SpeeChain for research**](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#for-those-who-want-to-use-speechain-for-research)
    1. [What does the SpeeChain framework work during model training and testing]()
    2. [How to customize my own data loading strategy]()
    3. [How to customize my own model]()
    4. [How to customize my parameter optimization strategy]()
-   5. [Are there any specifications for my contribution]()
+   5. [Are there any specifications for my contribution](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#development-specifications)
 
 
 ## For those who just discovered SpeeChain
@@ -28,7 +28,7 @@ In SpeeChain toolkit, a basic research pipeline has 5 steps:
 
 The following subsections will explain how to execute the steps above one by one.
 
-👆[Back to the table of contents](https://github.com/ahclab/SpeeChain#table-of-contents)
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#table-of-contents)
 
 ### How to dump a dataset to your machine
 In our toolkit, the datasets are grouped by their data types. 
@@ -44,9 +44,9 @@ Current available datasets: (click the hyperlinks below and jump to the **README
   1. LJSpeech
   2. LibriSpeech
   3. LibriTTS
-* [Speech-Speaker]()
+* Speech-Speaker
 
-👆[Back to the table of contents](https://github.com/ahclab/SpeeChain#table-of-contents)
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#table-of-contents)
 
 
 ### How to prepare configuration files
@@ -56,7 +56,7 @@ Current available datasets: (click the hyperlinks below and jump to the **README
     3. Replace the reference values on the top of the _exp_cfg_ file to the places on your machine.
     4. Don't forget to also change the reference values in the _data_cfg_ file used in your selected _exp_cfg_ file.
 
-👆[Back to the table of contents](https://github.com/ahclab/SpeeChain#table-of-contents)
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#table-of-contents)
 
 
 ### How to train a model
@@ -66,22 +66,22 @@ Current available datasets: (click the hyperlinks below and jump to the **README
     3. Open the template script by `vim run.sh` and change the arguments in it if you need.
     4. Start the experiment by running `./run.sh`.
 
-👆[Back to the table of contents](https://github.com/ahclab/SpeeChain#table-of-contents)
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#table-of-contents)
 
 
 ### How to interpret the files generated during training
 
-👆[Back to the table of contents](https://github.com/ahclab/SpeeChain#table-of-contents)
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#table-of-contents)
 
 
 ### How to evaluate a trained model
 
-👆[Back to the table of contents](https://github.com/ahclab/SpeeChain#table-of-contents)
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#table-of-contents)
 
 
 ### How to analyse a trained model by the files generated after testing
 
-👆[Back to the table of contents](https://github.com/ahclab/SpeeChain#table-of-contents)
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#table-of-contents)
 
 
 ## For those who want to use SpeeChain for research
@@ -105,7 +105,7 @@ Folder architecture is shown below:
             /...
 ```
 
-👆[Back to the table of contents](https://github.com/ahclab/SpeeChain#table-of-contents)
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#table-of-contents)
 
 
 #### Dataset Folder
@@ -127,7 +127,7 @@ Folder architecture is shown below:
 ```
 For more details, please refer to the README.md of each type of dataset in `/datasets/`.
 
-👆[Back to the table of contents](https://github.com/ahclab/SpeeChain#table-of-contents)
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#table-of-contents)
 
 
 #### Recipe Folder
@@ -155,7 +155,7 @@ Folder architecture is shown below:
 ```
 For more details, please refer to [_/recipes/README.md_]().
 
-👆[Back to the table of contents](https://github.com/ahclab/SpeeChain#table-of-contents)
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#table-of-contents)
 
     
 #### Main Folder
@@ -292,7 +292,7 @@ For the role of each part, please refer to the [toolkit architecture]() section 
         /subword.py     # Tokenizer implementation of the subword tokenizer by SentencePiece package.
 ```
 
-👆[Back to the table of contents](https://github.com/ahclab/SpeeChain#table-of-contents)
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#table-of-contents)
 
 
 
@@ -347,7 +347,7 @@ We have some specifications for you to standardize your contribution:
     * For the temporary variables only used to register data for a short period, please add an underline at the beginning of the name to notify other users.
     For example, '*_tmp_feat_dim*' means the temporary variable used to register the intermediate value of the feature dimension. 
 
-👆[Back to the table of contents](https://github.com/ahclab/SpeeChain#table-of-contents)
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#table-of-contents)
 
 
 
@@ -394,7 +394,7 @@ Also, a monitor keeps the connection with a _Snapshooter_ and constantly package
 For the program efficiency, it doesn't run in the main process of model training but a new process. 
 It communicates with _Monitor_ by _multiprocessing.Queue_ and _multiprocessing.Event_.
 
-👆[Back to the table of contents](https://github.com/ahclab/SpeeChain#table-of-contents)
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#table-of-contents)
 
 ### [Data Loading Part](https://github.com/ahclab/SpeeChain/tree/main/speechain/iterator#data-loading-part)
 This part plays the role of extracting the raw data on the disk and providing the model with trainable batches. 
@@ -411,7 +411,7 @@ After receiving the preprocessed vectors of all the data samples, the _Dataloade
 It stores the necessary information of the data samples of the specified dataset (e.g. physical addresses for the waveform files, strings for the text files). 
 After receiving the sample index from the _Dataloader_, it loads the chosen data sample from the disk and preprocesses it into a machine-friendly vector. 
 
-👆[Back to the table of contents](https://github.com/ahclab/SpeeChain#table-of-contents)
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#table-of-contents)
 
 ### [Model Calculation Part](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#model-calculation-part)
 This part receives the batch from the data loading part and outputs the training losses or evaluation metrics. 
@@ -435,7 +435,7 @@ There are two kinds of criteria: _Train Criterion_ as the loss functions for mod
 The criterion and module are independent of each other, which allows any combinations of criteria in a single model.
 Users can create their customized criteria by overriding its initialization and forward interfaces.
 
-👆[Back to the table of contents](https://github.com/ahclab/SpeeChain#table-of-contents)
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#table-of-contents)
 
 ### [Parameter Optimization Part](https://github.com/ahclab/SpeeChain/tree/main/speechain/optim_sche#parameter-optimization-part)
 This part does the job of updating the model parameters by the received losses. 
@@ -450,5 +450,5 @@ parameter optimization and learning rate scheduling are simultaneously done by _
 It possesses a built-in `torch.optim.Optimizer` member and provides the learning rate for the optimizer member in each training step. 
 Users can override its interfaces to customize their personal strategies of scheduling the learning rates during training.
 
-👆[Back to the table of contents](https://github.com/ahclab/SpeeChain#table-of-contents)
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#table-of-contents)
 

@@ -15,6 +15,7 @@ class SpeakerDataset(Dataset):
     """
 
     """
+
     def dataset_init(self, **dataset_conf):
         pass
 
@@ -28,7 +29,6 @@ class SpeakerDataset(Dataset):
 
         """
         raise NotImplementedError
-
 
     def read_label_file(self, label_file: str) -> Dict[str, str]:
         """
@@ -45,7 +45,6 @@ class SpeakerDataset(Dataset):
         # np.ndarray -> Dict[str, str]
         return dict(zip(spk_ids[:, 0], spk_ids[:, 1]))
 
-
     def read_meta_file(self, meta_file: str, meta_type: str) -> Dict[str, str]:
         """
 
@@ -57,7 +56,6 @@ class SpeakerDataset(Dataset):
 
         """
         raise NotImplementedError
-
 
     def __getitem__(self, index) -> Dict[str, Any]:
         """
@@ -78,7 +76,6 @@ class SpeakerDataset(Dataset):
             spk_ids=spk_ids
         )
         return outputs
-
 
     def collate_fn(self, batch: List[Dict[str, Any]]) -> Dict[str, Any]:
         outputs = dict()

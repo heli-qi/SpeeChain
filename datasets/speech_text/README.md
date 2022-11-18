@@ -4,17 +4,16 @@ Each dataset corresponds to a sub-folder and has a uniform file system.
 You can easily dump your target dataset to your machine by following the instructions below. 
 If you want to contribute a new dataset, we would appreciate it if you could follow our file systems and metadata formats.
 
-👆[Back to the handbook page](https://github.com/ahclab/SpeeChain/tree/main/datasets#datasets-folder-of-the-speechain-toolkit)
+👆[Back to the handbook page](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#speechain-handbook)
 
 ## Table of Contents
 1. [**File System**](https://github.com/ahclab/SpeeChain/tree/main/datasets/speech_text#file-system)
-2. [**Metadata Format**](https://github.com/ahclab/SpeeChain/tree/main/datasets/speech_text#file-format)
+2. [**Metadata Format**](https://github.com/ahclab/SpeeChain/tree/main/datasets/speech_text#metadata-format)
     1. [idx2wav](https://github.com/ahclab/SpeeChain/tree/main/datasets/speech_text#idx2wav)
     2. [idx2wav_len](https://github.com/ahclab/SpeeChain/tree/main/datasets/speech_text#idx2wav_len)
     3. [idx2feat](https://github.com/ahclab/SpeeChain/tree/main/datasets/speech_text#idx2feat)
     4. [idx2feat_len](https://github.com/ahclab/SpeeChain/tree/main/datasets/speech_text#idx2feat_len)
-    5. [idx2text](https://github.com/ahclab/SpeeChain/tree/main/datasets/speech_text#idx2sent)
-    6. [idx2text_len](https://github.com/ahclab/SpeeChain/tree/main/datasets/speech_text#idx2sent_len)
+    5. [idx2text](https://github.com/ahclab/SpeeChain/tree/main/datasets/speech_text#idx2text)
     7. [text](https://github.com/ahclab/SpeeChain/tree/main/datasets/speech_text#text)
     8. [idx2spk](https://github.com/ahclab/SpeeChain/tree/main/datasets/speech_text#idx2spk)
     9. [spk_list](https://github.com/ahclab/SpeeChain/tree/main/datasets/speech_text#spk_list)
@@ -67,7 +66,7 @@ If you want to contribute a new dataset, we would appreciate it if you could fol
 ```
 The names in the braces({}) mean the undefined names depending on the settings of datasets and configuration.
 
-👆[Back to the table of contents]()
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/datasets/speech_text#table-of-contents)
 
 
 ## Metadata Format
@@ -100,7 +99,7 @@ For example in `idx2wav_npz` where .npz is used as the extension of chunk files:
 ```
 The absolute addresses are separated by colons where the content before the colon indicates which chunk the waveform belongs to and the content after the colon indicates the data index in the chunk.
 
-👆[Back to the table of contents]()
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/datasets/speech_text#table-of-contents)
 
 
 #### idx2wav_len
@@ -116,7 +115,7 @@ For example,
 103-1240-0004 200240
 ```
 
-👆[Back to the table of contents]()
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/datasets/speech_text#table-of-contents)
 
 
 #### idx2feat
@@ -145,7 +144,7 @@ For example in `idx2feat_npz` where .npz is used as the extension of chunk files
 ```
 The absolute addresses are separated by colons where the content before the colon indicates which chunk the waveform belongs to and the content after the colon indicates the data index in the chunk.
 
-👆[Back to the table of contents]()
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/datasets/speech_text#table-of-contents)
 
 
 #### idx2feat_len
@@ -161,7 +160,7 @@ For example,
 103-1240-0004 1251
 ```
 
-👆[Back to the table of contents]()
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/datasets/speech_text#table-of-contents)
 
 
 #### idx2text
@@ -180,7 +179,7 @@ For example,
 **Note**: you don't need to worry about the blanks inside each transcript text string. 
 Those additional blanks will be ignored in the subsequent processing.
 
-👆[Back to the table of contents]()
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/datasets/speech_text#table-of-contents)
 
 
 #### text
@@ -198,7 +197,7 @@ AND THAT IF SHE NOTICED ANYTHING ODD OR OUT OF PLACE SHE WOULD NEVER REST UNTIL 
 BUT MISSUS RACHEL LYNDE WAS ONE OF THOSE CAPABLE CREATURES WHO CAN MANAGE THEIR OWN CONCERNS AND THOSE OF OTHER FOLKS INTO THE BARGAIN SHE WAS A NOTABLE HOUSEWIFE HER WORK WAS ALWAYS DONE AND WELL DONE SHE RAN THE SEWING CIRCLE
 ```
 
-👆[Back to the table of contents]()
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/datasets/speech_text#table-of-contents)
 
 
 #### idx2spk
@@ -213,7 +212,7 @@ For example,
 103-1240-0004 103
 ```
 
-👆[Back to the table of contents]()
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/datasets/speech_text#table-of-contents)
 
 
 #### spk_list
@@ -234,7 +233,7 @@ For example,
 1686
 ```
 
-👆[Back to the table of contents]()
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/datasets/speech_text#table-of-contents)
 
 
 #### idx2gen
@@ -249,7 +248,7 @@ For example,
 103-1240-0004 F
 ```
 
-👆[Back to the table of contents]()
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/datasets/speech_text#table-of-contents)
 
 
 ## How to Dump a Dataset on your Machine
@@ -294,7 +293,7 @@ In `/datasets/speech_text/data_dumping.sh`, there are 8 steps to dump your targe
     
     **Note**: For subword tokenizers, there will be an additional file named `model` in `/datasets/speech_text/{dataset_name}/token_type/{src_subset}/{token_config}/{txt_format}` because the subword tokenization is done by third-party packages in this toolkit.
 
-👆[Back to the table of contents]()
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/datasets/speech_text#table-of-contents)
 
 ## How to Contribute a New Dataset
 If the speech-text dataset that you want to use for your experiments is not included here, 
@@ -314,4 +313,4 @@ You could refer to the ones in the existing dataset sub-folders as a template.
 
 **Note**: You should keep the same script names (i.e., `data_download.sh`, `meta_generator.py`, and `meta_post_processor.py`) for the compatibility with `data_dumping.sh`.
 
-👆[Back to the table of contents]()
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/datasets/speech_text#table-of-contents)
