@@ -2,6 +2,8 @@
 Our documentation is organized by different roles in this toolkit. 
 You can start the journey of SpeeChain by your current position.
 
+👆[Back to the toolkit README.md](https://github.com/ahclab/SpeeChain#speechain-a-pytorch-based-speechlanguage-processing-toolkit-for-the-machine-speech-chain)
+
 ## Table of Contents
 1. [**For those who just discovered SpeeChain**](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#for-those-who-just-discovered-speechain)
    1. [How to dump a dataset to your machine](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#how-to-dump-a-dataset-to-your-machine)
