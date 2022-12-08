@@ -1,16 +1,16 @@
 # Tokenizer
-[_Tokenizer_]() is the base class of all the _Tokenizer_ objects in this toolkit. 
+[_Tokenizer_](https://github.com/ahclab/SpeeChain/blob/main/speechain/tokenizer/abs.py#L14) is the base class of all the _Tokenizer_ objects in this toolkit. 
 It on-the-fly transforms text data between strings and tensors.  
 
 For data storage and visualization, the text data should be in the form of strings which is not friendly for model forward calculation. 
 For model forward calculation, the text data is better to be in the form of vectors (`torch.tensor` or `numpy.ndarray`).
 
 
-👆[Back to the handbook page](https://github.com/ahclab/SpeeChain#the-speechain-toolkit)
+👆[Back to the handbook page](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#speechain-handbook)
 
 ## Table of Contents
-1. [**Tokenizer Library**]()
-2. [**API Documents**]()
+1. [**Tokenizer Library**](https://github.com/ahclab/SpeeChain/tree/main/speechain/tokenizer#tokenizer-library)
+2. [**API Documents**](https://github.com/ahclab/SpeeChain/tree/main/speechain/tokenizer#api-document)
 
 
 ## Tokenizer Library
@@ -22,11 +22,13 @@ For model forward calculation, the text data is better to be in the form of vect
         /subword.py     # Tokenizer implementation of the subword tokenizer by SentencePiece package.
 ```
 
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/speechain/tokenizer#table-of-contents)
+
 ## API Document
-1. [speechain.tokenizer.abs.Tokenizer.\_\_init__]()
-2. [speechain.tokenizer.abs.Tokenizer.tokenizer_init_fn]()
-3. [speechain.tokenizer.abs.Tokenizer.tensor2text]()
-4. [speechain.tokenizer.abs.Tokenizer.text2tensor]()
+1. [speechain.tokenizer.abs.Tokenizer.\_\_init__](https://github.com/ahclab/SpeeChain/tree/main/speechain/tokenizer#speechaintokenizerabstokenizer__init__self-token_vocab-tokenizer_conf)
+2. [speechain.tokenizer.abs.Tokenizer.tokenizer_init_fn](https://github.com/ahclab/SpeeChain/tree/main/speechain/tokenizer#speechaintokenizerabstokenizertokenizer_init_fnself-tokenizer_conf)
+3. [speechain.tokenizer.abs.Tokenizer.tensor2text](https://github.com/ahclab/SpeeChain/tree/main/speechain/tokenizer#speechaintokenizerabstokenizertensor2textself-tensor)
+4. [speechain.tokenizer.abs.Tokenizer.text2tensor](https://github.com/ahclab/SpeeChain/tree/main/speechain/tokenizer#speechaintokenizerabstokenizertext2tensorself-text)
 
 
 ### speechain.tokenizer.abs.Tokenizer.\_\_init__(self, token_vocab, **tokenizer_conf)
@@ -75,3 +77,5 @@ For model forward calculation, the text data is better to be in the form of vect
     The input text string to be encoded
 * **Return:** torch.LongTensor  
     The tensor of the encoded sentence
+
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/speechain/tokenizer#table-of-contents)

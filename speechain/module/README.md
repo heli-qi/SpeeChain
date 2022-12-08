@@ -25,11 +25,11 @@ ASR (Model)
 ```
 This base class has two required abstract interface functions that must be overriden by all _Module_ subclasses: `module_init()` for module initialization and `forward()` for output calculation.
 
-👆[Back to the handbook page](https://github.com/ahclab/SpeeChain#the-speechain-toolkit)
+👆[Back to the handbook page](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#speechain-handbook)
 
 ## Table of Contents
-1. [**Module Library**]()
-2. [**API Document**]()
+1. [**Module Library**](https://github.com/ahclab/SpeeChain/tree/main/speechain/module#module-library)
+2. [**API Document**](https://github.com/ahclab/SpeeChain/tree/main/speechain/module#api-document)
 
 ## Module Library
 ```
@@ -68,16 +68,19 @@ This base class has two required abstract interface functions that must be overr
             /feed_forward.py    # Module implementation of point-wise feed-forward layers.
 ```
 
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/speechain/module#table-of-contents)
+
+
 ## API Document
 _Non-overridable backbone functions:_
-1. [speechain.module.abs.Module.\_\_init__]()
+1. [speechain.module.abs.Module.\_\_init__](https://github.com/ahclab/SpeeChain/tree/main/speechain/module#speechainmoduleabsmodule__init__self-input_size-distributed-module_conf)
 
-_Overridable interface functions:_
-2. [speechain.module.abs.Module.module_init]()
-3. [speechain.module.abs.Module.forward]()
-4. [speechain.module.abs.Module.recover]()
-5. [speechain.module.abs.Module.reset_parameters]()
-6. [speechain.module.abs.Module.get_recordable_para]()
+_Overridable interface functions:_  
+2. [speechain.module.abs.Module.module_init](https://github.com/ahclab/SpeeChain/tree/main/speechain/module#speechainmoduleabsmodulemodule_initself-module_conf)
+3. [speechain.module.abs.Module.forward](https://github.com/ahclab/SpeeChain/tree/main/speechain/module#speechainmoduleabsmoduleforwardself-kwargs)
+4. [speechain.module.abs.Module.recover](https://github.com/ahclab/SpeeChain/tree/main/speechain/module#speechainmoduleabsmodulerecoverself-kwargs)
+5. [speechain.module.abs.Module.reset_parameters](https://github.com/ahclab/SpeeChain/tree/main/speechain/module#speechainmoduleabsmodulereset_parametersself)
+6. [speechain.module.abs.Module.get_recordable_para](https://github.com/ahclab/SpeeChain/tree/main/speechain/module#speechainmoduleabsmoduleget_recordable_paraself)
 
 ### speechain.module.abs.Module.\_\_init__(self, input_size, distributed, **module_conf)
 * **Description:**  
@@ -159,3 +162,5 @@ _Overridable interface functions:_
 * **Return:** Dict or None  
   For the leaf module, the default implementation returns None;  
   For the non-leaf module, the default implementation returns a Dict containing names and recordable parameters of its member modules.
+
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/speechain/module#table-of-contents)

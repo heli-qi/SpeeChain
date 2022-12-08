@@ -6,13 +6,13 @@ Its output can be either a loss function used for training or an evaluation metr
 
 This base class has two abstract interface functions: `criterion_init()` for criterion initialization and `__call__()` for criterion forward calculation.
 1. `__call__()` must be overridden if you want to make your own Criterion implementation.
-2. `criterion_init()` is not mandatory to be overridden because some criteria can directly be applied to the input data without any initialization such as [speechain.criterion.accuracy.Accuracy]().
+2. `criterion_init()` is not mandatory to be overridden because some criteria can directly be applied to the input data without any initialization such as [speechain.criterion.accuracy.Accuracy](https://github.com/ahclab/SpeeChain/blob/main/speechain/criterion/accuracy.py#L12).
 
-👆[Back to the handbook page](https://github.com/ahclab/SpeeChain#the-speechain-toolkit)
+👆[Back to the handbook page](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#speechain-handbook)
 
 ## Table of Contents
-1. [**Criterion Library**]()
-2. [**API Document**]()
+1. [**Criterion Library**](https://github.com/ahclab/SpeeChain/tree/main/speechain/criterion#criterion-library)
+2. [**API Document**](https://github.com/ahclab/SpeeChain/tree/main/speechain/criterion#api-document)
 
 ## Criterion Library
 ```
@@ -28,9 +28,9 @@ This base class has two abstract interface functions: `criterion_init()` for cri
 ```
 
 ## API Document
-1. [speechain.criterion.abs.Criterion.\_\_init__]()
-2. [speechain.criterion.abs.Criterion.criterion_init]()
-3. [speechain.criterion.abs.Criterion.\_\_call__]()
+1. [speechain.criterion.abs.Criterion.\_\_init__](https://github.com/ahclab/SpeeChain/tree/main/speechain/criterion#speechaincriterionabscriterion__init__self-criterion_conf)
+2. [speechain.criterion.abs.Criterion.criterion_init](https://github.com/ahclab/SpeeChain/tree/main/speechain/criterion#speechaincriterionabscriterioncriterion_initself-criterion_conf)
+3. [speechain.criterion.abs.Criterion.\_\_call__](https://github.com/ahclab/SpeeChain/tree/main/speechain/criterion#speechaincriterionabscriterion__call__self-kwargs)
 
 ### speechain.criterion.abs.Criterion.\_\_init__(self, **criterion_conf)
 * **Description:**  
@@ -61,3 +61,5 @@ This base class has two abstract interface functions: `criterion_init()` for cri
 * **Return:**
   A trainable or non-trainable scalar.  
   For more details, please refer to the docstring of `__call__()` of your target _Criterion_ subclass.
+
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/speechain/criterion#table-of-contents)

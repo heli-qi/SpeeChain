@@ -3,22 +3,22 @@ The recipes of the SpeeChain toolkit are grouped by the task.
 Each task has a sub-folder in `/speechain/recipes/`. 
 In the sub-folder of each task, each dataset has a second-level sub-folder.
 
-👆[Back to the home page](https://github.com/ahclab/SpeeChain#the-speechain-toolkit)
+👆[Back to the handbook page](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#speechain-handbook)
 
 ## Table of Contents
-1. [**Available Models & Datasets**]()
-   1. [ASR (Automatic Speech Recognition)]()
-   2. [TTS (Text-To-Speech Synthesis)]()
-   3. [SPKREC (Speaker Recognition)]()
-   4. [Offline TTS-to-ASR Chain]()
-   4. [Offline ASR-to-TTS Chain]()
-2. [**Experimental File System**]()
+1. [**Available Models & Datasets**](https://github.com/ahclab/SpeeChain/tree/main/recipes#available-models--datasets)
+   1. [ASR (Automatic Speech Recognition)](https://github.com/ahclab/SpeeChain/tree/main/recipes#automatic-speech-recognition-asr)
+   2. [TTS (Text-To-Speech Synthesis)](https://github.com/ahclab/SpeeChain/tree/main/recipes#text-to-speech-synthesis-tts)
+   3. [SPKREC (Speaker Recognition)](https://github.com/ahclab/SpeeChain/tree/main/recipes#speaker-recognition-spkrec)
+   4. [Offline TTS-to-ASR Chain](https://github.com/ahclab/SpeeChain/tree/main/recipes#offline-tts-to-asr-chain)
+   4. [Offline ASR-to-TTS Chain](https://github.com/ahclab/SpeeChain/tree/main/recipes#offline-asr-to-tts-chain)
+2. [**Experimental File System**](https://github.com/ahclab/SpeeChain/tree/main/recipes#experimental-file-system)
 
 
 ## Available Models & Datasets
 We provide a specific README.md for each task in their folder. 
 Please press the hyperlinks below and jump to the README.md of your target task for more details.
-### [Automatic Speech Recognition (ASR)](https://github.com/ahclab/SpeeChain/tree/main/recipes/asr)
+### [Automatic Speech Recognition (ASR)](https://github.com/ahclab/SpeeChain/tree/main/recipes/asr#automatic-speech-recognition-asr)
 ```
 /asr
     /librispeech            # ASR Recipes for the LibriSpeech dataset
@@ -58,7 +58,10 @@ Please press the hyperlinks below and jump to the README.md of your target task 
 	</tr>
 </table>
 
-### [Text-To-Speech Synthesis (TTS)](https://github.com/ahclab/SpeeChain/tree/main/recipes/tts)
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/recipes#table-of-contents)
+
+
+### [Text-To-Speech Synthesis (TTS)](https://github.com/ahclab/SpeeChain/tree/main/recipes/tts#text-to-speech-synthesis-tts)
 ```
 /tts
     /libritts               # TTS Recipes for the LibriTTS dataset
@@ -107,9 +110,13 @@ Please press the hyperlinks below and jump to the README.md of your target task 
 	</tr>
 </table>
 
-### Speaker Recognition (SPKREC)
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/recipes#table-of-contents)
 
-### [Offline TTS-to-ASR Chain](https://github.com/ahclab/SpeeChain/tree/main/recipes/offline_tts2asr)
+### [Speaker Recognition (SPKREC)](https://github.com/ahclab/SpeeChain/tree/main/recipes/spkrec#speaker-recognition-spkrec)
+
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/recipes#table-of-contents)
+
+### [Offline TTS-to-ASR Chain](https://github.com/ahclab/SpeeChain/tree/main/recipes/offline_tts2asr#offline-tts-to-asr-chain)
 ```
 /offline_tts2asr
     /libritts_librispeech   # TTS mode use LibriTTS and ASR model use LibriSpeech
@@ -153,10 +160,12 @@ Please press the hyperlinks below and jump to the README.md of your target task 
 	</tr>
 </table>
 
-### [Offline ASR-to-TTS Chain](https://github.com/ahclab/SpeeChain/tree/main/recipes/offline_asr2tts)
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/recipes#table-of-contents)
+
+### [Offline ASR-to-TTS Chain](https://github.com/ahclab/SpeeChain/tree/main/recipes/offline_asr2tts#offline-asr-to-tts-chain)
 ```
 /offline_asr2tts
-    /librispeech_libritts   # ASR model use LibriSpeech and TTS model use LibriTTS
+    /libritts   # ASR & TTS models are trained on LibriTTS
         /train-clean-100-360    # Labeled data: train-clean-100; Unlabeled data: train-clean-360
             /data_cfg               # Data loading configuration files that are shared by different models
             /exp_cfg                # Experimental environment configuration files
@@ -180,7 +189,7 @@ Please press the hyperlinks below and jump to the README.md of your target task 
 	    <th>MCD</th>  
 	</tr>
 	<tr>
-	    <td rowspan="3">LibriSpeech-LibriTTS (test-clean / test-other)</td>
+	    <td rowspan="3">LibriTTS (test-clean / test-other)</td>
 	    <td rowspan="3">Speech-Transformer</td>
 	    <td rowspan="3">Transformer-TTS</td>
 	    <td rowspan="3">One-hot Embedding</td>
@@ -196,6 +205,8 @@ Please press the hyperlinks below and jump to the README.md of your target task 
 	    <td></td>
 	</tr>
 </table>
+
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/recipes#table-of-contents)
 
 ## Experimental File System
 The file system of an experiment folder is shown as below:
@@ -274,3 +285,6 @@ The file system of an experiment folder is shown as below:
         train_cfg.yaml      # the moder and optimizer configuration for the experiment, used for resuming the training process
         train.log           # the log file that contains the training process of the given training sets and validation sets
 ```
+
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/recipes#table-of-contents)
+

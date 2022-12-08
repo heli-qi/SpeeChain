@@ -114,7 +114,7 @@ After execution, a virtual environment named `speechain` will be created and two
 
 ## Documentation
 There are 4 types of documents in our toolkit:
-1. [**Overview Handbook**](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#speechain-handbook):   
+1. [**SpeeChain Handbook**](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#speechain-handbook):   
 We provide a _handbook.md_ at the root path to present an overview of our toolkit to our users. 
 This handbook will tell you the detailed learning path from a beginner to a contributor.
 2. **Multi-level README.md**:  

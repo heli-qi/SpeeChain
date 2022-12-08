@@ -125,15 +125,15 @@ The configuration in this toolkit is divided into the following 4 parts to impro
 1. **Data loading and batching configuration** `data_cfg`:  
     `data_cfg` defines how the SpeeChain framework fetches the raw data from the disk and organizes them into individual batches for model training or testing. 
     These configuration files can be shared by different models in the folder of each dataset setting, i.e., `SPEECHAIN_ROOT/recipes/{dataset_name}/{setting_name}/data_cfg`.  
-    For more details about the arguments, please refer to the [_Iterator_ README.md]() and [_Dataset_ README.md]().
+    For more details about the arguments, please refer to the [_Iterator_ README.md](https://github.com/ahclab/SpeeChain/tree/main/speechain/iterator#configuration-file-format) and [_Dataset_ README.md](https://github.com/ahclab/SpeeChain/tree/main/speechain/dataset#configuration-file-format).
 2. **Model construction and optimization configuration** `train_cfg`:  
     `train_cfg` defines how the SpeeChain framework constructs the model and optimizes its parameters during training. 
     These configuration files are placed in the same folder as `data_cfg`, i.e., `SPEECHAIN_ROOT/recipes/{dataset_name}/{setting_name}/train_cfg`. 
     This configuration is made up of two parts: `model` for model construction configuration and `optim_sche` for model optimization configuration.  
-    For more details about the arguments, please refer to the [_Model_ README.md]() and [_OptimScheduler_ README.md]().
+    For more details about the arguments, please refer to the [_Model_ README.md](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#configuration-file-format) and [_OptimScheduler_ README.md](https://github.com/ahclab/SpeeChain/tree/main/speechain/optim_sche#configuration-file-format).
 3. **Model inference configuration** `infer_cfg`:  
     The arguments in the inference configuration are different for different models. 
-    For more details, please refer to the [API document]() of each _Model_ subclass.
+    For more details, please refer to the docstring of `self.inference()` of each _Model_ subclass.
 4. **Experimental environment configuration** `exp_cfg`:  
     `exp_cfg` is the high-level configuration given to `SPEECHAIN_ROOT/speechain/runner.py` for experimental environment initialization. 
     In `exp_cfg`, all the low-level configurations `data_cfg`, `train_cfg`, and `infer_cfg` need to be specified for model training and testing. 
@@ -421,7 +421,7 @@ Before doing so, we recommend you to first use the command `${SPEECHAIN_PYTHON} 
 
 ### How to interpret the files generated in the _exp_ folder
 
-Please refer to [${SPEECHAIN_ROOT}/recipes/README.md]() for more details.
+Please refer to [${SPEECHAIN_ROOT}/recipes/README.md](https://github.com/ahclab/SpeeChain/tree/main/recipes#experimental-file-system) for more details.
 
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#table-of-contents)
 
@@ -446,9 +446,9 @@ Folder architecture is shown below:
         /tts        # Configuration files for TTS inference
             /...
 ```
-For more details about the configuration files in `${SPEECHAIN_ROOT}/config/feat/`, please refer to the docstring of [${SPEECHAIN_ROOT}/datasets/pyscripts/feat_extractor.py]().
+For more details about the configuration files in `${SPEECHAIN_ROOT}/config/feat/`, please refer to the docstring of [${SPEECHAIN_ROOT}/datasets/pyscripts/feat_extractor.py](https://github.com/ahclab/SpeeChain/blob/main/datasets/pyscripts/feat_extractor.py).
 
-For more details about the configuration files in `${SPEECHAIN_ROOT}/config/infer/`, please refer to the docstring of the corresponding inference function in [${SPEECHAIN_ROOT}/speechain/infer_func/]().
+For more details about the configuration files in `${SPEECHAIN_ROOT}/config/infer/`, please refer to the docstring of the corresponding inference function in [${SPEECHAIN_ROOT}/speechain/infer_func/](https://github.com/ahclab/SpeeChain/tree/main/config/infer).
 
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#table-of-contents)
 
@@ -470,7 +470,7 @@ Folder architecture is shown below:
         /data_dumping.sh    # all-in-one speech-text dataset dumping script
     /speech_spk         # Datasets that are made up of speech and speaker data
 ```
-For more details, please refer to the README.md of each type of dataset in [${SPEECHAIN_ROOT}/datasets/]().
+For more details, please refer to the README.md of each type of dataset in [${SPEECHAIN_ROOT}/datasets/](https://github.com/ahclab/SpeeChain/tree/main/datasets).
 
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#table-of-contents)
 
@@ -498,7 +498,7 @@ Folder architecture is shown below:
         /libritts   # Recipes for ASR and TTS trained on LibriTTS 
             ...                     # different ASR-to-TTS settings for LibriTTS
 ```
-For more details, please refer to [${SPEECHAIN_ROOT}/recipes/README.md]().
+For more details, please refer to [${SPEECHAIN_ROOT}/recipes/README.md](https://github.com/ahclab/SpeeChain/tree/main/recipes#recipes-folder-of-the-speechain-toolkit).
 
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#table-of-contents)
 
@@ -535,13 +535,13 @@ Based on the abstract class, many implementation classes are included in the sam
     /snapshooter.py     # The figure snapshooter. Used to transform the input snapshotting materials into the visible figures.
 ```
 
-For more details about `/speechain/criterion`, please refer to [${SPEECHAIN_ROOT}/speechain/criterion/README.md]().  
-For more details about `/speechain/dataset`, please refer to [${SPEECHAIN_ROOT}/speechain/dataset/README.md]().  
-For more details about `/speechain/iterator`, please refer to [${SPEECHAIN_ROOT}/speechain/iterator/README.md]().  
-For more details about `/speechain/model`, please refer to [${SPEECHAIN_ROOT}/speechain/model/README.md]().  
-For more details about `/speechain/module`, please refer to [${SPEECHAIN_ROOT}/speechain/module/README.md]().  
-For more details about `/speechain/optim_sche`, please refer to [${SPEECHAIN_ROOT}/speechain/optim_sche/README.md]().  
-For more details about `/speechain/tokenizer`, please refer to [${SPEECHAIN_ROOT}/speechain/tokenizer/README.md]().
+For more details about `/speechain/criterion`, please refer to [${SPEECHAIN_ROOT}/speechain/criterion/README.md](https://github.com/ahclab/SpeeChain/tree/main/speechain/criterion#criterion).  
+For more details about `/speechain/dataset`, please refer to [${SPEECHAIN_ROOT}/speechain/dataset/README.md](https://github.com/ahclab/SpeeChain/tree/main/speechain/dataset).  
+For more details about `/speechain/iterator`, please refer to [${SPEECHAIN_ROOT}/speechain/iterator/README.md](https://github.com/ahclab/SpeeChain/tree/main/speechain/iterator#iterator).  
+For more details about `/speechain/model`, please refer to [${SPEECHAIN_ROOT}/speechain/model/README.md](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#model).  
+For more details about `/speechain/module`, please refer to [${SPEECHAIN_ROOT}/speechain/module/README.md](https://github.com/ahclab/SpeeChain/tree/main/speechain/module#module).  
+For more details about `/speechain/optim_sche`, please refer to [${SPEECHAIN_ROOT}/speechain/optim_sche/README.md](https://github.com/ahclab/SpeeChain/tree/main/speechain/optim_sche#optimscheduler).  
+For more details about `/speechain/tokenizer`, please refer to [${SPEECHAIN_ROOT}/speechain/tokenizer/README.md](https://github.com/ahclab/SpeeChain/tree/main/speechain/tokenizer#tokenizer).
 
 
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#table-of-contents)

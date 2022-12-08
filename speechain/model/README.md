@@ -1,16 +1,14 @@
 # Model
-[*Model*]() is the hub of this part where different *Module* and *Criterion* objects can be freely assembled to create a model.
+[*Model*](https://github.com/ahclab/SpeeChain/blob/main/speechain/model/abs.py) is the hub of this part where different *Module* and *Criterion* objects can be freely assembled to create a model.
 _Model_ encapsulates the general model-related services and provides sufficient interface functions for you to override to customize your own models. 
 
-👆[Back to the handbook page](https://github.com/ahclab/SpeeChain#the-speechain-toolkit)
+👆[Back to the handbook page](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#speechain-handbook)
 
 ## Table of Contents
 1. [**Configuration File Format**](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#configuration-file-format)
-2. [**Model Library**]()
-3. [**API Document**](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#abstract-interfaces-description)
-4. [**Supported Models**](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#how-to-construct-a-model)
-    1. [ASR](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#asr)
-    2. [TTS](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#tts)
+2. [**Model Library**](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#model-library)
+3. [**API Document**](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#api-document)
+4. [**Supported Models**](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#supported-models)
 5. [**How to Freeze a Specific Part of your Model**](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#how-to-freeze-a-specific-part-of-your-model)
 6. [**How to Initialize your Model by the Pretrained Models**](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#how-to-initialize-your-model-by-the-pretrained-model)
 
@@ -85,25 +83,27 @@ model:
         /tts.py     # Initial Model implementation of autogressive TTS. Base of all advanced TTS models.
 ```
 
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#table-of-contents)
+
+
 ## API Document
-1. [speechain.model.abs.Model]()  
+1. [speechain.model.abs.Model](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#speechainmodelabsmodel)  
    _Non-overridable backbone functions:_
-   1. [\_\_init\_\_]()
-   2. [batch_to_cuda]()
-   3. [forward]()
-   4. [get_recordable_para]()
-   5. [aver_metrics_across_procs]()
-   6. [evaluate]()
+   1. [\_\_init\_\_](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#__init__self-args-device-model_conf-module_conf-criterion_conf)
+   2. [batch_to_cuda](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#batch_to_cudaself-data)
+   3. [forward](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#forwardself-batch_data-epoch-kwargs)
+   4. [aver_metrics_across_procs](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#aver_metrics_across_procsself-metrics-batch_data)
+   5. [evaluate](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#evaluateself-test_batch-infer_conf)
    
-   _Overridable interface functions:_
-   7. [bad_cases_selection_init_fn]()
-   8. [module_init]()
-   9. [criterion_init]()
-   10. [batch_preprocess_fn]()
-   11. [module_forward]()
-   12. [criterion_forward]()
-   13. [visualize]()
-   14. [inference]()
+   _Overridable interface functions:_  
+   6. [bad_cases_selection_init_fn](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#bad_cases_selection_init_fn)
+   7. [module_init](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#module_initself-kwargs)
+   8. [criterion_init](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#criterion_initself-criterion_conf)
+   9. [batch_preprocess_fn](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#batch_preprocess_fnself-batch_data)
+   10. [module_forward](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#module_forwardself-batch_data)
+   11. [criterion_forward](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#criterion_forwardself-kwargs)
+   12. [visualize](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#visualizeself-epoch-sample_index-valid_sample)
+   13. [inference](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#inferenceself-infer_conf-kwargs)
 
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#table-of-contents)
 
@@ -196,10 +196,6 @@ There are a built-in dictionary named `init_class_dict` and a built-in list name
     In the training branch, the loss functions and evaluation metrics will be returned each of which is in the form of a _Dict_.  
     In the validation branch, only the evaluation metrics will be returned.  
     In the visualization branch, the model snapshots on the given validation instance will be returned.
-
-#### get_recordable_para(self)
-* **Description:**
-* **Return:**
 
 #### aver_metrics_across_procs(self, metrics, batch_data)
 * **Description:**  
@@ -303,7 +299,7 @@ There are a built-in dictionary named `init_class_dict` and a built-in list name
     This function receives the test data and test configuration. 
     The inference results will be packaged into a _Dict[str, Dict]_ which is passed to the _TestMonitor_ object for disk storage. 
     The returned _Dict_ should be in the form of
-    ```
+    ```python
     dict(
         {file_name}=dict(
             format={file_format},
@@ -357,19 +353,19 @@ There are a built-in dictionary named `init_class_dict` and a built-in list name
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#table-of-contents)
 
 ## Supported Models
-1. [ASR]()
-   1. [asr.ASR](https://github.com/ahclab/SpeeChain/blob/main/speechain/model/asr.py#L27)  
+1. [ASR](https://github.com/ahclab/SpeeChain/blob/main/speechain/model/asr.py)
+   1. [asr.ASR](https://github.com/ahclab/SpeeChain/blob/main/speechain/model/asr.py#L29)  
       * **Structure:** Encoder-Decoder ASR model.  
       * **Input:** One tuple of speech-text paired data (_feat_, _feat_len_, _text_, _text_len_) in _model_forward()_.  
       * **Output:** One ASR loss calculated on the input data tuple in _criterion_calculation()_.
-   2. [asr.SemiASR](https://github.com/ahclab/SpeeChain/blob/main/speechain/model/asr.py#L691) 
+   2. [asr.SemiASR](https://github.com/ahclab/SpeeChain/blob/main/speechain/model/asr.py#L658) 
       * **Structure:** Semi-supervised Encoder-Decoder ASR model.  
       * **Input:** Multiple tuples of speech-text paired data  (_feat_, _feat_len_, _text_, _text_len_) in _model_forward()_. 
       Each of them is generated by a dataloader object.
       * **Output:** Multiple ASR losses calculated on all the input data tuples in _criterion_calculation()_. 
       A loss named _loss_ is also returned which is the trainable overall loss calculated by all ASR losses. 
-2. [TTS]()
-   1. [tts.TTS](https://github.com/ahclab/SpeeChain/blob/main/speechain/model/tts.py)
+2. [TTS](https://github.com/ahclab/SpeeChain/blob/main/speechain/model/tts.py)
+   1. [tts.TTS](https://github.com/ahclab/SpeeChain/blob/main/speechain/model/tts.py#L36)
       * **Structure:** Encoder-Decoder TTS model.  
       * **Input:** One tuple of speech-text paired data (_feat_, _feat_len_, _text_, _text_len_) in _model_forward()_.  
       * **Output:** One TTS loss calculated on the input data tuple in _criterion_calculation()_.
