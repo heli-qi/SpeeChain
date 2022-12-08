@@ -40,6 +40,8 @@ This base class has two abstract interface functions: `criterion_init()` for cri
   * _****criterion_conf:**_  
     The arguments used by `criterion_init()` for your customized Criterion initialization.
 
+👆[Back to the API list](https://github.com/ahclab/SpeeChain/tree/main/speechain/criterion#api-document)
+
 ### speechain.criterion.abs.Criterion.criterion_init(self, **criterion_conf)
 * **Description:**  
     Abstract interface function for customized initialization of each _Criterion_ subclass.
@@ -48,6 +50,8 @@ This base class has two abstract interface functions: `criterion_init()` for cri
   * _****criterion_conf:**_  
     The arguments used for customized _Criterion_ initialization.
     For more details, please refer to the docstring of your target _Criterion_ subclass.
+
+👆[Back to the API list](https://github.com/ahclab/SpeeChain/tree/main/speechain/criterion#api-document)
 
 ### speechain.criterion.abs.Criterion.\_\_call__(self, **kwargs)
 * **Description:**  
@@ -61,5 +65,7 @@ This base class has two abstract interface functions: `criterion_init()` for cri
 * **Return:**
   A trainable or non-trainable scalar.  
   For more details, please refer to the docstring of `__call__()` of your target _Criterion_ subclass.
+
+👆[Back to the API list](https://github.com/ahclab/SpeeChain/tree/main/speechain/criterion#api-document)
 
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/speechain/criterion#table-of-contents)

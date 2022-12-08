@@ -56,7 +56,7 @@ Anytime when you encounter problems when using our toolkit, please don't hesitat
 * Multi-level _.md_ evaluation reports (overall-level, group-level model, and sample-level) without any layout misplacement. 
 * Statistical distribution visualization of evaluation metrics
 * TopN bad case analysis for better model diagnosis and adjustment.
-* 
+
 ### **Easy-to-use Interfaces and Configuration:**
 * Customizable pipeline with abundant interface functions and detailed documents. 
 * Reusable and user-friendly configuration files that support dynamic class importing, dynamic datatype specification, and dynamic value reference. 

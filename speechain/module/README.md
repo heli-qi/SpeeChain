@@ -98,6 +98,8 @@ _Overridable interface functions:_
   * _****module_conf:**_  
     The arguments used by `module_init()` for your customized _Module_ initialization.
 
+👆[Back to the API list](https://github.com/ahclab/SpeeChain/tree/main/speechain/module#api-document)
+
 ### speechain.module.abs.Module.module_init(self, **module_conf)
 * **Description:**  
   Abstract interface function for customized initialization of each _Module_ subclass. 
@@ -106,6 +108,8 @@ _Overridable interface functions:_
   * _****module_conf:**_  
     The arguments used for customized Module initialization.
     For more details, please refer to the docstring of your target Module subclass.
+
+👆[Back to the API list](https://github.com/ahclab/SpeeChain/tree/main/speechain/module#api-document)
 
 ### speechain.module.abs.Module.forward(self, **kwargs)
 * **Description:**  
@@ -118,6 +122,8 @@ _Overridable interface functions:_
 * **Return:**  
   Module forward calculation results.  
   For more details, please refer to the docstring of `forward()` of your target _Module_ subclass.
+
+👆[Back to the API list](https://github.com/ahclab/SpeeChain/tree/main/speechain/module#api-document)
 
 ### speechain.module.abs.Module.recover(self, **kwargs)
 * **Description:**  
@@ -132,6 +138,8 @@ _Overridable interface functions:_
   The recovered data or closely-recovered data (sometimes `forward()` may not be totally recoverable).  
   For more details, please refer to the docstring of `recover()` of your target _Module_ subclass.
 
+👆[Back to the API list](https://github.com/ahclab/SpeeChain/tree/main/speechain/module#api-document)
+
 ### speechain.module.abs.Module.reset_parameters(self)
 * **Description:**  
   This abstract interface function is used to initialize the customized parameters in the _Module_ subclass if had. 
@@ -141,6 +149,7 @@ _Overridable interface functions:_
   This interface function is not mandatory to be overridden.  
   **Note:** Don't forget to add `self.default_init_modules.append(YourModule)` in `model_init()` of your _Model_.
 
+👆[Back to the API list](https://github.com/ahclab/SpeeChain/tree/main/speechain/module#api-document)
 
 ### speechain.module.abs.Module.get_recordable_para(self)
 * **Description:**  
@@ -162,5 +171,7 @@ _Overridable interface functions:_
 * **Return:** Dict or None  
   For the leaf module, the default implementation returns None;  
   For the non-leaf module, the default implementation returns a Dict containing names and recordable parameters of its member modules.
+
+👆[Back to the API list](https://github.com/ahclab/SpeeChain/tree/main/speechain/module#api-document)
 
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/speechain/module#table-of-contents)

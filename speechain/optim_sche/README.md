@@ -4,7 +4,7 @@ Its main job is optimizing the target model parameters and scheduling the learni
 In this toolkit, we combine traditional optimizers and schedulers into a single class: OptimScheduler. 
 Each _OptimScheduler_ object has one built-in member optimizer (`torch.optim.Optimizer`) which is initialized automatically by the `optim_type` and `optim_conf` given in your configuration.
 
-👆[Back to the home page](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#speechain-handbook)
+👆[Back to the handbook page](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#speechain-handbook)
 
 ## Table of Contents
 1. [**Configuration File Format**](https://github.com/ahclab/SpeeChain/tree/main/speechain/optim_sche#configuration-file-format)
@@ -73,9 +73,9 @@ _Non-overridable backbone functions:_
 6. [speechain.optim_sche.abs.OptimScheduler.\_\_repr__](https://github.com/ahclab/SpeeChain/tree/main/speechain/optim_sche#speechain_optim_scheabsoptimscheduler__repr__self)
 
 _Overridable interface functions:_  
-7. [speechain.optim_sche.abs.OptimScheduler.sche_init](https://github.com/ahclab/SpeeChain/tree/main/speechain/optim_sche#speechain_optim_scheabsoptimschedulersche_initsche_conf)
-8. [speechain.optim_sche.abs.OptimScheduler.update_lr](https://github.com/ahclab/SpeeChain/tree/main/speechain/optim_sche#speechain_optim_scheabsoptimschedulerupdate_lrself-real_step)
-9. [speechain.optim_sche.abs.OptimScheduler.extra_repr_fn](https://github.com/ahclab/SpeeChain/tree/main/speechain/optim_sche#speechain_optim_scheabsoptimschedulerextra_repr_fnself)
+1. [speechain.optim_sche.abs.OptimScheduler.sche_init](https://github.com/ahclab/SpeeChain/tree/main/speechain/optim_sche#speechain_optim_scheabsoptimschedulersche_initsche_conf)
+2. [speechain.optim_sche.abs.OptimScheduler.update_lr](https://github.com/ahclab/SpeeChain/tree/main/speechain/optim_sche#speechain_optim_scheabsoptimschedulerupdate_lrself-real_step)
+3. [speechain.optim_sche.abs.OptimScheduler.extra_repr_fn](https://github.com/ahclab/SpeeChain/tree/main/speechain/optim_sche#speechain_optim_scheabsoptimschedulerextra_repr_fnself)
 
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/speechain/optim_sche#table-of-contents)
 
@@ -120,6 +120,8 @@ _Overridable interface functions:_
     The arguments used to initialize the customized part of this _OptimScheduler_.   
     Mainly used to decide the learning rate scheduling strategy.
 
+👆[Back to the API list](https://github.com/ahclab/SpeeChain/tree/main/speechain/optim_sche#api-document)
+
 ### speechain_optim_sche.abs.OptimScheduler.step(losses, time_func, optim_name, step_num)
 * **Description:**  
     This function optimizes the target parameters of the built-in model pointer with the input training losses.
@@ -135,11 +137,15 @@ _Overridable interface functions:_
     The number of the current training step. 
     This argument is used to update the learning rate for the current step by `self.update_lr()`.
 
+👆[Back to the API list](https://github.com/ahclab/SpeeChain/tree/main/speechain/optim_sche#api-document)
+
 ### speechain_optim_sche.abs.OptimScheduler.get_lr(self)
 * **Description:**  
     This function returns the current learning rate of the built-in `torch.optim.Optimizer` member.
 * **Return:** float  
   The value of the learning rates obtained from `self.optimizer.param_groups`.
+
+👆[Back to the API list](https://github.com/ahclab/SpeeChain/tree/main/speechain/optim_sche#api-document)
 
 ### speechain_optim_sche.abs.OptimScheduler.state_dict(self)
 * **Description:**  
@@ -147,12 +153,16 @@ _Overridable interface functions:_
 * **Return:** Dict  
   The status Dict containing the current status of the built-in `torch.optim.Optimizer` and the built-in `torch.cuda.amp.GradScaler` (if had).
 
+👆[Back to the API list](https://github.com/ahclab/SpeeChain/tree/main/speechain/optim_sche#api-document)
+
 ### speechain_optim_sche.abs.OptimScheduler.load_state_dict(self, state_dict)
 * **Description:**  
   This function loads the existing checkpoint information into the _OptimScheduler_ object as the starting status.
 * **Arguments:**
   * _**state_dict:**_ Dict  
     The status information loaded from the existing checkpoint.
+
+👆[Back to the API list](https://github.com/ahclab/SpeeChain/tree/main/speechain/optim_sche#api-document)
 
 ### speechain_optim_sche.abs.OptimScheduler.\_\_repr__(self)
 * **Description:**  
@@ -162,6 +172,8 @@ _Overridable interface functions:_
 * **Return:** str  
     The description string for the OptimScheduler object.
 
+👆[Back to the API list](https://github.com/ahclab/SpeeChain/tree/main/speechain/optim_sche#api-document)
+
 ### speechain_optim_sche.abs.OptimScheduler.sche_init(**sche_conf)
 * **Description:**  
     This abstract interface function is the customized initialization function which decides how the learning rate is scheduled as the training goes.  
@@ -170,6 +182,8 @@ _Overridable interface functions:_
   * _****sche_conf:**_  
     The arguments used to initialize the customized part of this OptimScheduler.
     For more details about the learning rate scheduling strategy, please refer to the docstring of `sche_init()` of your target OptimScheduler subclass.
+
+👆[Back to the API list](https://github.com/ahclab/SpeeChain/tree/main/speechain/optim_sche#api-document)
 
 ### speechain_optim_sche.abs.OptimScheduler.update_lr(self, real_step)
 * **Description:**  
@@ -182,6 +196,8 @@ _Overridable interface functions:_
 * **Return:** float  
     The learning rate used for parameter optimization in the current training step.
 
+👆[Back to the API list](https://github.com/ahclab/SpeeChain/tree/main/speechain/optim_sche#api-document)
+
 ### speechain_optim_sche.abs.OptimScheduler.extra_repr_fn(self)
 * **Description:**  
     This interface hook function returns the specific part of the description string of the _OptimScheduler_ object. 
@@ -190,6 +206,8 @@ _Overridable interface functions:_
     But there won't be any errors if you don't override it in your implementation.
 * **Return:** str  
     The specific part of the description string of the _OptimScheduler_ object. 
+
+👆[Back to the API list](https://github.com/ahclab/SpeeChain/tree/main/speechain/optim_sche#api-document)
 
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/speechain/optim_sche#table-of-contents)
 

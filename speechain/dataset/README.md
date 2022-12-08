@@ -28,7 +28,7 @@ dataset_conf:
     # Customized Arguments passed to the hook dataset_init_fn()
     ...
 ```
-* The first-level key should be `dataset_conf` to fit the setting of [_Iterator_]().
+* The first-level key should be `dataset_conf` to fit the setting of _Iterator_.
   * The second-level keys are made up of two parts:
     1. **main_data:**  
         The main body dictionary of the data instances you want to load for training or testing your models.  
@@ -62,9 +62,9 @@ dataset_conf:
    6. [collate_fn](https://github.com/ahclab/SpeeChain/tree/main/speechain/dataset#collate_fnself-batch)  
    
    _Overridable interface functions:_  
-   6. [dataset_init_fn](https://github.com/ahclab/SpeeChain/tree/main/speechain/dataset#dataset_init_fnself-dataset_conf)
-   7. [extract_main_data_fn](https://github.com/ahclab/SpeeChain/tree/main/speechain/dataset#extract_main_data_fnbatch_dict-main_data)
-   8. [collate_main_data_fn](https://github.com/ahclab/SpeeChain/tree/main/speechain/dataset#collate_main_data_fnself-batch_dict)
+   1. [dataset_init_fn](https://github.com/ahclab/SpeeChain/tree/main/speechain/dataset#dataset_init_fnself-dataset_conf)
+   2. [extract_main_data_fn](https://github.com/ahclab/SpeeChain/tree/main/speechain/dataset#extract_main_data_fnbatch_dict-main_data)
+   3. [collate_main_data_fn](https://github.com/ahclab/SpeeChain/tree/main/speechain/dataset#collate_main_data_fnself-batch_dict)
 3. [**speechain.dataset.speech_text.SpeechTextDataset**](https://github.com/ahclab/SpeeChain/tree/main/speechain/dataset#speechaindatasetspeech_textspeechtextdataset)
    1. [extract_main_data_fn](https://github.com/ahclab/SpeeChain/tree/main/speechain/dataset#extract_main_data_fnself-main_data)
    2. [collate_main_data_fn](https://github.com/ahclab/SpeeChain/tree/main/speechain/dataset#collate_main_data_fnself-batch_dict-1)
@@ -111,6 +111,8 @@ If you want to make your own _Dataset_ implementation, please follow the instruc
   * _****dataset_conf:**_  
   The configuration arguments for customized Dataset initialization.
 
+👆[Back to the API list](https://github.com/ahclab/SpeeChain/tree/main/speechain/dataset#api-document)
+
 #### \_\_getitem__(self, index)
 * **Description:**  
     This function is the implementation of the one in the parent class `torch.utils.data.Dataset`. 
@@ -122,6 +124,8 @@ If you want to make your own _Dataset_ implementation, please follow the instruc
     The index of the selected data instance given by the _Dataloader_ object.
 * **Return:** Dict[str, Any]  
     A dictionary containing a data instance.
+
+👆[Back to the API list](https://github.com/ahclab/SpeeChain/tree/main/speechain/dataset#api-document)
 
 #### data_selection(self, selection_mode, selection_num, meta_info)
 * **Description:**  
@@ -166,16 +170,22 @@ If you want to make your own _Dataset_ implementation, please follow the instruc
 * **Return:** List[str]  
     A list of indices of the selected data instances.
 
+👆[Back to the API list](https://github.com/ahclab/SpeeChain/tree/main/speechain/dataset#api-document)
+
 #### get_data_index(self)
 * **Description:**  
     This function is designed to make users know the data indices of this _Dataset_ object without accessing its members for the lower coupling principle.
 * **Return:** List[str]  
     The list of the indices of all data instances in this dataset.
 
+👆[Back to the API list](https://github.com/ahclab/SpeeChain/tree/main/speechain/dataset#api-document)
+
 #### remove_data_by_index(self)
 * **Description:**  
   This function removes the corresponding data instance from this _Dataset_ object by the given index. 
   It's mainly used for solving the index mismatch of data instances with the high-level _Iterator_ object.
+
+👆[Back to the API list](https://github.com/ahclab/SpeeChain/tree/main/speechain/dataset#api-document)
 
 #### dataset_init_fn(self, **dataset_conf)
 * **Description:**  
@@ -185,6 +195,8 @@ If you want to make your own _Dataset_ implementation, please follow the instruc
 * **Arguments:**
   * _****dataset_conf:**_  
     The configuration arguments for customized Dataset initialization received from `__init__()`.
+
+👆[Back to the API list](https://github.com/ahclab/SpeeChain/tree/main/speechain/dataset#api-document)
 
 #### extract_main_data_fn(batch_dict, main_data)
 * **Description:**  
@@ -198,6 +210,8 @@ If you want to make your own _Dataset_ implementation, please follow the instruc
 * **Return:** Dict[str, Any]  
     The dictionary containing the extracted data instance.
 
+👆[Back to the API list](https://github.com/ahclab/SpeeChain/tree/main/speechain/dataset#api-document)
+
 #### collate_fn(self, batch)
 * **Description:**  
     This hook function is used as the value of the argument `collate_fn` for initializing Dataloader object at the beginning of each epoch.  
@@ -208,6 +222,8 @@ If you want to make your own _Dataset_ implementation, please follow the instruc
     The tuple of data instance dictionaries extracted by `extract_main_data_fn()`.
 * **Return:** Dict[str, Any]  
     The batch dictionary that will be passed to the model.
+
+👆[Back to the API list](https://github.com/ahclab/SpeeChain/tree/main/speechain/dataset#api-document)
 
 #### collate_main_data_fn(self, batch_dict)
 * **Description:**  
@@ -222,6 +238,7 @@ If you want to make your own _Dataset_ implementation, please follow the instruc
 * **Return:** Dict[str, torch.Tensor or List]  
   The dictionary containing the collated batch of data instances.
     
+👆[Back to the API list](https://github.com/ahclab/SpeeChain/tree/main/speechain/dataset#api-document)
 
 ### speechain.dataset.speech_text.SpeechTextDataset
 This Dataset subclass is mainly used by ASR and TTS models.   
@@ -246,6 +263,8 @@ In this subclass, each data instance is made up of an utterance and a sentence a
     `feat` and `spk_feat` are in the form of two-dimensional `torch.Tensor`;  
     `text` and `spk_ids` are in the form of raw strings whose discretization is done in the _Model_ object.
 
+👆[Back to the API list](https://github.com/ahclab/SpeeChain/tree/main/speechain/dataset#api-document)
+
 #### collate_main_data_fn(self, batch_dict)
 * **Description:**  
   The utterances used for training ASR and TTS models may have different lengths, so we need to do the padding operations to make them equal in length.  
@@ -261,6 +280,8 @@ In this subclass, each data instance is made up of an utterance and a sentence a
 * **Return:** Dict[str, torch.Tensor or List]  
     `feat` and `spk_feat` are in the form of three-dimensional `torch.Tensor`;   
     `text` and `spk_ids` are in the form of _List_ of raw strings whose discretization is done in the _Model_ object.
+
+👆[Back to the API list](https://github.com/ahclab/SpeeChain/tree/main/speechain/dataset#api-document)
 
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/speechain/dataset#table-of-contents)
 
@@ -305,7 +326,7 @@ In this subclass, each data instance is made up of an utterance and a sentence a
 
 [//]: # (```)
 
-👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/speechain/iterator#table-of-contents)
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/speechain/dataset#table-of-contents)
 
 
 ## How to Perform Data Selection in my Dataset Object
@@ -421,4 +442,4 @@ In this subclass, each data instance is made up of an utterance and a sentence a
 
 [//]: # (```)
 
-👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/speechain/iterator#table-of-contents)
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/speechain/dataset#table-of-contents)

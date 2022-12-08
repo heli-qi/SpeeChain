@@ -546,8 +546,6 @@ For more details about `/speechain/tokenizer`, please refer to [${SPEECHAIN_ROOT
 
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#table-of-contents)
 
-
-## For those who want to use SpeeChain for research
 ### SpeeChain architecture workflow
 
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#table-of-contents)

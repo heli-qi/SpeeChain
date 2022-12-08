@@ -46,6 +46,8 @@ For model forward calculation, the text data is better to be in the form of vect
   * _****tokenizer_conf:**_  
     The arguments used by `tokenizer_init_fn()` for your customized _Tokenizer_ initialization.
 
+👆[Back to the API list](https://github.com/ahclab/SpeeChain/tree/main/speechain/tokenizer#api-document)
+
 ### speechain.tokenizer.abs.Tokenizer.tokenizer_init_fn(self, **tokenizer_conf)
 * **Description:**  
     This hook interface function initializes the customized part of a _Tokenizer_ subclass if had.  
@@ -54,6 +56,8 @@ For model forward calculation, the text data is better to be in the form of vect
   * _****tokenizer_conf:**_  
     The arguments used by `tokenizer_init_fn()` for your customized _Tokenizer_ initialization.  
     For more details, please refer to the docstring of your target _Tokenizer_ subclass.
+
+👆[Back to the API list](https://github.com/ahclab/SpeeChain/tree/main/speechain/tokenizer#api-document)
 
 ### speechain.tokenizer.abs.Tokenizer.tensor2text(self, tensor)
 * **Description:**  
@@ -68,6 +72,8 @@ For model forward calculation, the text data is better to be in the form of vect
 * **Return:**  
     The string of the decoded sentence.
 
+👆[Back to the API list](https://github.com/ahclab/SpeeChain/tree/main/speechain/tokenizer#api-document)
+
 ### speechain.tokenizer.abs.Tokenizer.text2tensor(self, text)
 * **Description:**  
     This functions encodes a text string into a model-friendly tensor.  
@@ -77,5 +83,7 @@ For model forward calculation, the text data is better to be in the form of vect
     The input text string to be encoded
 * **Return:** torch.LongTensor  
     The tensor of the encoded sentence
+
+👆[Back to the API list](https://github.com/ahclab/SpeeChain/tree/main/speechain/tokenizer#api-document)
 
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/speechain/tokenizer#table-of-contents)

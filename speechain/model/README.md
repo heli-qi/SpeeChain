@@ -96,14 +96,14 @@ model:
    5. [evaluate](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#evaluateself-test_batch-infer_conf)
    
    _Overridable interface functions:_  
-   6. [bad_cases_selection_init_fn](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#bad_cases_selection_init_fn)
-   7. [module_init](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#module_initself-kwargs)
-   8. [criterion_init](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#criterion_initself-criterion_conf)
-   9. [batch_preprocess_fn](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#batch_preprocess_fnself-batch_data)
-   10. [module_forward](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#module_forwardself-batch_data)
-   11. [criterion_forward](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#criterion_forwardself-kwargs)
-   12. [visualize](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#visualizeself-epoch-sample_index-valid_sample)
-   13. [inference](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#inferenceself-infer_conf-kwargs)
+   1. [bad_cases_selection_init_fn](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#bad_cases_selection_init_fn)
+   2. [module_init](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#module_initself-kwargs)
+   3. [criterion_init](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#criterion_initself-criterion_conf)
+   4. [batch_preprocess_fn](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#batch_preprocess_fnself-batch_data)
+   5. [module_forward](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#module_forwardself-batch_data)
+   6. [criterion_forward](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#criterion_forwardself-kwargs)
+   7. [visualize](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#visualizeself-epoch-sample_index-valid_sample)
+   8. [inference](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#inferenceself-infer_conf-kwargs)
 
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#table-of-contents)
 
@@ -164,6 +164,8 @@ There are a built-in dictionary named `init_class_dict` and a built-in list name
   * _**criterion_conf:**_ Dict = None  
     The criterion configuration used for criterion (loss functions and evaluation metrics) initialization.
 
+👆[Back to the API list](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#api-document)
+
 #### batch_to_cuda(self, data)
 * **Description:**  
     The recursive function that transfers the batch data to the specified device in the current process.
@@ -175,6 +177,7 @@ There are a built-in dictionary named `init_class_dict` and a built-in list name
     If the input is a Dict, the returned output will also be a Dict of Tensors transferred to the target device;  
     If the input is a Tensor, the returned output will be its copy on the target device.
 
+👆[Back to the API list](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#api-document)
 
 #### forward(self, batch_data, epoch, **kwargs)
 * **Description:**  
@@ -197,6 +200,8 @@ There are a built-in dictionary named `init_class_dict` and a built-in list name
     In the validation branch, only the evaluation metrics will be returned.  
     In the visualization branch, the model snapshots on the given validation instance will be returned.
 
+👆[Back to the API list](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#api-document)
+
 #### aver_metrics_across_procs(self, metrics, batch_data)
 * **Description:**  
     This function averages the evaluation metrics across all GPU processes in the DDP mode for model distribution.
@@ -207,6 +212,8 @@ There are a built-in dictionary named `init_class_dict` and a built-in list name
     The input batch data used to calculate the batch size for averaging evaluation metrics.
 * **Return:** Dict[str, torch.Tensor]  
     The evaluation metrics _Dict_ after averaging. The key names remain the same.
+
+👆[Back to the API list](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#api-document)
 
 #### evaluate(self, test_batch, infer_conf)
 * **Description:**  
@@ -223,6 +230,8 @@ There are a built-in dictionary named `init_class_dict` and a built-in list name
 * **Return:** Dict  
     A Dict of the inference results where each key-value item corresponds to one evaluation metric you want to save to the disk.
 
+👆[Back to the API list](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#api-document)
+
 #### bad_cases_selection_init_fn()
 * **Description:**  
     This hook function returns the default bad case selection method of each _Model_ object. 
@@ -231,7 +240,8 @@ There are a built-in dictionary named `init_class_dict` and a built-in list name
 * **Return:** List[List[str or int]]  
     The returned default value should be a list of tri-list where each tri-list is in the form of [`selection_metric`, `selection_mode`, `case_number`].  
     For example, ['wer', 'max', 50] means 50 testing waveforms with the largest WER will be selected.
-    
+
+👆[Back to the API list](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#api-document)
 
 #### module_init(self, **kwargs)
 * **Description:**  
@@ -242,6 +252,8 @@ There are a built-in dictionary named `init_class_dict` and a built-in list name
   * _****kwargs:**_  
     The combination of the arguments in your `module_conf` and `model_conf['customize_conf']`.
 
+👆[Back to the API list](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#api-document)
+
 #### criterion_init(self, **criterion_conf)
 * **Description:**  
     The interface function that initializes the _Criterion_ members of the model. 
@@ -250,6 +262,8 @@ There are a built-in dictionary named `init_class_dict` and a built-in list name
 * **Arguments:**
   * _****criterion_conf:**_  
     The arguments in your given `criterion_conf`.
+
+👆[Back to the API list](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#api-document)
 
 #### batch_preprocess_fn(self, batch_data)
 * **Description:**
@@ -261,6 +275,8 @@ There are a built-in dictionary named `init_class_dict` and a built-in list name
     Raw data of the input batch to be preprocessed in this hook function.
 * **Return:** Dict  
     Processed data of the input batch that is ready to be used in `self.model_forward()`.
+
+👆[Back to the API list](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#api-document)
 
 #### module_forward(self, **batch_data)
 * **Description:**  
@@ -276,6 +292,8 @@ There are a built-in dictionary named `init_class_dict` and a built-in list name
     Prediction results (logits) of the model on the input batch data. 
     Some intermediate results (e.g., attention matrices) can also be returned for later use.
 
+👆[Back to the API list](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#api-document)
+
 #### criterion_forward(self, **kwargs)
 * **Description:**  
     This interface function is activated after `self.model_forward()`. 
@@ -289,10 +307,14 @@ There are a built-in dictionary named `init_class_dict` and a built-in list name
     1. For training, two Dict[str, torch.Tensor] should be returned where the first one contains all the trainable training losses for optimization and the second one contains all the non-trainable evaluation metrics used to record the training status.
     2. For validation, only one Dict[str, torch.Tensor] should be returned which contains all the non-trainable evaluation metrics used to record the validation status.
 
+👆[Back to the API list](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#api-document)
+
 #### visualize(self, epoch, sample_index, **valid_sample)
 * **Description:**
 * **Arguments:**
 * **Return:**
+
+👆[Back to the API list](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#api-document)
 
 #### inference(self, infer_conf, **kwargs)
 * **Description:**  
@@ -350,10 +372,12 @@ There are a built-in dictionary named `init_class_dict` and a built-in list name
 * **Return:** Dict[str, Dict[str, str or List]]  
     The model inference results to be saved on the disk.
 
+👆[Back to the API list](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#api-document)
+
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#table-of-contents)
 
 ## Supported Models
-1. [ASR](https://github.com/ahclab/SpeeChain/blob/main/speechain/model/asr.py)
+1. ASR
    1. [asr.ASR](https://github.com/ahclab/SpeeChain/blob/main/speechain/model/asr.py#L29)  
       * **Structure:** Encoder-Decoder ASR model.  
       * **Input:** One tuple of speech-text paired data (_feat_, _feat_len_, _text_, _text_len_) in _model_forward()_.  
@@ -364,7 +388,7 @@ There are a built-in dictionary named `init_class_dict` and a built-in list name
       Each of them is generated by a dataloader object.
       * **Output:** Multiple ASR losses calculated on all the input data tuples in _criterion_calculation()_. 
       A loss named _loss_ is also returned which is the trainable overall loss calculated by all ASR losses. 
-2. [TTS](https://github.com/ahclab/SpeeChain/blob/main/speechain/model/tts.py)
+2. TTS
    1. [tts.TTS](https://github.com/ahclab/SpeeChain/blob/main/speechain/model/tts.py#L36)
       * **Structure:** Encoder-Decoder TTS model.  
       * **Input:** One tuple of speech-text paired data (_feat_, _feat_len_, _text_, _text_len_) in _model_forward()_.  
