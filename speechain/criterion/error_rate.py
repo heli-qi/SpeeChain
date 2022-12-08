@@ -27,12 +27,25 @@ def text_preprocess(text, tokenizer: Tokenizer):
 
     return string
 
+
 class ErrorRate(Criterion):
     """
 
     """
-    def forward(self, hypo_text: torch.Tensor or List[str] or str, real_text: torch.Tensor or List[str] or str,
-                tokenizer: Tokenizer, do_aver: bool = False):
+
+    def criterion_init(self, tokenizer: Tokenizer = None, do_aver: bool = False):
+        """
+
+        Args:
+            tokenizer: Tokenizer
+            do_aver: bool
+
+        """
+        self.tokenizer = tokenizer
+        self.do_aver = do_aver
+
+    def __call__(self, hypo_text: torch.Tensor or List[str] or str, real_text: torch.Tensor or List[str] or str,
+                 tokenizer: Tokenizer = None, do_aver: bool = False):
         """
 
         Args:
@@ -44,6 +57,10 @@ class ErrorRate(Criterion):
         Returns:
 
         """
+        if tokenizer is None:
+            assert self.tokenizer is not None
+            tokenizer = self.tokenizer
+
         # make sure that hypo_text is a 2-dim tensor or a list of strings
         if isinstance(hypo_text, torch.Tensor) and hypo_text.dim() == 1:
             hypo_text = hypo_text.unsqueeze(0)
@@ -84,7 +101,4 @@ class ErrorRate(Criterion):
             cer = sum(cer) / len(cer)
             wer = sum(wer) / len(wer)
 
-        return dict(
-            cer=cer,
-            wer=wer
-        )
+        return cer, wer

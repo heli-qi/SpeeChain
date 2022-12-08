@@ -15,8 +15,11 @@ from speechain.module.abs import Module
 
 class LinearPrenet(Module):
     """
-        The Linear prenet for TTS. Usually used before the Transformer TTS decoder.
-        Each Linear layer is followed by an activation function and a Dropout layer.
+        The Linear prenet. Usually used before the Transformer TTS decoder.
+        This prenet is made up of one or more Linear blocks which is composed of the components below:
+            1. (mandatory) a Linear layer
+            2. (optional) an activation function
+            3. (optional) a Dropout layer
 
         Reference:
             Neural Speech Synthesis with Transformer Network
@@ -44,9 +47,13 @@ class LinearPrenet(Module):
             lnr_dropout: float or List[float]
                 The values of p rate of the Dropout layer after each Linear layer.
             zero_centered: bool
-                Whether the output of this module is centered at 0, i.e. no ReLU activation after the final linear layer
+                Whether the output of this module is centered at 0.
+                If the specified activation function changes the centroid of the output distribution, e.g. ReLU and
+                LeakyReLU, the activation function won't be attached to the final Linear layer if zer_centered is set
+                to True.
 
         """
+        # --- 0. Argument Checking --- #
         # arguments checking
         if lnr_dropout is not None:
             assert isinstance(lnr_dropout, (List, float)), \
@@ -65,24 +72,26 @@ class LinearPrenet(Module):
             self.lnr_dims = lnr_dims if isinstance(lnr_dims, List) else [lnr_dims]
         self.lnr_dropout = lnr_dropout
 
-        # Linear layers initialization
+        # --- 1. Linear Part Initialization --- #
+        # Linear layers construction
         _tmp_lnr = []
         _prev_dim = feat_dim
+        # The order of activation function and dropout layer is somewhat not a big deal
+        # a useful blog: https://sebastianraschka.com/faq/docs/dropout-activation.html
         for i in range(len(self.lnr_dims)):
             _tmp_lnr.append(torch.nn.Linear(in_features=_prev_dim, out_features=self.lnr_dims[i]))
-            # no activation and dropout is added for the last layer if zero_centered is specified
-            if i != len(self.lnr_dims) - 1 or not zero_centered:
-                if lnr_activation is not None:
+            if lnr_activation is not None:
+                # no 'ReLU'-series activation is added for the last layer if zero_centered is specified
+                if i != len(self.lnr_dims) - 1 or not (zero_centered and 'ReLU' in lnr_activation):
                     _tmp_lnr.append(getattr(torch.nn, lnr_activation)())
-                if lnr_dropout is not None:
-                    _tmp_lnr.append(torch.nn.Dropout(
-                        p=self.lnr_dropout if not isinstance(self.lnr_dropout, List) else self.lnr_dropout[i]
-                    ))
-            _prev_dim=self.lnr_dims[i]
-            
+            if lnr_dropout is not None:
+                _tmp_lnr.append(torch.nn.Dropout(
+                    p=self.lnr_dropout if not isinstance(self.lnr_dropout, List) else self.lnr_dropout[i]
+                ))
+            _prev_dim = self.lnr_dims[i]
+
         self.linear = torch.nn.Sequential(*_tmp_lnr)
         self.output_size = self.lnr_dims[-1]
-
 
     def forward(self, feat: torch.Tensor, feat_len: torch.Tensor):
         """
@@ -100,5 +109,4 @@ class LinearPrenet(Module):
 
         """
         feat = self.linear(feat)
-        
         return feat, feat_len

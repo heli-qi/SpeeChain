@@ -8,22 +8,16 @@
     Date: 2022.09
 """
 import torch
-import numpy as np
-from typing import Dict
 
 from speechain.criterion.abs import Criterion
 from speechain.utilbox.train_util import make_mask_from_len
 
+
 class BCELogits(Criterion):
     """
-    This criterion calculates the cross entropy between model predictions and target labels.
-    In this implementation, we realize the following functions:
-        1. Sentence normalization. The loss will be normalized according to the length of each sentence.
-        2. Label smoothing. The target label will be transformed from a sharp one-hot vector to a smooth distribution vector.
-        3. Token reweighting. The weight of each token in the cross entropy calculation can be customized manually.
-        If you want to customize the weights, you need to give the token dictionary.
 
     """
+
     def criterion_init(self, pos_weight: float = 5.0, is_normalized: bool = True):
         """
 
@@ -35,11 +29,10 @@ class BCELogits(Criterion):
         self.bce_loss = torch.nn.BCEWithLogitsLoss(reduction='none', pos_weight=torch.Tensor([pos_weight]))
         self.is_normalized = is_normalized
 
-
-    def forward(self,
-                pred: torch.Tensor,
-                tgt: torch.Tensor,
-                tgt_len: torch.Tensor):
+    def __call__(self,
+                 pred: torch.Tensor,
+                 tgt: torch.Tensor,
+                 tgt_len: torch.Tensor):
         """
 
         Args:
@@ -58,10 +51,13 @@ class BCELogits(Criterion):
 
         # mask production for the target labels
         tgt_mask = make_mask_from_len(tgt_len).squeeze()
-        if tgt.is_cuda:
-            tgt_mask = tgt_mask.cuda(tgt.device)
+        if tgt_len.is_cuda:
+            tgt_mask = tgt_mask.cuda(tgt_len.device)
 
         # BCE loss calculation
+        # make sure that the pos_weight is also on GPU
+        if pred.is_cuda and not self.bce_loss.pos_weight.is_cuda:
+            self.bce_loss.pos_weight = self.bce_loss.pos_weight.cuda(pred.device)
         # (batch_size, feat_maxlen)
         loss = self.bce_loss(pred, tgt)
         # (batch_size, feat_maxlen) -> (batch_size * feat_maxlen)

@@ -3,22 +3,22 @@
     Affiliation: NAIST
     Date: 2022.07
 """
-from functools import partial
-
 import numpy as np
 import random
 import torch
 
+from functools import partial
 from torch.utils.data import DataLoader
-from typing import Dict, List, Any
-from abc import ABC, abstractmethod
+from typing import Dict, List
+from abc import ABC
 
 from speechain.utilbox.import_util import import_class
+from speechain.utilbox.data_loading_util import load_idx2data_file, read_idx2data_file_to_dict
 
 
 def worker_init_fn(worker_id, base_seed: int = 0):
     """
-    Set random seed for each worker in DataLoader.
+    Set random seed for each worker in DataLoader to ensure the reproducibility.
     Borrowed from https://github.com/espnet/espnet/blob/master/espnet2/iterators/sequence_iter_factory.py#L13
 
     """
@@ -29,9 +29,17 @@ def worker_init_fn(worker_id, base_seed: int = 0):
 
 class Iterator(ABC):
     """
-    Iterator is the base class for all iterators in this toolkit. The main job of the iterator is giving a
-    Dataloader in each epoch to provide the model with batch data. Each iterator has a built-in Dataset
-    and its initialization is done automatically in the initialization function of this base class.
+    Iterator is the base class that takes charge of grouping data instances into batches for training or testing models.
+    Each iterator has a built-in speechain.dataset.Dataset object as one of its member variables. Actually, an Iterator
+    object cannot directly access the data instances in the built-in Dataset object but maintains a batching view of
+    the indices of the data instances used for model training or testing.
+
+    The initialization of the built-in Dataset object is done automatically during the initialization of the iterator.
+    At the beginning of each epoch, the iterator generates a `torch.utils.data.DataLoader` object to fetch the batches
+    of data instances from the disk.
+
+    The iterators are divided into 3 groups: train, valid, and test. In each group, 2 or more iterator objects can be
+    constructed so that there could be multiple data-label pairs in a single batch.
 
     """
 
@@ -40,7 +48,7 @@ class Iterator(ABC):
                  dataset_conf: Dict,
                  batches_per_epoch: int = None,
                  data_len: str or List[str] = None,
-                 data_selection: List = None,
+                 group_info: Dict[str, str or List[str]] = None,
                  is_descending: bool = True,
                  shuffle: bool = True,
                  seed: int = 0,
@@ -50,48 +58,52 @@ class Iterator(ABC):
                  distributed: bool = False,
                  **iter_conf):
         """
-        Dataset initialization is automatically done in this base class, so users only need to specify the dataset
-        type and give its configuration here.
+        The general initialization function of all the Iterator classes. Dataset initialization is automatically done
+        here by the given dataset_type and dataset_conf.
 
-        Iterator initialization is implemented in the self.iter_init() of each child iterator. Each child iterator
-        has its own strategy to generate batches.
+        In this initialization function, each iterator subclass should override a hook function batches_generate_fn()
+        to generate the batching view of data instances in the built-in Dataset object based on their own data batching
+        strategy.
 
         Args:
             dataset_type: str
-                query string to pick up the target dataset object
+                Query string to pick up the target Dataset subclass in `speechain/dataset/`
             dataset_conf: Dict
-                dataset configuration for its initialization
-            batches_per_epoch: int
-                The number of batches in each epoch. This number can be either smaller or larger than the real batch number.
-                If not given (None), all batches will be used in each epoch.
-            is_descending: bool
-                Whether the batches are sorted in the descending order by the length (True) or in the ascending order (False).
-            data_len: str
-                The absolute path of the data length file.
-            selection_mode: str
-                The selection mode that you would like to use for data selection.
-                'random' mode randomly selects data samples from the built-in dataset.
-                'order' mode selects data samples from the beginning of the built-in dataset.
-                'rev_order' mode selects data samples from the end of the built-in dataset.
-                If not given (None), no selection will be done.
-            selection_num: float or int
-                The number of data samples you would like to select from the built-in dataset.
-                Positive float value (0.0 ~ 1.0) means the relative selection ratio of the built-in dataset size.
-                Negative integer value (< 0) means the absolute selection number from the built-in dataset.
-            shuffle: bool
-                Whether the batches are shuffled.
-            seed: int
-                Random seed for the Dataloader.
-                Given by the experiment pipeline (not the user responsibility).
-            num_workers: int
+                Dataset configuration for its automatic initialization
+            batches_per_epoch: int = None
+                The number of batches in each epoch. This number can be either smaller or larger than the real batch
+                number. If not given (None), all batches will be used in each epoch.
+            is_descending: bool = True
+                Whether the batches are sorted in the descending order by the length (True) or in the ascending order
+                (False).
+            data_len: str or List[str] = None
+                The absolute path of the data length file. Multiple length files can be given in a list, but they
+                should contain non-overlapping data instances.
+            group_info: Dict[str, str or List[str]] = None
+                The dictionary of paths for the 'idx2data' files used for group-wise evaluation results visualization.
+            shuffle: bool = True
+                Whether the batches are shuffled at the beginning of each epoch.
+            seed: int = 0
+                Random seed for iterator initialization.
+                It will be used to
+                    1. shuffle batches before giving to the Dataloader of each epoch.
+                    2. initialize the workers of the Dataloader for the reproducibility.
+                This argument is automatically given by the experiment environment configuration.
+            ngpu: int = 1
+                The number of GPUs used to train or test models. The GPU number is used to ensure that each GPU process
+                in the DDP mode has the batches with the same number of data instances.
+                This argument is automatically given by the experiment environment configuration.
+            num_workers: int = 1
                 Number of workers for the Dataloader.
-                Given by the experiment pipeline (not the user responsibility).
-            pin_memory: bool
+                This argument is automatically given by the experiment environment configuration.
+            pin_memory: bool = False
                 Whether pin_memory trick is used in the Dataloader.
-                Given by the experiment pipeline (not the user responsibility).
-            distributed: bool
+                This argument is automatically given by the experiment environment configuration.
+            distributed: bool = False
+                Whether DDP is used to distribute the model.
+                This argument is automatically given by the experiment environment configuration.
             **iter_conf:
-                iterator configuration for its customized initialization
+                iterator configuration for customized batch generation
         """
         # initialize the built-in dataset of the iterator
         dataset_class = import_class('speechain.dataset.' + dataset_type)
@@ -108,74 +120,43 @@ class Iterator(ABC):
         self.num_workers = num_workers
         self.pin_memory = pin_memory
         self.distributed = distributed
-        # remain the original order of the data indices if data_len not specified
-        self.sorted_data = self.dataset.get_data_index()
 
         # --- 1. Loading the Data Length Information --- #
         # initialize the data lengths if given
         if data_len is not None:
             data_len = [data_len] if isinstance(data_len, str) else data_len
             # remain the original order of the data indices if is_descending not specified
-            self.data_len = [np.loadtxt(file, dtype=str, delimiter=" ") for file in data_len]
-            self.data_len = [dict(zip(np_len[:, 0], np_len[:, 1].astype(int))) for np_len in self.data_len]
+            self.data_len = [load_idx2data_file(file, int) for file in data_len]
             self.data_len = {key: value for d_len in self.data_len for key, value in d_len.items()}
 
             # check the data index in data_len and self.dataset
-            data_len_keys, dataset_keys = set(self.data_len.keys()), set(self.sorted_data)
+            data_len_keys, dataset_keys = set(self.data_len.keys()), set(self.dataset.get_data_index())
             # delete the redundant key-value pairs in data_len
             for redundant_key in data_len_keys.difference(dataset_keys):
                 self.data_len.pop(redundant_key)
             # delete the redundant key-value pairs in self.dataset
             for redundant_key in dataset_keys.difference(data_len_keys):
                 self.dataset.remove_data_by_index(redundant_key)
+        else:
+            self.data_len = None
 
-        # --- 2. Performing the Data Selection --- #
-        # select a portion of data samples to generate batches if specified
-        if data_selection is not None:
-            nometa_modes, meta_modes = ['random', 'order', 'rev_order'], ['min', 'max', 'middle']
-            if not isinstance(data_selection[0], List):
-                data_selection = [data_selection]
+        # remain the original order of the data indices if data_len not specified
+        self.sorted_data = self.dataset.get_data_index()
 
-            # loop each data selection strategy in order of the input list
-            for i in data_selection:
-                # non-meta selection
-                if len(i) == 2:
-                    selection_mode, selection_num, meta_info = i[0], i[1], None
-                    assert selection_mode in nometa_modes
-                # meta-required selection
-                elif len(i) == 3:
-                    selection_mode, selection_num, meta_info = i[0], i[1], i[2]
-                    assert selection_mode in meta_modes
-                else:
-                    raise RuntimeError
-
-                assert (isinstance(selection_num, float) and 0 < selection_num < 1) or \
-                       (isinstance(selection_num, int) and selection_num < 0) or \
-                       isinstance(selection_num, str), \
-                    f"Data selection number should be either a float number between 0 and 1, a negative integer, " \
-                    f"or a number in the string format. But got selection_num={selection_num}"
-
-                if not isinstance(selection_num, str) and selection_num < 0:
-                    assert -selection_num < len(self.sorted_data), \
-                        "The data selection amount cannot be larger than the total number of data samples. " \
-                        f"You have {len(self.sorted_data)} samples but give selection_num={-selection_num}."
-
-                # portion the old self.sorted_data to get the new self.sorted_data
-                self.sorted_data = self.data_selection(selection_mode, selection_num, meta_info)
-
-        # --- 3. Sorting the Remaining Data Samples in order --- #
+        # --- 2. Sorting the Data instances in order --- #
         # sorting the data indices by their lengths if specified
-        if hasattr(self, 'data_len'):
+        if self.data_len is not None:
             # shrink the data_len by sorted_data if necessary
-            self.data_len = {index: self.data_len[index] for index in self.sorted_data}
+            if len(self.data_len) > len(self.sorted_data):
+                self.data_len = {index: self.data_len[index] for index in self.sorted_data}
             self.data_len = dict(sorted(self.data_len.items(), key=lambda x: x[1], reverse=self.is_descending))
 
-            # record the keys of the data samples for batch generation
+            # record the keys of the data instances for batch generation
             self.sorted_data = list(self.data_len.keys())
 
-        # --- 4. Initialize the Customized Part (batching strategy) of the Iterator --- #
+        # --- 3. Initialize the Customized Part (batching strategy) of the Iterator --- #
         # initialize the customized part of the iterator and get the batches of data indices
-        self.batches = self.iter_init(**iter_conf)
+        self.batches = self.batches_generate_fn(self.sorted_data, self.data_len, **iter_conf)
         # make sure that each batch has self.ngpu data indices for even workload on each GPU
         if self.ngpu > 1:
             _tmp_indices = None
@@ -193,7 +174,7 @@ class Iterator(ABC):
             if _tmp_indices is not None:
                 self.batches.append(_tmp_indices)
 
-        # --- 5. Separate the Dataset into Multiple Non-overlapping Sections in the DDP Mode --- #
+        # --- 4. Separate the Dataset into Multiple Non-overlapping Sections in the DDP Mode --- #
         # clip the batch view for distributed training
         if self.distributed:
             # set stride to the number of processes
@@ -208,123 +189,81 @@ class Iterator(ABC):
             while [] in self.batches:
                 self.batches.remove([])
 
-    @abstractmethod
-    def iter_init(self, **kwargs) -> List[List[Any]]:
+        # --- 5. Extract the Metadata Information from the Disk to the Memory --- #
+        if group_info is not None:
+            # --- 6.1. Loading the Group Information of Data Instances from the Disk to the Memory --- #
+            assert isinstance(group_info, Dict), \
+                f"group_info must be given in Dict, but got type(main_data)={type(group_info)}"
+            self.group_info, self.data_index = read_idx2data_file_to_dict(group_info)
+
+            # --- 6.2. Data Instance Index Checking between self.group_info and self.dataset.main_data --- #
+            # check the data index in self.group_info and self.dataset
+            group_info_keys, dataset_keys = set(self.data_index), set(self.dataset.get_data_index())
+            # delete the redundant key-value pairs in self.group_info
+            for redundant_key in group_info_keys.difference(dataset_keys):
+                for group_name in self.group_info.keys():
+                    self.group_info[group_name].pop(redundant_key)
+            # delete the redundant key-value pairs in self.dataset
+            for redundant_key in dataset_keys.difference(group_info_keys):
+                self.dataset.remove_data_by_index(redundant_key)
+        else:
+            self.group_info, self.data_index = None, self.dataset.get_data_index()
+
+    def batches_generate_fn(self, data_index: List[str], data_len: Dict[str, int], batch_size: int = None) \
+            -> List[List[str]]:
         """
-        This interface initializes the customized part of your iterator and returns the batches generated by the
-        batching strategy of your iterator.
+        This hook interface function generates the batching view based on a specific batch generation strategy.
 
-        This function should return the batches of sample indices as a list of list where each sub-list corresponds
-        to a batch. Each element of a sub-list corresponds to a data sample.
+        Your overridden function should return the batches of instance indices as a List[List[str]] where each sub-list
+        corresponds to a batch of data instances. Each element in the sub-list is the index of a data instance.
 
-        Here is an implementation example:
-        >>> from speechain.iterator.abs import Iterator
-        >>> class MyIterator(Iterator):
-        >>>     def iter_init(self, my_conf):
-        ...         # initialize of your configuration variables
-        ...         self.my_conf = my_conf
-        ...         batches = []
-        ...         # generate batches by your batching strategy using self.my_conf and self.sorted_data
-        ...         return batches
-
-        For more detailed examples, please refer to the existing implementations in ./speechain/iterator/
-
-        Returns:
-            A list of batches generated by your batching strategy
-
-        """
-        raise NotImplementedError
-
-    def data_selection(self, selection_mode: str, selection_num: float or int or str, meta_info: str = None):
-        """
-        This function performs the data selection by the given selection_num and selection_mode
+        In this original hook implementation, all the data instances in the built-in Dataset object will be grouped
+        into batches with exactly the same amount of instances. data_len is not used in this hook function but used for
+        sorting all the instances in the general initialization function of the iterator. The sorted data instances make
+        sure that the instances in a single batch have similar lengths.
 
         Args:
-            selection_num: float or int
-                The number of samples selected from the built-in dataset.
-            selection_mode: str
-                The mode indicating how the samples are selected from the built-in dataset.
+            data_index: List[str]
+                The list of indices of all the data instances available to generate the batching view.
+            data_len: Dict[str, int]
+                The dictionary that indicates the data length of each available data instance in data_index.
+            batch_size: int = None
+                How many data instances does a batch should have. If not given, it will be the number of GPUs (ngpu) to
+                ensure that the model validation or testing is done one data instance at each step on a single GPU
+                process.
 
         Returns:
-            A list of indices of the selected data samples
+            A list of batches generated by your batching strategy. This List[List[str]] is called the batching view of
+            the iterator object. Each batch in the returned list is a sub-list whose elements are the indices of data
+            instances in the corresponding batch.
 
         """
-        # turn into numpy.array for clipping operations
-        sorted_data = np.array(self.sorted_data, dtype=str)
+        # batch_size is default to be the number of used GPUs to ensure that the model validation or testing is done one
+        # data instance at each step on a single GPU process
+        if batch_size is None:
+            batch_size = self.ngpu
+        # argument checking
+        if not isinstance(batch_size, int):
+            batch_size = int(batch_size)
+        assert batch_size > 0, f"batch_size must be a positive integer, but got {batch_size}."
 
-        # for non-meta selection strategies
-        if meta_info is None:
-            assert isinstance(selection_num, (int, float))
-            # 0 < selection_num < 1 means that we relatively select data samples by a percentage number
-            # selection_num < 0 means that we absolutely select data samples by the given value
-            selection_num = int(-selection_num if selection_num < 0 else len(sorted_data) * selection_num)
-            # 'order' means we select the data samples from the beginning to the end
-            if selection_mode == 'order':
-                sorted_data = sorted_data[:selection_num]
-            # 'rev_order' means we select the data samples from the end to the beginning
-            elif selection_mode == 'rev_order':
-                sorted_data = sorted_data[-selection_num:]
-            # 'random' means we randomly select the data samples
-            elif selection_mode == 'random':
-                sorted_data = sorted_data[np.random.randint(0, len(sorted_data), selection_num)]
+        # divide the data into individual batches with equal amount of instances
+        batches = [data_index[i: i + batch_size]
+                   for i in range(0, len(data_index) - batch_size + 1, batch_size)]
+        # in case that there are several uncovered instances at the end of self.sorted_data
+        remaining = len(data_index) % batch_size
+        if remaining != 0:
+            batches.append(data_index[-remaining:])
 
-        # for meta-required selection strategies
-        else:
-            # read the metadata information for data selection
-            meta_info = np.loadtxt(meta_info, dtype=str, delimiter=" ")
-            # initialize the sorted indices and metadata values of the data samples
-            meta_sorted_data = meta_info[:, 0][np.argsort(meta_info[:, 1].astype(float))]
-            meta_sorted_value = np.sort(meta_info[:, 1].astype(float))
-            # retain only the intersection of data samples in case that there is a index mismatch
-            intsec_indices = np.in1d(meta_sorted_data, sorted_data)
-            meta_sorted_data, meta_sorted_value = meta_sorted_data[intsec_indices], meta_sorted_value[intsec_indices]
-
-            # select a certain amount of data samples
-            if isinstance(selection_num, (int, float)):
-                # 0 < selection_num < 1 means that we relatively select data samples by a percentage number
-                # selection_num < 0 means that we absolutely select data samples by the given value
-                selection_num = int(-selection_num if selection_num < 0 else len(meta_sorted_data) * selection_num)
-                # 'min' means the samples with the minimal meta values will be selected
-                if selection_mode == 'min':
-                    removed_sorted_data = meta_sorted_data[selection_num:]
-                # 'max' means the samples with the maximal meta values will be selected
-                elif selection_mode == 'max':
-                    removed_sorted_data = meta_sorted_data[:-selection_num]
-                # 'middle' means the samples with the minimal and maximal meta values will be excluded
-                elif selection_mode == 'middle':
-                    removed_sorted_data = meta_sorted_data[:int((meta_sorted_data.shape[0] - selection_num) / 2)] + \
-                                          meta_sorted_data[-int((meta_sorted_data.shape[0] - selection_num) / 2):]
-                else:
-                    raise ValueError
-
-            # select the data samples by a certain threshold
-            elif isinstance(selection_num, str):
-                selection_num = float(selection_num)
-                # 'min' means the samples whose metadata is lower than the given threshold will be selected
-                if selection_mode == 'min':
-                    removed_sorted_data = meta_sorted_data[meta_sorted_value > selection_num]
-                # 'max' means the samples whose metadata is larger than the given threshold will be selected
-                elif selection_mode == 'max':
-                    removed_sorted_data = meta_sorted_data[meta_sorted_value < selection_num]
-                # 'middle' is not supported for the threshold selection
-                else:
-                    raise ValueError
-
-            else:
-                raise TypeError
-
-            # remove the undesired samples from the accessible sample indices
-            sorted_data = np.setdiff1d(sorted_data, removed_sorted_data)
-
-        # return the list of indices
-        return sorted_data.tolist()
+        return batches
 
     def __len__(self):
         """
 
         Returns:
-            The number of batches the model will receive during training. If batches_per_epoch is given, it will be
-            returned; otherwise, the real number of batches will be returned.
+            The real number of batches the iterator will load.
+            If batches_per_epoch is given, it will be returned; otherwise, the total number of all the batches in the
+            built-in Dataset object will be returned.
 
         """
         if self.batches_per_epoch is not None:
@@ -332,43 +271,52 @@ class Iterator(ABC):
         else:
             return len(self.batches)
 
-    def get_sample_indices(self):
+    def get_batch_indices(self) -> List[List[str]]:
         """
+        This function return the current batching view of the iterator object.
 
-        Returns:
+        Returns: List[List[str]]
+            The batching view generated by the customized hook interface batches_generate_fn(). Each element of the
+            returned batching view list is a sub-list of data indices where each index corresponds to a data instance
+            in the built-in Dataset object.
 
         """
         return self.batches
 
-    def get_meta_info(self):
+    def get_group_info(self) -> Dict[str, Dict[str, str]] or None:
         """
+        This function returns the metadata information of the built-in Dataset object.
+        The returned metadata is mainly used for group-wise testing results visualization.
 
         Returns:
+            If metadata information is not initialized in the built-in Dataset object, None will be returned.
+            Otherwise, the meta_info member of the built-in Dataset object will be returned which is a dictionary.
 
         """
-        return self.dataset.meta_info if hasattr(self.dataset, 'meta_info') else None
+        return self.group_info
 
     def build_loader(self, epoch: int = 1, start_step: int = 0):
         """
-        cut a segment of batches off from self.batches and generate a DataLoader based on this segment of batches in
-        each epoch.
+        This function generate a torch.util.data.DataLoader to load the batches of data instances for the input epoch.
 
-        If batches_per_epoch is not given, all batches will be used to generate the Dataloader; If batches_per_epoch
-        is given, 'batches_per_epoch' batches will be made from the existing batches according to the difference
-        between batches_per_epoch and the number of existing batches.
+        If batches_per_epoch is not given, all the batches in self.batches will be used to generate the Dataloader;
+        If batches_per_epoch is given, 'batches_per_epoch' batches will be generated by self.batches according to the
+        difference between batches_per_epoch and the number of existing batches.
 
-        Simply speaking, 'batches_per_epoch' is used as a sliding window that cuts out a group of indices from
-        self.batches in a non-overlapping way. 'batches_per_epoch' can be either larger or smaller than the real
-        number of batches.
+        batches_per_epoch can be either larger or smaller than the total number of batches.
+        For a smaller batches_per_epoch, a part of self.batches will be used as the batch clip;
+        For a larger batches_per_epoch, self.batches will be supplemented by a part of itself to form the batch clip.
 
         Args:
-            epoch: int
-                The number of the current epoch. Used as the random seed to shuffle the batches.
-            start_step: int
-                The start point for the dataloader of the current epoch. Used for resuming from a checkpoint during testing.
+            epoch: int = 1
+                The number of the current epoch. Used as part of the random seed to shuffle the batches.
+            start_step: int = 0
+                The start point for the dataloader of the current epoch. Used for resuming from a checkpoint during
+                testing.
 
         Returns:
-            A DataLoader built on the chosen window in this epoch.
+            A DataLoader built on the batch clip of the current epoch.
+            If batches_per_epoch is not given, the batch clip is self.batches.
 
         """
         # no cut off when batches_per_epoch is not given
@@ -405,6 +353,8 @@ class Iterator(ABC):
                     batches += self.batches[cursor:]
                     current_batch_size += len(self.batches) - cursor
                     cursor = 0
+        else:
+            raise RuntimeError
 
         if self.shuffle:
             np.random.RandomState(epoch + self.seed).shuffle(batches)

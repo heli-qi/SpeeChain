@@ -246,10 +246,8 @@ class Speech2LinearSpec(Module):
         assert wav_len.max() == wav.size(1), \
             "Something wrong happens when calculating the length of synthetic utterances."
 
-
         # pre-stft normalization cannot be recovered
         assert self.pre_stft_norm is None, "waveform pre-stft normalization cannot be recovered for TTS synthesis."
-
 
         # --- Pre-Emphasis Recovery --- #
         # Pre-emphasis: Y[n] = X[n] - 0.97 * X[n-1] where Y is the pre-emphasized signal and X is the original signal
@@ -284,7 +282,6 @@ class Speech2LinearSpec(Module):
             wav[i][wav_len[i]:] = 0
 
         return wav, wav_len
-
 
     def __repr__(self) -> str:
         string = f"{self.__class__.__name__}(\n" \

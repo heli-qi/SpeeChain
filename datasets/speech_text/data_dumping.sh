@@ -2,20 +2,22 @@
 #  Affiliation: NAIST
 #  Date: 2022.07
 
-# --- Absolute Path References --- #
-# Please change the following paths to the places on your machine --- #
-# the absolute path of the toolkit python complier
-python=/home/is/heli-qi/anaconda3/envs/speechain/bin/python3.8
-# the absolute path of the toolkit root
-root=/ahc/work4/heli-qi/euterpe-heli-qi
 
+if [ -z "${SPEECHAIN_ROOT}" ] || [ -z "${SPEECHAIN_PYTHON}" ];then
+  echo "Cannot find environmental variables SPEECHAIN_ROOT and SPEECHAIN_PYTHON.
+  Please move to the root path of the toolkit and run envir_preparation.sh there!"
+  exit 1
+fi
+
+
+# --- Absolute Path References --- #
 # the following path don't need to be changed #
 # the absolute path of the toolkit main folder
-pyscript_root=${root}/datasets/pyscripts
+pyscript_root=${SPEECHAIN_ROOT}/datasets/pyscripts
 # the absolute path of the toolkit config folder
-config=${root}/config
+config=${SPEECHAIN_ROOT}/config
 # the absolute path of the current dataset folder
-data_root=${root}/datasets/speech_text
+data_root=${SPEECHAIN_ROOT}/datasets/speech_text
 
 
 
@@ -182,8 +184,8 @@ fi
 # --- Step1: Data Downloading from the Internet --- #
 if [ ${start_step} -le 1 ] && [ ${stop_step} -ge 1 ]; then
   echo "Downloading the dataset from the Internet to ${data_root}/${dataset_name}/"
-  ${data_root}/${dataset_name}/data_download.sh \
-    --download_path ${data_root}/${dataset_name} \
+  "${data_root}"/${dataset_name}/data_download.sh \
+    --download_path "${data_root}"/${dataset_name} \
     ${download_args}
 fi
 
@@ -191,8 +193,8 @@ fi
 # --- Step2: Meta Data Generation --- #
 if [ ${start_step} -le 2 ] && [ ${stop_step} -ge 2 ]; then
   echo "Generate the statistical information of the dataset in ${data_root}/${dataset_name}/data/wav"
-  ${python} ${data_root}/${dataset_name}/meta_generator.py \
-    --src_path ${data_root}/${dataset_name}/data/wav \
+  ${SPEECHAIN_PYTHON} "${data_root}"/${dataset_name}/meta_generator.py \
+    --src_path "${data_root}"/${dataset_name}/data/wav \
     --txt_format ${txt_format} \
     ${meta_generate_args}
 fi
@@ -200,13 +202,13 @@ fi
 
 # --- Step3: Downsampling the audio files (optional) --- #
 if [ -n "${sample_rate}" ] && [ ${start_step} -le 3 ] && [ ${stop_step} -ge 3 ]; then
-  mkdir -p ${data_root}/${dataset_name}/data/wav${sample_rate}
+  mkdir -p "${data_root}"/${dataset_name}/data/wav${sample_rate}
    for set in ${subsets}; do
     echo "Downsampling the audio files in ${data_root}/${dataset_name}/data/wav/${set}/idx2wav to ${data_root}/${dataset_name}/data/wav${sample_rate}/${set}."
-    ${python} ${pyscript_root}/wave_downsampler.py \
+    ${SPEECHAIN_PYTHON} "${pyscript_root}"/wave_downsampler.py \
       --sample_rate ${sample_rate} \
-      --src_file ${data_root}/${dataset_name}/data/wav/${set}/idx2wav \
-      --tgt_path ${data_root}/${dataset_name}/data/wav${sample_rate}/${set} \
+      --src_file "${data_root}"/${dataset_name}/data/wav/${set}/idx2wav \
+      --tgt_path "${data_root}"/${dataset_name}/data/wav${sample_rate}/${set} \
       --ncpu ${ncpu}
   done
 fi
@@ -223,7 +225,7 @@ if [ ${feat_type} != 'wav' ] && [ ${start_step} -le 4 ] && [ ${stop_step} -ge 4 
 #    echo "Generating acoutic features from ./data/wav${sample_rate}/${set} to ./data/${feat_config}/${set}"
 #    mkdir -p data/${feat_config}/${set}
 #
-#    ${python} ${pyscript_root}/feat_generator.py \
+#    ${SPEECHAIN_PYTHON} ${pyscript_root}/feat_extractor.py \
 #      --wav_scp data/wav${sample_rate}/${set}/idx2wav \
 #      --cfg ${config}/feat/"${feat_config}.json" \
 #      --output_path data/${feat_config}/${set} \
@@ -247,8 +249,8 @@ if [ ${start_step} -le 5 ] && [ ${stop_step} -ge 5 ]; then
   for set in ${subsets}; do
     echo "Generating data lengths from ${data_root}/${dataset_name}/data/${folder_name}/${set}/idx2${feat_type}
     to ${data_root}/${dataset_name}/data/${folder_name}/${set}/idx2${feat_type}_len"
-    ${python} ${pyscript_root}/data_len_generator.py \
-      --src_file ${data_root}/${dataset_name}/data/${folder_name}/${set}/idx2${feat_type} \
+    ${SPEECHAIN_PYTHON} "${pyscript_root}"/data_len_generator.py \
+      --src_file "${data_root}"/${dataset_name}/data/${folder_name}/${set}/idx2${feat_type} \
       --ncpu ${ncpu}
   done
 fi
@@ -256,20 +258,23 @@ fi
 
 # --- Step6: Data Packaging --- #
 if [ -n "${comp_chunk_ext}" ] && [ ${start_step} -le 6 ] && [ ${stop_step} -ge 6 ]; then
-  if [ ${feat_type} != 'wav' ]; then
-    folder_name=${feat_config}
-  else
-    folder_name=${feat_type}${sample_rate}
-  fi
+#  if [ ${feat_type} != 'wav' ]; then
+#    folder_name=${feat_config}
+#  else
+#    folder_name=${feat_type}${sample_rate}
+#  fi
+#
+#  for set in ${subsets}; do
+#    echo "Packaging ${feat_type} data in ${data_root}/${dataset_name}/data/${folder_name}/${set}/......"
+#    ${SPEECHAIN_PYTHON} "${pyscript_root}"/data_packager.py \
+#      --src_path "${data_root}"/${dataset_name}/data/${folder_name}/${set} \
+#      --comp_chunk_ext ${comp_chunk_ext} \
+#      --feat_type ${feat_type} \
+#      --ncpu ${ncpu}
+#  done
 
-  for set in ${subsets}; do
-    echo "Packaging ${feat_type} data in ${data_root}/${dataset_name}/data/${folder_name}/${set}/......"
-    ${python} ${pyscript_root}/data_packager.py \
-      --src_path ${data_root}/${dataset_name}/data/${folder_name}/${set} \
-      --comp_chunk_ext ${comp_chunk_ext} \
-      --feat_type ${feat_type} \
-      --ncpu ${ncpu}
-  done
+  echo "Data Packaging is not available yet~~~~"
+  exit 1
 fi
 
 
@@ -283,8 +288,8 @@ if [ ${start_step} -le 7 ] && [ ${stop_step} -ge 7 ]; then
 
   if [ -f "${data_root}/${dataset_name}/stat_post_processor.py" ]; then
     echo "Post-processing the statistical information in ${data_root}/${dataset_name}/data/${folder_name}."
-    ${python} ${data_root}/${dataset_name}/meta_post_processor.py \
-      --src_path ${data_root}/${dataset_name}/data/${folder_name} \
+    ${SPEECHAIN_PYTHON} "${data_root}"/${dataset_name}/meta_post_processor.py \
+      --src_path "${data_root}"/${dataset_name}/data/${folder_name} \
       ${meta_post_process_args}
   fi
 fi
@@ -294,9 +299,9 @@ fi
 if [ ${start_step} -le 8 ] && [ ${stop_step} -ge 8 ]; then
   for set in ${vocab_src_subsets}; do
     echo "Generating ${token_type} vocabulary by ${data_root}/${dataset_name}/data/wav/${set}/text......"
-    ${python} ${pyscript_root}/vocab_generator.py \
-      --text_path ${data_root}/${dataset_name}/data/wav/${set} \
-      --save_path ${data_root}/${dataset_name}/data/${token_type}/${set} \
+    ${SPEECHAIN_PYTHON} "${pyscript_root}"/vocab_generator.py \
+      --text_path "${data_root}"/${dataset_name}/data/wav/${set} \
+      --save_path "${data_root}"/${dataset_name}/data/${token_type}/${set} \
       --token_type ${token_type} \
       --txt_format ${txt_format} \
       --tgt_subsets "${vocab_tgt_subsets}" \

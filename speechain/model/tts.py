@@ -8,8 +8,9 @@
     Date: 2022.09
 """
 import copy
-
 import math
+import warnings
+
 import numpy as np
 import torch
 
@@ -17,7 +18,7 @@ from typing import Dict, Any, List
 
 from speechain.model.abs import Model
 from speechain.tokenizer.char import CharTokenizer
-from speechain.utilbox.train_util import make_mask_from_len
+from speechain.utilbox.train_util import make_mask_from_len, text2tensor_and_len, spk2tensor
 from speechain.utilbox.md_util import get_list_strings
 
 from speechain.module.encoder.tts import TTSEncoder
@@ -37,26 +38,24 @@ class TTS(Model):
     Encoder-decoder-based single/multi speaker TTS
     """
 
-    def model_construction(self,
-                           token_type: str,
-                           token_vocab: str,
-                           frontend: Dict,
-                           enc_emb: Dict,
-                           encoder: Dict,
-                           dec_prenet: Dict,
-                           decoder: Dict,
-                           enc_prenet: Dict = None,
-                           normalize: Dict = None,
-                           dec_postnet: Dict = None,
-                           vocoder: Dict = None,
-                           feat_loss: Dict = None,
-                           stop_loss: Dict = None,
-                           spk_list: str = None,
-                           spk_emb: Dict = None,
-                           sample_rate: int = 16000,
-                           audio_format: str = 'wav',
-                           reduction_factor: int = 1,
-                           stop_threshold: float = 0.5):
+    def module_init(self,
+                    token_type: str,
+                    token_vocab: str,
+                    frontend: Dict,
+                    enc_emb: Dict,
+                    encoder: Dict,
+                    dec_prenet: Dict,
+                    decoder: Dict,
+                    enc_prenet: Dict = None,
+                    normalize: Dict = None,
+                    dec_postnet: Dict = None,
+                    vocoder: Dict = None,
+                    spk_list: str = None,
+                    spk_emb: Dict = None,
+                    sample_rate: int = 16000,
+                    audio_format: str = 'wav',
+                    reduction_factor: int = 1,
+                    stop_threshold: float = 0.5):
         """
         Args:
             # --- module_conf arguments --- #
@@ -75,9 +74,6 @@ class TTS(Model):
                 The configuration of the encoder module.
                 The encoder embeds the input embeddings into the encoder representations at each time steps of the
                 input acoustic features.
-            # --- criterion_conf arguments --- #
-            (optional) feat_loss:
-            (optional) stop_loss:
             # --- customize_conf arguments --- #
             (mandatory) token_type:
                 The type of the built-in tokenizer.
@@ -100,12 +96,14 @@ class TTS(Model):
             (optional) stop_threshold:
                 The threshold that controls whether the speech synthesis stops or not.
         """
-        # --- Model-Customized Part Initialization --- #
+        # --- 1. Model-Customized Part Initialization --- #
         # initialize the tokenizer
         if token_type == 'char':
             self.tokenizer = CharTokenizer(token_vocab)
-        else:
+        elif token_type == 'phn':
             raise NotImplementedError
+        else:
+            raise ValueError
 
         # initialize the speaker list if given
         if spk_list is not None:
@@ -118,7 +116,7 @@ class TTS(Model):
             elif len(spk_list.shape) != 1:
                 raise RuntimeError
             # 1. remove redundant elements; 2. sort up the speaker ids in order
-            spk_list = sorted(set(spk_list.tolist()))
+            spk_list = sorted(set(spk_list))
             # 3. get the corresponding indices (start from 1 since 0 is reserved for unknown speakers)
             self.idx2spk = dict(zip(range(1, len(spk_list) + 1), spk_list))
             # 4. exchange the positions of indices and speaker ids
@@ -130,22 +128,14 @@ class TTS(Model):
         self.reduction_factor = reduction_factor
         self.stop_threshold = stop_threshold
 
-        # default values of TTS topn bad case selection
-        self.bad_cases_selection = [
-            ['feat_token_len_ratio', 'max', 30],
-            ['feat_token_len_ratio', 'min', 30],
-            ['wav_len_ratio', 'max', 30],
-            ['wav_len_ratio', 'min', 30]
-        ]
-
-
-        # --- Module Part Construction --- #
-        # Encoder construction, the vocabulary size will be first initialized
+        # --- 2. Module Part Construction --- #
+        # the vocabulary size is given by the built-in tokenizer instead of the input configuration
         if 'vocab_size' in enc_emb['conf'].keys():
-            assert enc_emb['conf']['vocab_size'] == self.tokenizer.vocab_size, \
-                f"The vocab_size values are different in enc_emb and self.tokenizer! " \
-                f"Got enc_emb['conf']['vocab_size']={enc_emb['conf']['vocab_size']} and " \
-                f"self.tokenizer.vocab_size={self.tokenizer.vocab_size}"
+            if enc_emb['conf']['vocab_size'] != self.tokenizer.vocab_size:
+                warnings.warn(f"Your input vocabulary size is different from the one obtained from the built-in "
+                              f"tokenizer ({self.tokenizer.vocab_size}). The latter one will be used to initialize the "
+                              f"encoder for correctness.")
+            enc_emb['conf'].pop('vocab_size')
         self.encoder = TTSEncoder(
             vocab_size=self.tokenizer.vocab_size,
             embedding=enc_emb,
@@ -158,8 +148,10 @@ class TTS(Model):
         if 'sr' not in frontend['conf'].keys():
             frontend['conf']['sr'] = self.sample_rate
         else:
-            assert frontend['conf']['sr'] == self.sample_rate, \
-                "The sampling rate in your frontend configuration doesn't match the one in customize_conf!"
+            if frontend['conf']['sr'] != self.sample_rate:
+                warnings.warn(
+                    "The sampling rate in your frontend configuration doesn't match the one in customize_conf. "
+                    "The one in your configuration will be used to extract acoustic features.")
 
         # check the speaker embedding configuration
         if spk_emb is not None:
@@ -199,17 +191,49 @@ class TTS(Model):
         else:
             raise NotImplementedError("Neural vocoders are not supported yet/(ToT)/~~")
 
+    @staticmethod
+    def bad_cases_selection_init_fn() -> List[List[str or int]] or None:
+        return [
+            ['feat_token_len_ratio', 'max', 30],
+            ['feat_token_len_ratio', 'min', 30],
+            ['wav_len_ratio', 'max', 30],
+            ['wav_len_ratio', 'min', 30]
+        ]
 
+    def criterion_init(self,
+                       feat_loss_type: str = 'L2',
+                       feat_loss_norm: bool = True,
+                       feat_update_range: int or float = None,
+                       stop_pos_weight: float = 5.0,
+                       stop_loss_norm: bool = True,
+                       f_beta: int = 2.0):
+        """
+
+        Args:
+            feat_loss_type: str = 'L2'
+
+            feat_loss_norm: bool = True
+
+            feat_update_range: int or float = None
+
+            stop_pos_weight: float = 5.0
+
+            stop_loss_norm: bool = True
+
+            f_beta: int = 2.0
+
+
+        """
         # --- Criterion Part Initialization --- #
         # training loss
-        self.feat_loss = LeastError(**feat_loss)
-        self.stop_loss = BCELogits(**stop_loss)
+        self.feat_loss = LeastError(loss_type=feat_loss_type, is_normalized=feat_loss_norm,
+                                    update_range=feat_update_range)
+        self.stop_loss = BCELogits(pos_weight=stop_pos_weight, is_normalized=stop_loss_norm)
         # validation metrics
         self.stop_accuracy = Accuracy()
-        self.stop_f2 = FBetaScore(beta=2.0)
+        self.stop_fbeta = FBetaScore(beta=f_beta)
 
-
-    def batch_preprocess(self, batch_data: Dict):
+    def batch_preprocess_fn(self, batch_data: Dict):
         """
 
         Args:
@@ -232,44 +256,39 @@ class TTS(Model):
             # --- Process the Text String and its Length --- #
             if 'text' in data_dict.keys():
                 assert isinstance(data_dict['text'], List)
-                for i in range(len(data_dict['text'])):
-                    data_dict['text'][i] = self.tokenizer.text2tensor(data_dict['text'][i])
-                text_len = torch.LongTensor([t.size(0) for t in data_dict['text']])
-                text = torch.full((text_len.size(0), text_len.max().item()), self.tokenizer.ignore_idx,
-                                  dtype=text_len.dtype)
-                for i in range(text_len.size(0)):
-                    text[i][:text_len[i]] = data_dict['text'][i]
-
-                data_dict['text'] = text
-                data_dict['text_len'] = text_len
+                data_dict['text'], data_dict['text_len'] = text2tensor_and_len(
+                    text_list=data_dict['text'], text2tensor_func=self.tokenizer.text2tensor,
+                    ignore_idx=self.tokenizer.ignore_idx
+                )
 
             # --- Process the Speaker ID String --- #
             if 'spk_ids' in data_dict.keys() and hasattr(self, 'spk2idx'):
                 assert isinstance(data_dict['spk_ids'], List)
-                # turn the speaker id strings into the trainable tensors
-                data_dict['spk_ids'] = torch.LongTensor([self.spk2idx[spk] if spk in self.spk2idx.keys()
-                                                         else 0 for spk in data_dict['spk_ids']])
-            # data_dict['speaker'] still remains in data_dict as original metainfo
+                data_dict['spk_ids'] = spk2tensor(spk_list=data_dict['spk_ids'], spk2idx_dict=self.spk2idx)
+
             return data_dict
 
         # check whether the batch_data is made by multiple dataloaders
-        multi_flag = sum([isinstance(value, Dict) for value in batch_data.values()]) == len(batch_data)
-        return process_strings(batch_data) if not multi_flag else \
-            {key: process_strings(value) for key, value in batch_data.items()}
+        leaf_flags = [not isinstance(value, Dict) for value in batch_data.values()]
+        if sum(leaf_flags) == 0:
+            return {key: process_strings(value) for key, value in batch_data.items()}
+        elif sum(leaf_flags) == len(batch_data):
+            return process_strings(batch_data)
+        else:
+            raise RuntimeError
 
-
-    def model_forward(self,
-                      feat: torch.Tensor,
-                      text: torch.Tensor,
-                      feat_len: torch.Tensor,
-                      text_len: torch.Tensor,
-                      spk_feat: torch.Tensor = None,
-                      spk_ids: torch.Tensor = None,
-                      epoch: int = None,
-                      return_att: bool = None,
-                      return_hidden: bool = None,
-                      return_enc: bool = None,
-                      **kwargs) -> Dict[str, torch.Tensor]:
+    def module_forward(self,
+                       feat: torch.Tensor,
+                       text: torch.Tensor,
+                       feat_len: torch.Tensor,
+                       text_len: torch.Tensor,
+                       spk_feat: torch.Tensor = None,
+                       spk_ids: torch.Tensor = None,
+                       epoch: int = None,
+                       return_att: bool = None,
+                       return_hidden: bool = None,
+                       return_enc: bool = None,
+                       **kwargs) -> Dict[str, torch.Tensor]:
         """
 
         Args:
@@ -308,73 +327,59 @@ class TTS(Model):
             "The amounts of utterances and their lengths are not equal to each other."
         assert text_len.size(0) == text.size(0), \
             "The amounts of sentences and their lengths are not equal to each other."
-        
+
         # Encoding, we don't remove the <sos/eos> at the beginning and end of the sentence
-        enc_outputs = self.encoder(text=text, text_len=text_len)
+        enc_text, enc_text_mask, enc_attmat, enc_hidden = self.encoder(text=text, text_len=text_len)
 
         # Decoding
-        dec_outputs = self.decoder(enc_text=enc_outputs['enc_feat'],
-                                   enc_text_mask=enc_outputs['enc_feat_mask'],
-                                   feat=feat, feat_len=feat_len,
-                                   spk_feat=spk_feat, spk_ids=spk_ids,
-                                   epoch=epoch)
-        
+        pred_stop, pred_feat_before, pred_feat_after, tgt_feat, tgt_feat_len, dec_attmat, encdec_attmat, dec_hidden \
+            = self.decoder(enc_text=enc_text, enc_text_mask=enc_text_mask, feat=feat, feat_len=feat_len,
+                           spk_feat=spk_feat, spk_ids=spk_ids, epoch=epoch)
+
         # initialize the TTS output to be the decoder predictions
         outputs = dict(
-            pred_stop=dec_outputs['pred_stop'],
-            pred_feat_before=dec_outputs['pred_feat_before'],
-            pred_feat_after=dec_outputs['pred_feat_after'],
-            tgt_feat=dec_outputs['tgt_feat'],
-            tgt_feat_len=dec_outputs['tgt_feat_len']
+            pred_stop=pred_stop,
+            pred_feat_before=pred_feat_before,
+            pred_feat_after=pred_feat_after,
+            tgt_feat=tgt_feat,
+            tgt_feat_len=tgt_feat_len
         )
 
         # return the attention results of either encoder or decoder if specified
         if return_att:
             outputs.update(
-                att=dict()
+                att=dict(
+                    enc_att=enc_attmat,
+                    dec_att=dict(
+                        self_att=dec_attmat,
+                        encdec_att=encdec_attmat
+                    )
+                )
             )
-            if 'att' in enc_outputs.keys():
-                outputs['att'].update(
-                    enc_att=enc_outputs['att']
-                )
-            if 'att' in dec_outputs.keys():
-                outputs['att'].update(
-                    dec_att=dec_outputs['att']
-                )
-            assert len(outputs['att']) > 0
-
-        # return the internal hidden results of either encoder or decoder if specified
+        # return the internal hidden results of both encoder and decoder if specified
         if return_hidden:
             outputs.update(
-                hidden=dict()
+                hidden=dict(
+                    enc_hidden=enc_hidden,
+                    dec_hidden=dec_hidden
+                )
             )
-            if 'hidden' in enc_outputs.keys():
-                outputs['hidden'].update(
-                    enc_hidden=enc_outputs['hidden']
-                )
-            if 'hidden' in dec_outputs.keys():
-                outputs['hidden'].update(
-                    dec_hidden=dec_outputs['hidden']
-                )
-            assert len(outputs['hidden']) > 0
-
         # return the encoder outputs if specified
         if return_enc:
-            assert 'enc_feat' in enc_outputs.keys() and 'enc_feat_mask' in enc_outputs.keys()
             outputs.update(
-                enc_feat=enc_outputs['enc_feat'],
-                enc_feat_mask=enc_outputs['enc_feat_mask']
+                enc_feat=enc_text,
+                enc_feat_mask=enc_text_mask
             )
         return outputs
 
-
-    def loss_calculation(self,
-                         pred_stop: torch.Tensor,
-                         pred_feat_before: torch.Tensor,
-                         pred_feat_after: torch.Tensor,
-                         tgt_feat: torch.Tensor,
-                         tgt_feat_len: torch.Tensor,
-                         **kwargs) -> (Dict[str, torch.Tensor], Dict[str, torch.Tensor]):
+    def criterion_forward(self,
+                          pred_stop: torch.Tensor,
+                          pred_feat_before: torch.Tensor,
+                          pred_feat_after: torch.Tensor,
+                          tgt_feat: torch.Tensor,
+                          tgt_feat_len: torch.Tensor,
+                          **kwargs) -> \
+            (Dict[str, torch.Tensor], Dict[str, torch.Tensor]) or Dict[str, torch.Tensor]:
         """
 
         Args:
@@ -412,12 +417,11 @@ class TTS(Model):
         # combine all losses into the final one
         loss = feat_loss_before + feat_loss_after + stop_loss
 
-
         # --- Metrics Calculation --- #
         logits_threshold = -math.log(1 / self.stop_threshold - 1)
         pred_stop_hard = pred_stop > logits_threshold
         stop_accuracy = self.stop_accuracy(pred_stop_hard, tgt_stop, tgt_feat_len)
-        stop_f2 = self.stop_f2(pred_stop_hard, tgt_stop, tgt_feat_len)
+        stop_fbeta = self.stop_fbeta(pred_stop_hard, tgt_stop, tgt_feat_len)
 
         losses = dict(loss=loss)
         # .clone() here prevents the trainable variables from value modification
@@ -426,54 +430,12 @@ class TTS(Model):
                        feat_loss_after=feat_loss_after.clone().detach(),
                        stop_loss=stop_loss.clone().detach(),
                        stop_accuracy=stop_accuracy.detach(),
-                       stop_f2=stop_f2.detach())
+                       stop_fbeta=stop_fbeta.detach())
 
-        # get the values of trainable scalars from the encoder
-        encoder_scalars = self.encoder.get_trainable_scalars()
-        if encoder_scalars is not None:
-            metrics.update(**{'enc_' + key: value.clone().detach() for key, value in encoder_scalars.items()})
-        # get the values of trainable scalars from the decoder
-        decoder_scalars = self.decoder.get_trainable_scalars()
-        if decoder_scalars is not None:
-            metrics.update(**{'dec_' + key: value.clone().detach() for key, value in decoder_scalars.items()})
-
-        return losses, metrics
-
-
-    def metrics_calculation(self,
-                            pred_stop: torch.Tensor,
-                            pred_feat_before: torch.Tensor,
-                            pred_feat_after: torch.Tensor,
-                            tgt_feat: torch.Tensor,
-                            tgt_feat_len: torch.Tensor,
-                            **kwargs) -> (Dict[str, torch.Tensor], Dict[str, torch.Tensor]):
-        """
-
-        Args:
-            pred_stop: (batch, seq_len, 1)
-                predicted stop probability
-            pred_feat_before: (batch, seq_len, feat_dim * reduction_factor)
-                predicted acoustic feature before postnet residual addition
-            pred_feat_after: (batch, seq_len, feat_dim * reduction_factor)
-                predicted acoustic feature after postnet residual addition
-            tgt_feat: (batch, seq_len, feat_dim)
-                processed acoustic features, length-reduced and edge-padded
-            tgt_feat_len: (batch,)
-            **kwargs:
-
-        Returns:
-            losses:
-            metric:
-        """
-        _, metrics = self.loss_calculation(
-            pred_stop=pred_stop,
-            pred_feat_before=pred_feat_before,
-            pred_feat_after=pred_feat_after,
-            tgt_feat=tgt_feat,
-            tgt_feat_len=tgt_feat_len
-        )
-        return metrics
-
+        if self.training:
+            return losses, metrics
+        else:
+            return metrics
 
     def matrix_snapshot(self, vis_logs: List, hypo_attention: Dict, subfolder_names: List[str] or str, epoch: int):
         """
@@ -489,7 +451,7 @@ class TTS(Model):
         if isinstance(subfolder_names, str):
             subfolder_names = [subfolder_names]
         keys = list(hypo_attention.keys())
-        
+
         # process the input data by different data types
         if isinstance(hypo_attention[keys[0]], Dict):
             for key, value in hypo_attention.items():
@@ -544,7 +506,7 @@ class TTS(Model):
                   feat_len: torch.Tensor,
                   text: torch.Tensor,
                   text_len: torch.Tensor,
-                  speaker_feat: torch.Tensor=None):
+                  speaker_feat: torch.Tensor = None):
         """
 
         Args:
@@ -563,12 +525,12 @@ class TTS(Model):
                                        text=text, text_len=text_len,
                                        speaker_feat=speaker_feat,
                                        return_att=True, **self.visual_infer_conf)
-        
+
         # --- snapshot the objective metrics --- #
         vis_logs = []
         # CER, WER, hypothesis probability
         materials = dict()
-        for metric in ['loss_total', 'feat_loss', 'bern_loss','bern_accuracy','bern_f1']:
+        for metric in ['loss_total', 'feat_loss', 'bern_loss', 'bern_accuracy', 'bern_f1']:
             # store each target metric into materials
             if metric not in epoch_records[sample_index].keys():
                 epoch_records[sample_index][metric] = []
@@ -587,23 +549,24 @@ class TTS(Model):
         # record the input audio and real text at the first snapshotting step
         if epoch // snapshot_interval == 1:
             # snapshot target audio
-            if self.speechfeat_generator is not None: #if the audio source is raw/wav
+            if self.speechfeat_generator is not None:  # if the audio source is raw/wav
                 vis_logs.append(
                     dict(
                         plot_type='audio', materials=dict(target_audio=copy.deepcopy(feat[0].cpu().numpy())),
                         sample_rate=self.sample_rate, audio_format=self.audio_format, subfolder_names=sample_index
                     )
                 )
-            else: #if the audio source is audio feature (mel spectrogram etc)
-                seqlen,featdim=feat[0].size()
-                feat_tgt_ungroup=feat[0].reshape(seqlen*self.speechfeat_group,featdim//self.speechfeat_group)
+            else:  # if the audio source is audio feature (mel spectrogram etc)
+                seqlen, featdim = feat[0].size()
+                feat_tgt_ungroup = feat[0].reshape(seqlen * self.speechfeat_group, featdim // self.speechfeat_group)
                 vis_logs.append(
-                dict(
-                    plot_type='matrix', materials=dict(target_feat=copy.deepcopy(feat_tgt_ungroup.transpose(0,1).cpu().numpy())), epoch=epoch,
-                    sep_save=False, data_save=False, subfolder_names=sample_index
+                    dict(
+                        plot_type='matrix',
+                        materials=dict(target_feat=copy.deepcopy(feat_tgt_ungroup.transpose(0, 1).cpu().numpy())),
+                        epoch=epoch,
+                        sep_save=False, data_save=False, subfolder_names=sample_index
                     )
                 )
-                
 
             # snapshot input text
             vis_logs.append(
@@ -613,37 +576,35 @@ class TTS(Model):
                 )
             )
 
-
         # hypothesis feature
         if 'hypo_feat_npz' not in epoch_records[sample_index].keys():
             epoch_records[sample_index]['hypo_feat_npz'] = []
         epoch_records[sample_index]['hypo_feat_npz'].append(infer_results['hypo_feat_npz']['content'][0])
         # snapshot the information in the materials
-        
 
-        if self.speechfeat_generator is not None: #if the generated speech is raw/wav
+        if self.speechfeat_generator is not None:  # if the generated speech is raw/wav
             vis_logs.append(
                 dict(
                     materials=dict(hypo_feat=copy.deepcopy(infer_results['hypo_feat_npz']['content'][0])),
                     plot_type='audio', epoch=epoch, x_stride=snapshot_interval,
                     subfolder_names=sample_index
-            ))
+                ))
 
-        else: #if the generated speech is speech feature
+        else:  # if the generated speech is speech feature
             vis_logs.append(
                 dict(
-                    plot_type='matrix', materials=dict(hypo_feat=copy.deepcopy(np.transpose(infer_results['hypo_feat_npz']['content'][0]))), epoch=epoch,
+                    plot_type='matrix',
+                    materials=dict(hypo_feat=copy.deepcopy(np.transpose(infer_results['hypo_feat_npz']['content'][0]))),
+                    epoch=epoch,
                     sep_save=False, data_save=False, subfolder_names=sample_index
-                    )
                 )
+            )
 
-        
         # hypothesis attention matrix
         infer_results['hypo_att'] = self.attention_reshape(infer_results['hypo_att'])
         self.matrix_snapshot(vis_logs=vis_logs, hypo_attention=copy.deepcopy(infer_results['hypo_att']),
                              subfolder_names=sample_index, epoch=epoch)
         return vis_logs
-
 
     def inference(self,
                   infer_conf: Dict,
@@ -752,7 +713,6 @@ class TTS(Model):
                 hypo_len_ratio = infer_results['hypo_len_ratio']
                 outputs.update(feat_token_len_ratio=dict(format='txt', content=to_cpu(hypo_len_ratio)))
 
-
             # --- The 2nd Pass: TTS Teacher-Forcing Decoding --- #
             if teacher_forcing or return_att:
                 infer_results = self.model_forward(feat=feat if teacher_forcing else hypo_feat,
@@ -771,7 +731,7 @@ class TTS(Model):
                     hypo_len = feat_len
                     hypo_bern = infer_results['pred_bern']
 
-                    metrics = self.metrics_calculation(hypo_feat,hypo_bern,feat,feat_len)
+                    metrics = self.metrics_calculation(hypo_feat, hypo_bern, feat, feat_len)
 
                     _, declen, featdim = hypo_feat.size()
 
@@ -782,7 +742,6 @@ class TTS(Model):
         # Skip the generation of acoustic features and directly do the vocoding operation for the given features
         else:
             hypo_feat, hypo_feat_len = feat, feat_len
-
 
         # --- Post-processing for the Generated Acoustic Features --- #
         # recover the waveform from the acoustic feature by the vocoder
@@ -819,7 +778,6 @@ class TTS(Model):
                 hypo_att=hypo_att
             )
 
-
         # --- Supervised Metrics Calculation (Ground-Truth is involved here) --- #
         # hypo_wav_len_ratio is a supervised metrics calculated by the decoded waveforms
         if not decode_only:
@@ -827,7 +785,6 @@ class TTS(Model):
             # is linear, acoustic length ratio is equal to waveform length ratio.
             hypo_wav_len_ratio = hypo_feat_len / feat_len if feat.size(-1) != 1 else hypo_wav_len / feat_len
             outputs.update(wav_len_ratio=dict(format='txt', content=to_cpu(hypo_wav_len_ratio)))
-
 
         # --- Final Report Generation Stage --- #
         # No report will be printed in the vocoding-only scenario
@@ -861,11 +818,11 @@ class TTS(Model):
         return outputs
 
 
-
 class ReferenceSpeakerTTS(TTS):
     """
 
     """
+
     def inference(self,
                   infer_conf: Dict,
                   **test_batch) -> Dict[str, Any]:

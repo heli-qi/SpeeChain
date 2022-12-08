@@ -137,7 +137,7 @@ def asr_text_process(input_text: str, txt_format: str) -> str:
         raise ValueError
 
 
-def get_readable_number(raw_number: int or float):
+def get_readable_number(raw_number: int or float) -> str:
     if isinstance(raw_number, float):
         raw_number = int(raw_number)
     elif not isinstance(raw_number, int):
@@ -167,7 +167,7 @@ def get_readable_number(raw_number: int or float):
     return read_number
 
 
-def parse_readable_number(read_number: str):
+def parse_readable_number(read_number: str) -> int or float:
     raw_number = 0
     read_number = read_number.replace(' ', '').lower()
 
@@ -218,7 +218,7 @@ def parse_readable_number(read_number: str):
     return raw_number
 
 
-def get_readable_memory(raw_number: int or float):
+def get_readable_memory(raw_number: int or float) -> str:
     if isinstance(raw_number, float):
         raw_number = int(raw_number)
     elif not isinstance(raw_number, int):

@@ -53,7 +53,6 @@ class ASRDecoder(Module):
         # token prediction layer for the E2E ASR decoder
         self.postnet = TokenPostnet(input_size=_prev_output_size, vocab_size=vocab_size)
 
-
     def forward(self,
                 enc_feat: torch.Tensor,
                 enc_feat_mask: torch.Tensor,
@@ -78,40 +77,6 @@ class ASRDecoder(Module):
         if text.is_cuda:
             text_mask = text_mask.cuda(text.device)
 
-        # Decoding
-        dec_results = self.decoder(src=enc_feat, src_mask=enc_feat_mask,
-                                   tgt=emb_text, tgt_mask=text_mask)
-
-        # initialize the decoder outputs
-        dec_outputs = dict(
-            output=self.postnet(dec_results['output'])
-        )
-        # if the build-in decoder has the attention results
-        if 'att' in dec_results.keys():
-            dec_outputs.update(
-                att=dec_results['att']
-            )
-        # if the build-in decoder has the hidden results
-        if 'hidden' in dec_results.keys():
-            dec_outputs.update(
-                hidden=dec_results['hidden']
-            )
-        return dec_outputs
-
-
-    def get_trainable_scalars(self) -> Dict or None:
-        trainable_scalars = dict()
-        # decoder-prenet layers
-        pre_scalars = self.prenet.get_trainable_scalars()
-        if pre_scalars is not None:
-            trainable_scalars.update(**pre_scalars)
-        # decoder layers
-        dec_scalars = self.decoder.get_trainable_scalars()
-        if dec_scalars is not None:
-            trainable_scalars.update(**dec_scalars)
-        # decoder-postnet layers
-        post_scalars = self.postnet.get_trainable_scalars()
-        if post_scalars is not None:
-            trainable_scalars.update(**post_scalars)
-
-        return trainable_scalars
+        dec_feat, self_attmat, encdec_attmat, hidden = self.decoder(
+            src=enc_feat, src_mask=enc_feat_mask, tgt=emb_text, tgt_mask=text_mask)
+        return self.postnet(dec_feat), self_attmat, encdec_attmat, hidden

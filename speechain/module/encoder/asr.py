@@ -22,8 +22,7 @@ class ASREncoder(Module):
 
     """
     frontend_class_dict = dict(
-        speech2linear=Speech2LinearSpec,
-        speech2mel=Speech2MelSpec
+        mel_fbank=Speech2MelSpec
     )
 
     prenet_class_dict = dict(
@@ -35,30 +34,29 @@ class ASREncoder(Module):
     )
 
     def module_init(self,
+                    frontend: Dict,
                     encoder: Dict,
-                    frontend: Dict = None,
                     normalize: Dict or bool = None,
                     specaug: Dict or bool = None,
                     prenet: Dict = None):
         """
 
         Args:
-            frontend:
-            normalize:
-            specaug:
-            encoder:
-            prenet:
+            (mandatory) frontend:
+            (optional) normalize:
+            (optional) specaug:
+            (optional) prenet:
+            (mandatory) encoder:
 
         """
         # temporary register for connecting two sequential modules
         _prev_output_size = None
 
         # acoustic feature extraction frontend of the E2E ASR encoder
-        if frontend is not None:
-            frontend_class = self.frontend_class_dict[frontend['type']]
-            frontend['conf'] = dict() if 'conf' not in frontend.keys() else frontend['conf']
-            self.frontend = frontend_class(**frontend['conf'])
-            _prev_output_size = self.frontend.output_size
+        frontend_class = self.frontend_class_dict[frontend['type']]
+        frontend['conf'] = dict() if 'conf' not in frontend.keys() else frontend['conf']
+        self.frontend = frontend_class(**frontend['conf'])
+        _prev_output_size = self.frontend.output_size
 
         # feature normalization layer
         if normalize is not None and normalize is not False:
@@ -86,7 +84,6 @@ class ASREncoder(Module):
         encoder['conf'] = dict() if 'conf' not in encoder.keys() else encoder['conf']
         self.encoder = encoder_class(input_size=_prev_output_size, **encoder['conf'])
 
-
     def forward(self, feat: torch.Tensor, feat_len: torch.Tensor, epoch: int = None, domain: str = None):
         """
 
@@ -103,7 +100,7 @@ class ASREncoder(Module):
         # acoustic feature extraction for the waveform input, do nothing for the feature input
         if feat.size(-1) == 1:
             assert hasattr(self, 'frontend'), \
-                "Currently, we don't support time-domain ASR. Please specify a feature extraction frontend."
+                "Currently, we don't support time-domain ASR. Please specify a feature extraction frontend!"
             # no amp operations for the frontend calculation to make sure the feature accuracy
             with autocast(False):
                 feat, feat_len = self.frontend(feat, feat_len)
@@ -125,35 +122,5 @@ class ASREncoder(Module):
         if feat.is_cuda:
             feat_mask = feat_mask.cuda(feat.device)
 
-        enc_results = self.encoder(feat, feat_mask)
-
-        # initialize the outputs
-        enc_outputs = dict(
-            enc_feat=enc_results['output'],
-            enc_feat_mask=enc_results['mask']
-        )
-        # if the build-in encoder has the attention results
-        if 'att' in enc_results.keys():
-            enc_outputs.update(
-                att=enc_results['att']
-            )
-        # if the build-in encoder has the hidden results
-        if 'hidden' in enc_results.keys():
-            enc_outputs.update(
-                hidden=enc_results['hidden']
-            )
-        return enc_outputs
-
-
-    def get_trainable_scalars(self) -> Dict or None:
-        trainable_scalars = dict()
-        # encoder-prenet layers
-        pre_scalars = self.prenet.get_trainable_scalars()
-        if pre_scalars is not None:
-            trainable_scalars.update(**pre_scalars)
-        # encoder layers
-        enc_scalars = self.encoder.get_trainable_scalars()
-        if enc_scalars is not None:
-            trainable_scalars.update(**enc_scalars)
-
-        return trainable_scalars
+        feat, feat_mask, attmat, hidden = self.encoder(feat, feat_mask)
+        return feat, feat_mask, attmat, hidden

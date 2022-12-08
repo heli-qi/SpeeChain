@@ -76,7 +76,6 @@ class TransformerDecoderLayer(Module):
         # initialize residual dropout layer
         self.dropout = nn.Dropout(res_dropout)
 
-
     def forward(self,
                 tgt: torch.Tensor,
                 src: torch.Tensor,
@@ -169,6 +168,9 @@ class TransformerDecoder(Module):
                 Usually, the default value of this argument is enough for the research.
             posenc_dropout: float
                 The dropout rate for the Dropout layer after adding the positional encoding to the input
+            emb_layernorm: bool
+                Controls whether the embedding vectors are normalized by LayerNorm before adding into the positional
+                encoding or not.
             emb_scale: bool
                 Controls whether the embedding vectors are scaled up by sqrt(d_model) before adding into the positional
                 encoding or not.
@@ -234,27 +236,25 @@ class TransformerDecoder(Module):
                                     res_dropout=res_dropout)
             for _ in range(num_layers)])
 
-
         # initialize layernorm layer if necessary
         if self.layernorm_first:
             self.layernorm = nn.LayerNorm(d_model, eps=1e-6)
 
-
-    def subsequent_mask(self, batch_size, maxlen: int) -> torch.Tensor:
+    @staticmethod
+    def subsequent_mask(batch_size, maxlen: int) -> torch.Tensor:
         """
         Mask out subsequent positions (to prevent attending to future positions)
         Transformer helper function.
 
         Args:
             batch_size:
-            size: int
+            maxlen: int
                 size of mask (2nd and 3rd dim)
 
         Returns:
 
         """
         return ~torch.triu(torch.ones(batch_size, maxlen, maxlen, dtype=torch.bool), diagonal=1)
-
 
     def forward(self,
                 tgt: torch.Tensor,
@@ -308,20 +308,4 @@ class TransformerDecoder(Module):
         if self.layernorm_first:
             tgt = self.layernorm(tgt)
 
-        return dict(
-            output=tgt,
-            att=dict(
-                self_att=self_attmat,
-                encdec_att=encdec_attmat
-            ),
-            hidden=hidden
-        )
-
-
-    def get_trainable_scalars(self):
-        if hasattr(self.posenc, 'posenc_scalar'):
-            return dict(
-                posenc_scalar=self.posenc.posenc_scalar.data
-            )
-        else:
-            return None
+        return tgt, self_attmat, encdec_attmat, hidden

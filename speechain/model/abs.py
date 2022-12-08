@@ -5,33 +5,38 @@
 """
 import argparse
 import os
-
 import torch
 import copy
 
-from typing import Dict
+from typing import Dict, List
 from abc import ABC, abstractmethod
 from collections import OrderedDict
 
-from speechain.utilbox.yaml_util import load_yaml
+from speechain.module.abs import Module
 from speechain.module.transformer.pos_enc import PositionalEncoding
 from speechain.module.prenet.spk_embed import SpeakerEmbedPrenet
+
+from speechain.utilbox.yaml_util import load_yaml
+from speechain.utilbox.md_util import get_list_strings
 
 
 class Model(torch.nn.Module, ABC):
     """
-    Model is the base class for all models in this toolkit. The main job of the model is processing the
-    input batch data, outputing the model prediction results, and evaluating the results by itself. Each model has several
-    built-in Module members that make up of the main body of the model. These modules will be initialized
-    automatically by the module_conf given in your configuration.
+    Model is the base class for all models in this toolkit. The main job of a model includes:
+        1. (optional) preprocess the input batch data to the trainable format
+        2. calculate the model prediction results by the Module members
+        3. evaluate the prediction results by the Criterion members
 
-    There are a built-in dictionary and a built-in list in this class: init_class_dict and default_init_modules.
-    init_class_dict contains all the available initialization method of this class while default_init_modules
-    includes the network layers that have their own initialization method.
+    Each model has several built-in Module members that make up the neural network structure of the model. These Module
+    members will be initialized by the `module_conf` given in your configuration.
+
+    There are a built-in dictionary named `init_class_dict` and a built-in list named `default_init_modules` in the
+    base class. init_class_dict` contains all the available initialization functions of the model parameters while
+    `default_init_modules` includes the network layers that have their own initialization functions.
 
     """
 
-    # available parameter initialization method
+    # available parameter initialization functions
     init_class_dict = dict(
         xavier=torch.nn.init.xavier_normal_,
         xavier_normal=torch.nn.init.xavier_normal_,
@@ -55,42 +60,83 @@ class Model(torch.nn.Module, ABC):
     ]
 
     def __init__(self,
-                 model_conf: Dict,
-                 module_conf: Dict,
                  args: argparse.Namespace,
                  device: torch.device,
+                 model_conf: Dict,
+                 module_conf: Dict,
                  criterion_conf: Dict = None):
         """
-        Initialization function of Model. The main body of the model is initialized by self.model_init() and
-        the criteria (loss functions and metrics) are initialized by self.criterion_init().
+        In this initialization function, there are two parts of initialization: model-specific customized initialization
+        and model-independent general initialization.
 
-        The codes of this function is fixed and can be done automatically with your given configuration, so we don't
-        recommend you to override this function. However, if these codes really cannot satisfy your,
-        we would appreciate it a lot if you could make an issue and let us know.
+        Model-specific customized initialization is done by two interface functions: module_init() and criterion_init().
+        module_init() initializes the neural network structure of the model while criterion_init() initializes the
+        criteria used to optimize (loss functions) and evaluate (validation metrics) the model.
+
+        After the customized initialization, there are 3 steps for general initialization:
+            1. Pretrained parameters will be loaded into your model if the key `pretrained_model` is given. Multiple
+            pretrained models can be specified and each of them can be loaded into different parts of your model. The
+            mismatch between the names of pretrained parameters and the parameters of your model is handled by the key
+            'mapping'. The value of the key `mapping` is a dictionary where each key-value item corresponds to a mapping
+            of parameter names. The key is the parameter name in the pretrained parameters while the value is the
+            parameter name of your model.
+
+            2. If `pretrained_model` is not given, the parameters of your model will be initialized by the function that
+            matches your input query 'init'. Please refer to the built-in dictionary `init_class_dict` for the available
+            initialization functions. If `init` is not given, the default initialization function
+            `torch.nn.init.xavier_normal_` will be used to initialize your model.
+
+            3. Finally, the specified parts of your model will be frozen if 'frozen_modules' is given. If there is only
+            one frozen module, you can directly give the string of its name to 'frozen_modules' like
+            'frozen_modules: {module_name}'; if there are multiple modules you want to freeze, you can give their names
+            in a list as
+            ```
+            frozen_modules:
+              - {module_name1}
+              - {module_name2}
+              - ...
+            ```
+            Moreover, the frozen granularity depends on your input `frozen_modules`.
+            For example,
+                1. If you give 'frozen_modules: encoder_prenet', all parameters of the prenet of your encoder will be
+                frozen
+                2. If you give 'frozen_modules: encoder_prenet.conv', only the convolution layers of the prenet of your
+                encoder will be frozen
+                3. If you give 'frozen_modules: encoder_prenet.conv.0', only the first convolution layer of the prenet
+                of your encoder will be frozen
+                4. If you give 'frozen_modules: encoder_prenet.conv.0.bias', only the bias vector of the first
+                convolution layer of the prenet of your encoder will be frozen
 
         Args:
-            model_conf: Dict
-                General configuration of the model
-            module_conf: Dict
-                Module configuration
-            criterion_conf: Dict
-                Criterion configuration
             args: argparse.Namespace
-
+                Experiment pipeline arguments received from the `Runner` object in `runner.py`.
             device: torch.device
+                The computational device used for model calculation in the current GPU process.
+            model_conf: Dict
+                The model configuration used for general model initialization.
+            module_conf: Dict
+                The module configuration used for network structure initialization.
+            criterion_conf: Dict
+                The criterion configuration used for criterion (loss functions and evaluation metrics) initialization.
         """
-        assert model_conf is not None, "model_conf cannot be None!"
-        assert module_conf is not None, "module_conf cannot be None!"
-
         super(Model, self).__init__()
 
-        # general arguments
+        # input argument checking
+        assert model_conf is not None, "model_conf cannot be None!"
+        assert module_conf is not None, "module_conf cannot be None!"
+        # criterion_conf is default to be an empty dictionary
+        criterion_conf = dict() if criterion_conf is None else criterion_conf
+        # customize_conf is default to be an empty dictionary
+        if 'customize_conf' not in model_conf.keys():
+            model_conf['customize_conf'] = dict()
+
+        # general argument registration
         self.non_blocking = args.non_blocking
         self.distributed = args.distributed
         self.device = device
 
-        # model snapshotting-related arguments
-        self.result_path = args.result_path
+        # snapshotting-related argument registration
+        self.result_path = args.train_result_path
         if "visual_infer_conf" in model_conf.keys():
             # configuration is given as a .yaml file
             if isinstance(model_conf["visual_infer_conf"], str):
@@ -103,58 +149,13 @@ class Model(torch.nn.Module, ABC):
         else:
             self.visual_infer_conf = dict()
 
-        # initialize the model
-        criterion_conf = dict() if criterion_conf is None else criterion_conf
-        self.model_init(model_conf=model_conf, criterion_conf=criterion_conf, module_conf=module_conf)
+        # --- 1. Model Construction --- #
+        self.module_init(**module_conf, **model_conf['customize_conf'])
+        self.criterion_init(**criterion_conf)
+        # initialize the bad case selection methods by the hook function
+        self.bad_cases_selection = self.bad_cases_selection_init_fn()
 
-
-    def model_init(self, model_conf: Dict, criterion_conf: Dict, module_conf: Dict):
-        """
-        The initialization function for the main body of the model. The initialization is done automatically by the
-        input module configuration.
-
-        The tag name of each module is used as the name of the corresponding built-in member. The value of the
-        sub-tag 'type' is used as the query to pick up the target Module class. Then, the values
-        of the sub-tag 'conf' will be fed into the chosen class to initialize the target module.
-
-        Pretrained parameters will be loaded into your model if given. multiple sources of pretrained parameters can
-        be given and each one can be loaded into specific parts of your model. The mismatch between the names of
-        pretrained parameters and the target parts of your model can be solved by the 'mapping' tag in each source of
-        pretrained parameters. The name of the pretrained parameters is the key while the name of the target part is
-        the value as: 'mapping: src_name: tgt_name ...'
-
-        If no pretrained parameter is given, the parameters of your model will be initialized by the method that
-        matches your input query 'init'. Then, the initialization method in self.init_class_dict will be selected if
-        its key fit your query. If no initialization query is given, torch.nn.init.xavier_normal_ will be used to
-        initialize your model.
-
-        Finally, the specific parts of your model will be frozen if 'frozen_modules' is given. If there is only one
-        frozen module, you can only give one string to 'frozen_modules' as 'frozen_modules: xxx'; if there are
-        multiple required modules, you need to give a list as
-        'frozen_modules:
-          - xxx
-          - xxx
-          ...'
-        Moreover, the frozen grain varies from entire module to specific layers according to your input. For example,
-        if you give 'frozen_modules: encoder_prenet', then all parameters of the encoder_prenet will be frozen; if you
-        give 'frozen_modules: encoder_prenet.conv', then only the convolution layers of the encoder_prenet will be frozen.
-        You can even freeze only the first convolution layer by giving 'frozen_modules: encoder_prenet.conv.0'.
-
-        Args:
-            model_conf: Dict
-                General configuration of the model. Used for parameter initialization and freezing.
-            module_conf: Dict
-                Module configuration.
-
-        """
-        # --- Model Construction --- #
-        self.bad_cases_selection = None
-        if 'customize_conf' not in model_conf.keys():
-            model_conf['customize_conf'] = dict()
-        self.model_construction(**module_conf, **criterion_conf, **model_conf['customize_conf'])
-
-
-        # --- Pretrained Model Loading --- #
+        # --- 2.1. Pretrained Model Loading --- #
         pretrained_model = model_conf['pretrained_model'] if 'pretrained_model' in model_conf.keys() else None
         if pretrained_model is not None:
             pretrained_model = pretrained_model if isinstance(pretrained_model, list) else [pretrained_model]
@@ -182,7 +183,7 @@ class Model(torch.nn.Module, ABC):
                                 _src_modules[name] = para
                     self.load_state_dict(_src_modules)
 
-        # --- Model Parameter Initialization --- #
+        # --- 2.2. Model Parameter Initialization --- #
         else:
             # the default initialization method is xavier (i.e. xavier_normal)
             init = model_conf["init"] if "init" in model_conf.keys() else 'xavier'
@@ -202,8 +203,7 @@ class Model(torch.nn.Module, ABC):
                 if isinstance(module, tuple(self.default_init_modules)):
                     module.reset_parameters()
 
-
-        # --- Model Parameter Freezing --- #
+        # --- 3. Model Parameter Freezing --- #
         frozen_modules = model_conf['frozen_modules'] if 'frozen_modules' in model_conf.keys() else None
         if frozen_modules is not None:
             frozen_modules = frozen_modules if isinstance(frozen_modules, list) else [frozen_modules]
@@ -219,28 +219,63 @@ class Model(torch.nn.Module, ABC):
                     raise RuntimeError(f"frozen_modules: Parameters of {name} are not found in the model!")
 
     @abstractmethod
-    def model_construction(self, **kwargs):
+    def module_init(self, **kwargs):
         """
+        The interface function that initializes the Module members of the model. These Module members make up the
+        neural network structure of the model. Some models have their customized part that also needs to be
+        initialization in this function, e.g. the tokenizer of ASR and TTS models.
+
+        Note: This interface function must be overridden for each Model subclass.
 
         Args:
             **kwargs:
+                The combination of the arguments in your given `module_conf` and `model_conf['customize_conf']`.
 
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def criterion_init(self, **criterion_conf):
+        """
+        The interface function that initializes the Criterion members of the model. These Criterion members can be
+        divided into two parts: the loss functions used for training and the evaluation metrics used for validation.
+
+        Args:
+            **criterion_conf:
+                The arguments in your given `criterion_conf`.
         Returns:
 
         """
         raise NotImplementedError
 
-
-    def batch_to_cuda(self, data: Dict or torch.Tensor):
+    @staticmethod
+    def bad_cases_selection_init_fn() -> List[List[str or int]] or None:
         """
-        The function that puts the processed batch data onto GPUs
+        This hook function returns the default bad case selection method of each Model object. This default value will
+        be referred by the _Runner_ to present the top-N bad cases.
+
+        The original hook implementation in the base Model class returns None which means no default value.
+
+        Returns: List[List[str or int]]
+            The returned default value should be a list of tri-list where each tri-list is in the form of
+            [`selection_metric`, `selection_mode`, `case_number`]. For example, ['wer', 'max', 50] means 50 testing
+            waveforms with the largest WER will be selected.
+
+        """
+        return None
+
+    def batch_to_cuda(self, data: Dict[str, torch.Tensor] or torch.Tensor) -> Dict[str, torch.Tensor] or torch.Tensor:
+        """
+        The recursive function that transfers the batch data to the specified device in the current process.
 
         Args:
             data: Dict or torch.Tensor
-                The input batch data. Each element is a Dict where each key-value pair represents an input.
+                The input batch data. It should be either a Tensor or a Dict of Tensors. For the Dict input, the
+                function itself will be called once by each Tensor element.
 
-        Returns:
-            A Dict that contains the GPU data.
+        Returns: Dict or torch.Tensor
+            If the input is a Dict, the returned output will also be a Dict of Tensors transferred to the target device;
+            If the input is a Tensor, the returned output will be its copy on the target device.
 
         """
         # if the data is in the form of Dict, recursively process each key-value pair
@@ -253,41 +288,52 @@ class Model(torch.nn.Module, ABC):
         else:
             return data
 
-
     def forward(self, batch_data: Dict, epoch: int = None, **kwargs):
         """
+        The general model forward function shared by all the _Model_ subclasses. This forward function has 3 steps:
+            1. preprocess and transfer the batch data to GPUs
+            2. obtain the model prediction results
+            3. calculate the loss function and evaluate the prediction results
+
+        For each step above, we provide interface functions for you to override and make your own implementation.
 
         Args:
             batch_data: Dict
-                The input batch data.
-            epoch: int
+                The input batch data received from the `train` or `valid` dataloader object in the experimental
+                pipeline.
+            epoch: int = None
+                The number of the current epoch. Used for real-time model visualization and model prediction.
+            **kwargs:
+                The additional arguments for real-time model visualization. If given, the code will go through the model
+                visualization branch.
 
         Returns:
-            The loss functions will be returned in the training phase.
-            The evaluation metrics will be returned in the validation phase.
+            In the training branch, the loss functions and evaluation metrics will be returned each of which is in the
+            form of a Dict.
+            In the validation branch, only the evaluation metrics will be returned.
+            In the visualization branch, the model snapshots on the given validation instance will be returned.
 
         """
-        # --- Batch Data Preparation --- #
+        # --- 1. Batch Data Preprocessing and GPU transferring --- #
+        # --- data preparation below is shared by all the three branches: training, validation, and visualization --- #
         # preprocess the batch data if needed
-        batch_data = self.batch_preprocess(batch_data)
+        batch_data = self.batch_preprocess_fn(batch_data)
 
         # put the batch data onto GPUs
         batch_data = self.batch_to_cuda(batch_data)
-        # --- data preparation above is shared by all the three branches: training, validation, and visualization --- #
 
-
-        # --- Model Visualization Branch --- #
+        # --- 2.1. Model Visualization Branch --- #
         # if there are additional arguments other than batch_data and epoch, the visualization branch is activated
         if len(kwargs) != 0:
             return self.visualize(epoch=epoch, **batch_data, **kwargs)
 
-
-        # --- Model Forward Calculation --- #
+        # --- 2.2. Model Forward Calculation --- #
+        # --- model forward is shared by both the training and validation branches --- #
         # Feed the input batch into the model and get the outputs, copy.deepcopy() here is for the data safety
-        model_outputs = self.model_forward(epoch=epoch, **copy.deepcopy(batch_data))
+        model_outputs = self.module_forward(epoch=epoch, **copy.deepcopy(batch_data))
 
-        # copy.deepcopy() cannot receive the non-leaf nodes in the computation graph (model_outputs).
-        # Since model_outputs cannot be detached from the graph (gradients necessary), copy.deepcopy() is not used below.
+        # copy.deepcopy() cannot receive the non-leaf nodes in the computation graph (model_outputs). Since
+        # model_outputs cannot be detached from the graph (gradients necessary), copy.deepcopy() is not used below.
         def combine_input_output(_batch_data: Dict, _model_outputs: Dict):
             combination, batch_keys = dict(), list(_batch_data.keys())
             # if the input batch data is in the form of Dict, it means there are multiple dataloaders
@@ -299,55 +345,75 @@ class Model(torch.nn.Module, ABC):
                 combination.update(_batch_data)
                 combination.update(_model_outputs)
             return combination
-        # --- model forward is shared by both the training and validation branches --- #
 
-
-        # --- Model Training Branch --- #
+        # --- 3.1. Model Training Branch --- #
         if self.training:
             # In the training stage, both the trainable losses and non-trainable metrics will be returned
-            losses, metrics = self.loss_calculation(**combine_input_output(batch_data, model_outputs))
+            losses, metrics = self.criterion_forward(**combine_input_output(batch_data, model_outputs))
+            metrics.update(self.get_recordable_para())
+
+            # post-checking for training losses, they must be trainable tensors
+            assert sum([isinstance(loss, torch.Tensor) and loss.requires_grad for loss in losses.values()]) \
+                   == len(losses), "Training losses must be trainable tensors!"
+            # post-checking for validation metrics, they must be either non-trainable tensors or other datatypes
+            assert sum([not isinstance(metric, torch.Tensor) or not metric.requires_grad
+                        for metric in metrics.values()]) == len(metrics), \
+                "Validation metrics must be either non-trainable tensors or other datatypes!"
+
             # the non-trainable metrics will be averaged across all the processes in the distributed mode
             if self.distributed:
                 metrics = self.aver_metrics_across_procs(metrics, batch_data)
             return losses, metrics
 
-        # --- Model Validation Branch --- #
+        # --- 3.2. Model Validation Branch --- #
         else:
             # In the validation stage, only the non-trainable metrics will be returned
-            metrics = self.metrics_calculation(**combine_input_output(batch_data, model_outputs))
+            metrics = self.criterion_forward(**combine_input_output(batch_data, model_outputs))
+            metrics.update(self.get_recordable_para())
+
+            # post-checking for validation metrics, they must be either non-trainable tensors or other datatypes
+            assert sum([not isinstance(metric, torch.Tensor) or not metric.requires_grad
+                        for metric in metrics.values()]) == len(metrics), \
+                "Validation metrics must be either non-trainable tensors or other datatypes!"
+
             # the non-trainable metrics will be averaged across all the processes in the distributed mode
             if self.distributed:
                 metrics = self.aver_metrics_across_procs(metrics, batch_data)
             return metrics
 
-
-    def batch_preprocess(self, batch_data: Dict):
+    def batch_preprocess_fn(self, batch_data: Dict) -> Dict:
         """
-        As for the returned Dict of this function, please note that the key names should match the ones you use in
-        self.model_forward().
+        This hook function does the preprocessing for the input batch data before using them in self.model_forward().
+        This function is not mandatory to be overridden and the original implementation in the base Model class does
+        nothing but return the input batch_data.
+
+        Note: the key names in the returned Dict should match the argument names in self.model_forward().
 
         Args:
-            batch_data:
+            batch_data: Dict
+                The raw data of the input batch to be preprocessed in this hook function.
 
-        Returns:
+        Returns: Dict
+            The processed data of the input batch that is ready to be used in `self.model_forward()`.
 
         """
         return batch_data
 
-
     def aver_metrics_across_procs(self, metrics: Dict[str, torch.Tensor], batch_data: Dict) -> Dict[str, torch.Tensor]:
         """
-        This function averages the input metrics across all processes in the multi-GPU distributed training setting.
-        This function doesn't need to be overridden if you are doing single-dataloader supervised training.
-        For multi-dataloader training & validation scheme, you need to override it to fit your model.
+        This function averages the evaluation metrics across all GPU processes in the DDP mode for model distribution.
 
         Args:
-            metrics:
-            batch_data:
+            metrics: Dict[str, torch.Tensor]
+                The evaluation metrics to be averaged across all GPU processes.
+            batch_data: Dict
+                The input batch data used to calculate the batch size for averaging evaluation metrics.
 
-        Returns:
+        Returns: Dict[str, torch.Tensor]
+            The evaluation metrics _Dict_ after averaging. The key names remain the same.
 
         """
+
         def get_batch_size(input_dict: Dict):
             _batch_size = None
             for value in input_dict.values():
@@ -373,7 +439,8 @@ class Model(torch.nn.Module, ABC):
             if metrics[key].dim() == 0:
                 metrics[key] = metrics[key][None]
             elif metrics[key].dim() != 1:
-                raise RuntimeError
+                raise RuntimeError(f"Each metric value must be one-dimensional scalar, "
+                                   f"but got metrics[{key}]={metrics[key]}!")
 
             # batch_size acts as the weight for each metric value in the current process
             metrics[key] *= batch_size.type(metrics[key].dtype)
@@ -389,144 +456,234 @@ class Model(torch.nn.Module, ABC):
 
         return metrics
 
-
     @abstractmethod
-    def model_forward(self, **batch_data):
+    def module_forward(self, **batch_data) -> Dict:
         """
-        As for the returned Dict of this function, please note that the key names should match the ones you use in
-        self.loss_calculation() and self.metrics_calculation()
+        This function forwards the input batch data by all _Module_ members.
+        Note:
+            1. This interface function must be overridden for each Model subclass.
+            2. The argument names should match the key names in the returned Dict of `self.batch_preprocess_fn()`.
+            3. The key names in the returned Dict should match the argument names of `self.loss_calculation()` and
+            `self.metrics_calculation()`.
 
         Args:
             **batch_data:
+                Processed data of the input batch received from `self.batch_preprocess_fn()`.
 
-        Returns:
+        Returns: Dict
+            Prediction results (logits) of the model on the input batch data.
+            Some intermediate results (e.g., attention matrices) can also be returned for later use.
 
         """
         raise NotImplementedError
 
-
     @abstractmethod
-    def loss_calculation(self, **batch_data) -> (Dict[str, torch.Tensor], Dict[str, torch.Tensor]):
+    def criterion_forward(self, **kwargs) -> \
+            (Dict[str, torch.Tensor], Dict[str, torch.Tensor]) or Dict[str, torch.Tensor]:
         """
-        As for the returned Dict of this function, please note that the key names should match the ones you use in
-        the argument 'optim_losses' of yout OptimScheduler.
+        This interface function is activated after `self.model_forward()`. It receives the model prediction results
+        from `self.model_forward()` and input batch data from `self.batch_preprocess_fn()`.
 
         Args:
-            **batch_data:
+            **kwargs:
+                The combination of the returned arguments from `self.batch_preprocess_fn()` and `self.model_forward()`.
 
-        Returns:
+        Returns: (Dict[str, torch.Tensor], Dict[str, torch.Tensor]) or Dict[str, torch.Tensor]
+            The returned values should be different for the training and validation branches.
+            1. For training, two Dict[str, torch.Tensor] should be returned where the first one contains all the
+            trainable training losses for optimization and the second one contains all the non-trainable evaluation
+            metrics used to record the training status.
+            2. For validation, only one Dict[str, torch.Tensor] should be returned which contains all the non-trainable
+            evaluation metrics used to record the validation status.
 
         """
         raise NotImplementedError
 
-
-    @abstractmethod
-    def metrics_calculation(self, **batch_data) -> Dict[str, torch.Tensor]:
+    def get_recordable_para(self) -> Dict[str, torch.Tensor]:
         """
-        As for the returned Dict of this function, please note that the key names should match the ones you use in
-        the argument 'best_model_metric' of the runner for training process monitoring.
-
-        Args:
-            **batch_data:
 
         Returns:
 
         """
-        raise NotImplementedError
+        def recur_get_module_recordable_para(curr_node, prefix_list: List[str] = None):
+            if prefix_list is None:
+                prefix_list = []
+            if isinstance(curr_node, Dict):
+                _output = dict()
+                for _key, _value in curr_node.items():
+                    _output.update(recur_get_module_recordable_para(_value, prefix_list + [_key]))
+                return _output
+            else:
+                if curr_node is None:
+                    return {}
+                elif isinstance(curr_node, torch.Tensor):
+                    return {'_'.join(prefix_list): curr_node.clone().detach()}
+                else:
+                    raise RuntimeError
 
+        output = dict()
+        for key, value in self._modules.items():
+            if isinstance(value, Module):
+                output.update(recur_get_module_recordable_para(value.get_recordable_para(), [key]))
+        return output
 
     @abstractmethod
     def visualize(self, epoch: int, sample_index: str, **valid_sample):
-        raise NotImplementedError
+        """
 
+        Args:
+            epoch:
+            sample_index:
+            **valid_sample:
+
+        Returns:
+
+        """
+        raise NotImplementedError
 
     def evaluate(self, test_batch: Dict, infer_conf: Dict):
         """
-        The function that is called in each testing step.
+        The shared evaluation function by all _Model_ subclasses. This evaluation function has 2 steps:
+            1. preprocess and transfer the batch data to GPUs
+            2. calculate the inference results
+
+        For each step above, we provide interface functions for you to override and make your own implementation.
 
         Args:
             test_batch: Dict
-                The input testing batch data
-            infer_conf:
+                The input batch data received from the `test` dataloader object in the experimental pipeline.
+            infer_conf: Dict
+                The configuration used for model inference.
 
         Returns:
-            A Dict of the evaluation results that you want to save to the disk.
+            A Dict of the inference results where each key-value item corresponds to one evaluation metric you want to
+            save to the disk.
 
         """
         # preprocess the batch data if needed
-        test_batch = self.batch_preprocess(test_batch)
+        test_batch = self.batch_preprocess_fn(test_batch)
 
         # put the batch data onto GPUs
         test_batch = self.batch_to_cuda(test_batch)
 
-        # return the inference results
-        return self.inference(infer_conf=infer_conf, **test_batch)
+        # get the inference results
+        evaluate_results = self.inference(infer_conf=infer_conf, **test_batch)
+        if hasattr(self, 'instance_report_cache') and self.instance_report_cache is not None:
+            evaluate_results['instance_reports.md'] = self.instance_report_cache
+            self.instance_report_cache = None
 
+        # post-check the format of evaluate_results
+        if isinstance(evaluate_results, Dict):
+            for key, value in evaluate_results.items():
+                if 'format' not in value.keys() or 'content' not in value.keys():
+                    raise RuntimeError("Each element of the returned value of self.inference() must contain the keys "
+                                       "named both 'format' and 'content'!")
+        else:
+            raise RuntimeError(f"The returned value of self.inference() must be a Dict, "
+                               f"but got {type(evaluate_results)}!")
+        return evaluate_results
 
     @abstractmethod
-    def inference(self, infer_conf, **kwargs) -> Dict[str, Dict]:
+    def inference(self, infer_conf: Dict, **kwargs) -> Dict[str, Dict[str, str or List]]:
         """
-        This function receives the test data and test configuration. After obtaining the inference results,
-        all the results will be packaged into a Dict[str, Dict] which is passed to TestMonitor.
+        This function receives the test data and test configuration. The inference results will be packaged into a
+        Dict[str, Dict] which is passed to TestMonitor for disk storage. The returned Dict should be in the form of
+        ```
+        dict(
+            {file_name}=dict(
+                format={file_format},
+                content={file_content}
+            )
+        )
+        ```
+        The first-level key is used to decide the name of the meta file as `idx2{file_name}`. Its value is also a Dict
+        and there must be two keys in this sub-Dict: 'format' and 'content'. The configuration of the sub-Dict is
+        different for different file formats:
 
-        Each key-value item in the returned Dict corresponds to a file on the disk. The file name is decided by the
-        key and the file content is decided by the value. Currently, three file types are supported in our toolkit:
-        1. .txt files (include .md files)
-        2. .wav files
-        3. .flac files
-        4. .npz files
-
-        The value of each item must also be a Dict and there must be two items in this sub-Dict: 'format' and 'content'.
-        'format' indicates the file type and 'content' is a List that contains the data to be saved to the file.
-
-        Each file type has a specific rule of key-value format:
-            1. For .txt files, the value of 'format' in the sub-Dict must be 'txt' and the value of 'content' must be
-            made up of fundamental data type (e.g. int, float, str, bool, ...).
-            And the file will be named by ('idx2' + first-level key) and each line of the file will be made up of
-            (a test sample index + a blank + an element in the 'content' List). For example,
-            >>> dict(cer=dict(format='txt', content=[0.1, 0.2, 0.3]))
-            will create a file named 'idx2cer' and the file content will be
-            >>> xxx-xxxx1 0.1
-            >>> xxx-xxxx2 0.2
-            >>> xxx-xxxx3 0.3
-            Note: if the first-level key ends with '.md', there will not be 'idx2' attached at the front.
-
-            2. For .wav and .flac files, the value of 'format' in the sub-Dict must be 'wav' or 'flac' and the value of
-            'content' must be made up of array-like data type (e.g. numpy.ndarry, torch.Tensor, ...). Moreover,
-            there must be a new key-value item named 'sample_rate' that indicates the sampling rate of the waveform to
-            be saved.
-            There will be a folder named by the first-level key that contains all the waveform files and a .txt file
-            named by ('idx2' + first-level key) that contains the absolute paths of the saved waveform files.
+            1. For pure text metadata files, the value of 'format' must be 'txt' and the value of 'content' must be a
+            list of Python built-in data type (i.e.,. int, float, str, bool, ...).
+            Each line of the file `idx2{file_name}` will be made up of the index of a test data instance and its
+            metadata value in the `content` List which are separated by a blank.
             For example,
-            >>> dict(wav=dict(format='flac', content=[np_arr1, np_arr2, np_arr3]))
-            will create a folder named 'wav' and a .txt file named 'idx2wav'.
-            The folder 'wav' is like:
-            >>> xxx-xxxx1.flac
-            >>> xxx-xxxx2.flac
-            >>> xxx-xxxx3.flac
-            And 'idx2wav' is like:
-            >>> xxx-xxxx1 /x/xx/xxx/xxx-xxxx1.flac
-            >>> xxx-xxxx2 /x/xx/xxx/xxx-xxxx2.flac
-            >>> xxx-xxxx3 /x/xx/xxx/xxx-xxxx3.flac
+            `dict(cer=dict(format='txt', content=[0.1, 0.2, 0.3]))` will create a pure text file named 'idx2cer' which
+            looks like
+            ```
+            {test_index1} 0.1
+            {test_index2} 0.2
+            {test_index3} 0.3
+            ```
+            Note: if the first-level key ends with '.md', there will not be 'idx2' attached at the beginning of the
+            file name.
 
-            3. For .npz files, the value of 'format' in the sub-Dict must be 'npz' and the value of
-            'content' must be made up of numpy.ndarry (torch.Tensor is not supported).
-            In each .npz file, there will be two key-value items: 'feat' and 'index'. 'feat' contains your given
-            numpy.ndarry and 'index' contains the sample index of the array (Currently, only 'feat' is useful while
-            'index' is only for reference).
-            There will be a folder named by the first-level key that contains all the .npz files and a .txt file
-            named by ('idx2' + first-level key) that contains the absolute paths of the saved feature files.
+            2. For audio files, the value of 'format' must be either 'wav' or 'flac' and the value of 'content' must be
+            a list of array-like data type (e.g. numpy.ndarry, torch.Tensor, ...).
+            Moreover, there must be an additional key named 'sample_rate' to indicate the sampling rate of the waveforms
+            to be saved in audio files.
+            There will be a folder named `{file_name}` that contains all the audio files and a pure text file named
+            `idx2{file_name}` that contains the absolute paths of all the saved audio files.
             For example,
-            >>> dict(feat=dict(format='npz', content=[np_arr1, np_arr2, np_arr3]))
-            will create a folder named 'feat' and a .txt file named 'idx2feat'.
-            The folder 'feat' is like:
-            >>> xxx-xxxx1.npz
-            >>> xxx-xxxx2.npz
-            >>> xxx-xxxx3.npz
-            And 'idx2feat' is like:
-            >>> xxx-xxxx1 /x/xx/xxx/xxx-xxxx1.npz
-            >>> xxx-xxxx2 /x/xx/xxx/xxx-xxxx2.npz
-            >>> xxx-xxxx3 /x/xx/xxx/xxx-xxxx3.npz
+            `dict(wav=dict(format='flac', content=[np_arr1, np_arr2, np_arr3]))` will create a folder named 'wav' and
+            a pure text file named 'idx2wav' in the same directory. The file 'idx2wav' looks like:
+            ```
+            {test_index1} /x/xx/wav/{test_index1}.flac
+            {test_index2} /x/xx/wav/{test_index2}.flac
+            {test_index3} /x/xx/wav/{test_index3}.flac
+            ```
+            where `/x/xx/` is your result path given in your `exp_cfg`.
+
+            3. For binary files, the value of 'format' in the sub-Dict must be 'npy' and the value of 'content' must be
+            a list of numpy.ndarry (torch.Tensor is not supported).
+            There will be a folder named `{file_name}` that contains all the .npy files and a pure text file
+            named `idx2{file_name}` that contains the absolute paths of all the saved binary files.
+            For example,
+            `dict(feat=dict(format='npy', content=[np_arr1, np_arr2, np_arr3]))`
+            will create a folder named 'feat' and a pure text file named 'idx2feat'. The 'idx2feat' file is like:
+            ```
+            {test_index1} /x/xx/feat/{test_index1}.npy
+            {test_index2} /x/xx/feat/{test_index2}.npy
+            {test_index3} /x/xx/feat/{test_index3}.npy
+            ```
+            where `/x/xx/` is your result path given in your `exp_cfg`.
 
         """
         raise NotImplementedError
+
+    def register_instance_reports(self, md_list_dict: Dict[str, List], extra_string_list: List[str] = None):
+        """
+
+        Args:
+            md_list_dict:
+            extra_string_list:
+
+        Returns:
+
+        """
+        # --- 1. Arguments Checking --- #
+        if extra_string_list is not None:
+            assert isinstance(extra_string_list, List)
+
+        ele_len = []
+        for value in md_list_dict.values():
+            assert isinstance(value, List)
+            if extra_string_list is not None:
+                assert len(value) == len(extra_string_list)
+            ele_len.append(len(value))
+
+        if len(set(ele_len)) == 1:
+            ele_len = ele_len[0]
+        else:
+            raise RuntimeError
+
+        # --- 2. Generate .md Instance Report for the current step --- #
+        instance_reports = []
+        for i in range(ele_len):
+            ele_dict = {key: value[i] if isinstance(value[i], str) else str(value[i])
+                        for key, value in md_list_dict.items()}
+            _curr_report = '\n\n' + get_list_strings(ele_dict) + '\n'
+
+            if extra_string_list is not None:
+                _curr_report += extra_string_list[i] + '\n'
+
+            instance_reports.append(_curr_report)
+
+        self.instance_report_cache = dict(format='txt', content=instance_reports)

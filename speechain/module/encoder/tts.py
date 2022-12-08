@@ -16,8 +16,11 @@ from speechain.module.prenet.embed import EmbedPrenet
 from speechain.module.prenet.conv1d import Conv1dPrenet
 from speechain.module.transformer.encoder import TransformerEncoder
 
-class TTSEncoder(Module):
 
+class TTSEncoder(Module):
+    """
+
+    """
     embedding_class_dict = dict(
         emb=EmbedPrenet
     )
@@ -65,7 +68,6 @@ class TTSEncoder(Module):
         encoder['conf'] = dict() if 'conf' not in encoder.keys() else encoder['conf']
         self.encoder = encoder_class(input_size=_prev_output_size, **encoder['conf'])
 
-
     def forward(self, text: torch.Tensor, text_len: torch.Tensor):
         """
 
@@ -89,39 +91,5 @@ class TTSEncoder(Module):
             text_mask = text_mask.cuda(text.device)
 
         # TTS Encoding
-        enc_results = self.encoder(text, text_mask)
-
-        # initialize the outputs
-        enc_outputs = dict(
-            enc_feat=enc_results['output'],
-            enc_feat_mask=enc_results['mask']
-        )
-        # if the build-in encoder has the attention results
-        if 'att' in enc_results.keys():
-            enc_outputs.update(
-                att=enc_results['att']
-            )
-        # if the build-in encoder has the hidden results
-        if 'hidden' in enc_results.keys():
-            enc_outputs.update(
-                hidden=enc_results['hidden']
-            )
-        return enc_outputs
-
-
-    def get_trainable_scalars(self) -> Dict or None:
-        trainable_scalars = dict()
-        # embedding layer
-        emb_scalars = self.embedding.get_trainable_scalars()
-        if emb_scalars is not None:
-            trainable_scalars.update(**emb_scalars)
-        # encoder-prenet layers
-        pre_scalars = self.prenet.get_trainable_scalars()
-        if pre_scalars is not None:
-            trainable_scalars.update(**pre_scalars)
-        # encoder layers
-        enc_scalars = self.encoder.get_trainable_scalars()
-        if enc_scalars is not None:
-            trainable_scalars.update(**enc_scalars)
-
-        return trainable_scalars
+        text, text_mask, attmat, hidden = self.encoder(text, text_mask)
+        return text, text_mask, attmat, hidden

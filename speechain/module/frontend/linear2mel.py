@@ -15,6 +15,7 @@ class LinearSpec2MelSpec(Module):
     The mel-fbank is implemented by a linear layer without the bias vector.
 
     """
+
     def module_init(self,
                     n_fft: int,
                     n_mels: int,
@@ -26,28 +27,16 @@ class LinearSpec2MelSpec(Module):
                     log_base: float = 10.0,
                     mel_scale: str = 'slaney',
                     mel_norm: bool = True,
-                    mag_spec: bool = False,
-                    db_ref: float = 1.0,
-                    db_range: float = 80.0):
+                    mag_spec: bool = False):
         """
-        The mel-scale of the mel-fbank is different in two popular speech processing toolkits (ESPNET & SpeechBrain).
-            1. For ESPNET, the mel-scale is set to 'slaney' and the filters will be normalized by the filter width
-            (area normalization).
-            Reference: https://github.com/espnet/espnet/blob/80e042099655822d6543c256910ae655a1a056fd/espnet2/layers/log_mel.py#L9
-            2. For SpeechBrain, the mel-scale is set to 'htk' and the filters are not normalized by the filter width.
-            Reference: https://github.com/speechbrain/speechbrain/blob/f68b259c2974ce2a7df8b28c61c0d442faad4e0c/speechbrain/processing/features.py#L359
 
-        Here we implement both styles of mel-fbank and users could select each of them by two arguments: mel_scale
-        and mel_norm. mel_scale='slaney' & mel_norm=True represents the ESPNET style while mel_scale='htk' &
-        mel_norm=False represents the SpeechBrain style.
-
-        The difference between 'htk' and 'slaney' scale is the relationship between linear frequency (Hz) and mel frequency.
+        The difference between two different options of mel_scale, i.e., 'htk' and 'slaney', is the relationship between
+        the linear frequency (Hz) and mel frequency.
             1. For 'htk', the mel frequency is always logarithmic to the linear frequency by the following formula:
                 mel = 2595.0 * np.log10(1.0 + hz / 700.0)
-            2. For 'slaney', the mel frequency is linear to the linear frequency below 1K Hz and logarithmic above 1K Hz.
-
-        Another difference between ESPNET and SpeechBrain styles is the logarithm operation. ESPNET style directly
-        takes the logarithm of the mel-spectrograms while SpeechBrain style takes the decibel of the mel-spectrograms.
+            2. For 'slaney', the mel frequency is linear to the linear frequency below 1K Hz and logarithmic above 1K Hz
+        In the initalization function, the default configuration is mel_scale = 'slaney' and mel_norm=True (the filters
+        will be normalized by the filter width).
 
         A simple calculation procedure of 'htk'-scaled mel-fbank is shown below. For details about mel-scales, please
         refer to http://librosa.org/doc/latest/generated/librosa.mel_frequencies.html?highlight=mel_frequencies#librosa.mel_frequencies
@@ -120,12 +109,6 @@ class LinearSpec2MelSpec(Module):
             mag_spec: bool
                 Whether the input linear spectrogram is the magnitude. Used for decibel calculation.
                 This argument is effective when mel_norm=False (SpeechBrain style)
-            db_ref: float
-                The reference signal intensity used for decibel calculation.
-                This argument is effective when mel_norm=False (SpeechBrain style)
-            db_range: float
-                The range of the decibel values.
-                This argument is effective when mel_norm=False (SpeechBrain style)
 
         """
         # fundamental arguments
@@ -165,9 +148,6 @@ class LinearSpec2MelSpec(Module):
         self.logging = logging
         self.log_base = log_base
         self.mag_spec = mag_spec
-        self.db_ref = db_ref
-        self.db_range = db_range
-
 
     def forward(self, feat: torch.Tensor, feat_len: torch.Tensor):
         """
@@ -190,31 +170,19 @@ class LinearSpec2MelSpec(Module):
             # pre-log clamping for numerical stability
             feat = torch.clamp(input=feat, min=self.clamp)
 
-            # go through the normal logarithm operation for the normalized mel-fbanks (ESPNET style)
-            if self.mel_norm:
-                feat = feat.log()
-                if self.log_base is not None:
-                    feat /= math.log(self.log_base)
-
-            # calculate the dB of the mel-spectrograms for the non-normalized mel-fbanks (SpeechBrain style)
-            else:
-                # dB is calculated for the energy spectrogram (mag_spec requires 2 * 10 to recover the energy)
-                coeff = 20 if self.mag_spec else 10
-                # get the decibels of mel-spectrogram over the reference signal intensity
-                feat = coeff * (feat / self.db_ref).log10()
-
-                # clamping the dB values by the given dB range
-                db_lower_bound = feat.amax(dim=(-2, -1)) - self.db_range
-                feat = torch.max(feat, db_lower_bound.view(-1, 1, 1))
+            # go through the logarithm operation for the mel-fbanks
+            feat = feat.log()
+            if self.log_base is not None:
+                feat /= math.log(self.log_base)
 
         return feat, feat_len
-
 
     def recover(self, feat: torch.Tensor, feat_len: torch.Tensor):
         """
 
         Args:
             feat: (batch_size, feat_maxlen, mel_dim)
+            feat_len: (batch_size,)
 
         Returns:
 
@@ -237,7 +205,6 @@ class LinearSpec2MelSpec(Module):
 
         # clamp the spectrogram for numerical stability
         return torch.clamp(feat, min=1e-10)
-
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(\n" \

@@ -7,11 +7,12 @@ import torch
 import warnings
 from speechain.module.abs import Module
 
+
 class FeatureNormalization(Module):
     """
     The feature normalization frontend that makes every feature dimension the distribution with 0 mean and 1 variance.
 
-    As SpeechBrain, we also provide four kinds of feature normalization and their levels increase from local to global.
+    As SpeechBrain, we also provide four kinds of feature normalization with different granularities.
         1. utterance-level normalization: the mean and std are calculated on each individual utterance.
         2. batch-level normalization: the mean and std are calculated on all the utterances in a training batch.
         3. group-level normalization: the mean and std are calculated on all the utterances in a group.
@@ -21,7 +22,7 @@ class FeatureNormalization(Module):
 
     We approximate group-level and global-level mean & std by taking their moving average during training.
     Different from SpeechBrain, we initialize all the mean & std variables lazily in the forward() function.
-    Another difference is that our moving average is calculated on each batch as BatchNorm does.
+    Another difference is that our moving average is calculated by each batch as BatchNorm does.
 
     In the DDP mode, the mean & std will be synchronized across all the processes before being used to normalize the
     input utterances. The synchronization method is different in different scenarios.
@@ -33,12 +34,13 @@ class FeatureNormalization(Module):
         specific group will be calculated.
 
     2. global-level normalization or group-level normalization where all the input utterances have the same group id
-        (group_ids = str or int, e.g. all the utterances in the batch come from either the source domain or the target domain).
-        In this scenario, the summation of mean & std vectors will be gathered instead of all of them to reduce the data
-        communication volume across all the processes. The real mean & std vectors will be recovered by the batch size
-        of each process.
+        (group_ids = str or int, e.g. all the utterances in the batch come from either the source domain or the target
+        domain). In this scenario, the summation of mean & std vectors will be gathered instead of all of them to reduce
+        the data communication volume across all the processes. The real mean & std vectors will be recovered by the
+        batch size of each process.
 
     """
+
     def module_init(self,
                     norm_type: str = 'global',
                     mean_norm: bool = True,
@@ -59,7 +61,7 @@ class FeatureNormalization(Module):
                 Clamping threshold for the standard variance before division.
             max_epoch_num: int
                 The maximum number of epochs used to calculate the moving average.
-                The value of this variable is usually equal to the number of warmup epochs.
+                Usually, the value of this argument is lower than a half of the number of warmup epochs.
 
         """
         self.norm_type = norm_type
@@ -70,7 +72,6 @@ class FeatureNormalization(Module):
 
         if self.input_size is not None:
             self.output_size = self.input_size
-
 
     def forward(self, feat: torch.Tensor, feat_len: torch.Tensor,
                 group_ids: torch.Tensor or str or int = None, epoch: int = None):
@@ -97,7 +98,6 @@ class FeatureNormalization(Module):
             torch.clamp(
                 input=torch.stack([feat[i][:feat_len[i]].std(dim=0) for i in range(batch_size)]), min=self.clamp
             )
-
 
         # --- Perform Normalization based on Different branches --- #
         # utterance-level normalization or group-level normalization without group_ids
@@ -151,7 +151,8 @@ class FeatureNormalization(Module):
                         else list(group_std_dict.keys())
                     for group_id in group_keys:
                         self.register_mean_std_batch(
-                            curr_aver_mean=group_mean_dict[group_id].mean(dim=0) if group_mean_dict is not None else None,
+                            curr_aver_mean=group_mean_dict[group_id].mean(
+                                dim=0) if group_mean_dict is not None else None,
                             curr_aver_std=group_std_dict[group_id].mean(dim=0) if group_std_dict is not None else None,
                             prefix=group_id, epoch=epoch
                         )
@@ -179,7 +180,8 @@ class FeatureNormalization(Module):
                     if self.distributed:
                         # gather the sums of batch means from all the processes
                         batch_mean_sum = curr_means.sum(dim=0) if curr_means is not None else None
-                        all_batch_mean_sums = self.gather_vectors(batch_mean_sum) if batch_mean_sum is not None else None
+                        all_batch_mean_sums = self.gather_vectors(
+                            batch_mean_sum) if batch_mean_sum is not None else None
                         batch_mean = None if all_batch_mean_sums is None else \
                             all_batch_mean_sums.sum(dim=0) / all_batch_size.sum()
 
@@ -235,14 +237,12 @@ class FeatureNormalization(Module):
 
         return feat, feat_len
 
-
     @staticmethod
     def gather_scalars(scalar: int, device: torch.device) -> torch.LongTensor:
         # gather the input scalars
         all_scalars = [torch.LongTensor([0]).cuda(device) for _ in range(torch.distributed.get_world_size())]
         torch.distributed.all_gather(all_scalars, torch.LongTensor([scalar]).cuda(device))
         return torch.LongTensor(all_scalars)
-
 
     @staticmethod
     def gather_vectors(vector: torch.Tensor, all_batch_size: torch.Tensor = None) -> torch.Tensor:
@@ -267,7 +267,6 @@ class FeatureNormalization(Module):
         return torch.stack(all_vectors) if all_batch_size is None else \
             torch.cat([all_vectors[i][:all_batch_size[i]] for i in range(len(all_vectors))])
 
-
     @staticmethod
     def gather_matrices(matrix: torch.Tensor, all_batch_size: torch.Tensor) -> torch.Tensor:
         curr_batch_size = all_batch_size[torch.distributed.get_rank()].item()
@@ -284,7 +283,6 @@ class FeatureNormalization(Module):
 
         # remove the padding
         return torch.cat([all_matrices[i][:all_batch_size[i]] for i in range(len(all_matrices))])
-
 
     @staticmethod
     def sort_data_by_group(raw_data: torch.Tensor, group_ids: torch.Tensor):
@@ -310,7 +308,6 @@ class FeatureNormalization(Module):
                 group_dict[curr_group].append(raw_data[i])
             # turn each group list into a 2d tensor
             return {group_id: torch.stack(group_list) for group_id, group_list in group_dict.items()}
-
 
     def register_mean_std_batch(self,
                                 curr_aver_mean: torch.Tensor,
@@ -354,7 +351,6 @@ class FeatureNormalization(Module):
                     self.register_buffer(f"{prefix}_std",
                                          curr_weight * curr_aver_std + (1 - curr_weight) * prev_aver_std)
 
-
     def update_aver_mean_std(self, epoch: int):
         """
 
@@ -375,7 +371,6 @@ class FeatureNormalization(Module):
 
             self.register_buffer('aver_mean', _aver_mean / _group_mean_num)
             self.register_buffer('aver_std', _aver_std / _group_std_num)
-
 
     def recover(self, feat: torch.Tensor, group_ids: torch.Tensor or str or int = None):
         """
@@ -417,7 +412,6 @@ class FeatureNormalization(Module):
 
         return feat
 
-
     def _load_from_state_dict(self, state_dict, prefix, local_metadata, strict,
                               missing_keys, unexpected_keys, error_msgs):
         """
@@ -432,7 +426,6 @@ class FeatureNormalization(Module):
                     self.register_buffer(input_name, state_dict[key])
                 else:
                     unexpected_keys.append(key)
-
 
     def extra_repr(self) -> str:
         return f"norm_type={self.norm_type}, mean_norm={self.mean_norm}, std_norm={self.std_norm}"

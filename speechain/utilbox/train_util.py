@@ -3,7 +3,11 @@
     Affiliation: NAIST
     Date: 2022.07
 """
+from typing import Dict, List
+
 import torch
+from speechain.criterion.abs import Criterion
+
 
 # dummy activation #
 class Identity(torch.nn.Module):
@@ -16,14 +20,6 @@ class Identity(torch.nn.Module):
 
     def __repr__(self):
         return self.__class__.__name__ + '()'
-
-def generator_act_module(name):
-    if not isinstance(name, str) :
-        return name
-    if name is None or name.lower() in ['none', 'null'] :
-        return Identity()
-    else :
-        return getattr(torch.nn, name)()
 
 
 def make_mask_from_len(data_len: torch.Tensor, max_len: int = None, mask_type: torch.dtype = torch.bool):
@@ -51,3 +47,65 @@ def make_mask_from_len(data_len: torch.Tensor, max_len: int = None, mask_type: t
         mask[i, :, :data_len[i]] = 1.0
 
     return mask
+
+
+def recur_criterion_init(input_conf: Dict, criterion_class: Criterion):
+    """
+
+    Args:
+        input_conf:
+        criterion_class:
+
+    Returns:
+
+    """
+    #
+    leaf_flags = [not isinstance(value, Dict) for value in input_conf.values()]
+
+    #
+    if sum(leaf_flags) == len(input_conf):
+        return {key: recur_criterion_init(value, criterion_class) for key, value in input_conf.items()}
+    #
+    elif sum(leaf_flags) == 0:
+        return criterion_class(**input_conf)
+    else:
+        raise RuntimeError
+
+
+def text2tensor_and_len(text_list: List[str], text2tensor_func, ignore_idx: int) \
+        -> (torch.LongTensor, torch.LongTensor):
+    """
+
+    Args:
+        text_list:
+        text2tensor_func:
+        ignore_idx:
+
+    Returns:
+
+    """
+    #
+    for i in range(len(text_list)):
+        text_list[i] = text2tensor_func(text_list[i])
+    text_len = torch.LongTensor([len(t) for t in text_list])
+
+    #
+    text = torch.full((text_len.size(0), text_len.max().item()), ignore_idx, dtype=text_len.dtype)
+    for i in range(text_len.size(0)):
+        text[i][:text_len[i]] = text_list[i]
+
+    return text, text_len
+
+
+def spk2tensor(spk_list: List[str], spk2idx_dict: Dict) -> torch.LongTensor:
+    """
+
+    Args:
+        spk_list:
+        spk2idx_dict:
+
+    Returns:
+
+    """
+    # turn the speaker id strings into the tensors
+    return torch.LongTensor([spk2idx_dict[spk] if spk in spk2idx_dict.keys() else 0 for spk in spk_list])

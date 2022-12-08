@@ -5,10 +5,12 @@ import torch
 from speechain.module.abs import Module
 from speechain.module.prenet.embed import EmbedPrenet
 
+
 class SpeakerEmbedPrenet(Module):
     """
 
     """
+
     def module_init(self,
                     spk_emb_dim: int,
                     d_model: int,
@@ -50,14 +52,12 @@ class SpeakerEmbedPrenet(Module):
         if spk_emb_scale:
             self.spk_emb_scalar = torch.nn.Parameter(torch.tensor(1.0))
 
-
     def reset_parameters(self):
         """
         Make sure that the scalar value is not influenced by different model initialization methods.
         """
         if hasattr(self, 'spk_emb_scalar'):
             self.spk_emb_scalar.data = torch.tensor(1.0)
-
 
     def forward(self, spk_ids: torch.Tensor = None, spk_feat: torch.Tensor = None):
         """
@@ -89,7 +89,6 @@ class SpeakerEmbedPrenet(Module):
 
         return spk_feat
 
-
     def combine_spk_emb(self, spk_feat: torch.Tensor, tgt: torch.Tensor):
         """
 
@@ -115,7 +114,6 @@ class SpeakerEmbedPrenet(Module):
         # project the concatenated vectors to the same dimension as the model input
         return self.lnr_proj(tgt_feat)
 
-
     def get_trainable_scalars(self) -> Dict or None:
         if hasattr(self, 'spk_emb_scalar'):
             return dict(
@@ -123,7 +121,6 @@ class SpeakerEmbedPrenet(Module):
             )
         else:
             return None
-
 
     def extra_repr(self) -> str:
         output = f"spk_emb_scale={hasattr(self, 'spk_emb_scalar')}"

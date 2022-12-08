@@ -13,6 +13,7 @@ from contextlib import contextmanager
 
 import torch
 import numpy as np
+
 try:
     import soundfile as sf
 except OSError as e:
@@ -27,6 +28,7 @@ from speechain.snapshooter import snapshot_logs
 from speechain.utilbox.md_util import get_table_strings, get_list_strings
 
 from speechain.utilbox.tensor_util import to_cpu
+from speechain.utilbox.import_util import parse_path_args
 
 
 class Monitor(ABC):
@@ -34,6 +36,7 @@ class Monitor(ABC):
     The base class for all the monitors in this toolkit.
 
     """
+
     def __init__(self, logger, args: argparse.Namespace, result_path: str = None, **kwargs):
         """
 
@@ -44,7 +47,7 @@ class Monitor(ABC):
         """
         # shared members of all the monitors
         self.logger = logger
-        self.result_path = os.path.abspath(args.result_path) if result_path is None else os.path.abspath(result_path)
+        self.result_path = args.train_result_path if result_path is None else parse_path_args(result_path)
         self.gpus = args.gpus if isinstance(args.gpus, List) else [args.gpus]
 
         # shared record information for all monitors
@@ -81,7 +84,6 @@ class Monitor(ABC):
         self.event.clear()
         Process(target=snapshot_logs, args=(self.logs_queue, self.event, snapshot_conf), daemon=True).start()
 
-
     def enqueue(self, logs: Dict or List[Dict]):
         """
 
@@ -99,10 +101,8 @@ class Monitor(ABC):
         else:
             raise RuntimeError
 
-
     def empty_queue(self):
         return self.logs_queue.empty()
-
 
     @contextmanager
     def measure_time(self, names: str or List[str]):
@@ -126,7 +126,6 @@ class Monitor(ABC):
             dict_pointer = dict_pointer[name]
         dict_pointer.append(t)
 
-
     def refresh_step_records(self, records: Dict = None):
         """
 
@@ -148,7 +147,6 @@ class Monitor(ABC):
                     raise RuntimeError
         else:
             raise RuntimeError
-
 
     def record_step_info(self, key: str, step_info: Dict):
         """
@@ -172,7 +170,6 @@ class Monitor(ABC):
                 info = info[0]
             self.step_records[key][name].append(info)
 
-
     def record_consumed_time(self, epoch_message: str):
         """
 
@@ -195,7 +192,6 @@ class Monitor(ABC):
         epoch_message += "\n"
 
         return epoch_message
-
 
     def record_consumed_memory(self, epoch_message: str):
         """
@@ -244,7 +240,6 @@ class Monitor(ABC):
 
         return epoch_message
 
-
     def record_criteria(self, epoch_message: str):
         """
 
@@ -269,7 +264,6 @@ class Monitor(ABC):
         epoch_message += "\n"
 
         return epoch_message
-
 
     @abstractmethod
     def monitor_init(self, args: argparse.Namespace, **kwargs):
@@ -301,6 +295,7 @@ class TrainMonitor(Monitor):
     The object used to monitor the training process and give the real-time logging information.
 
     """
+
     def monitor_init(self, args: argparse.Namespace):
         # general members
         self.report_per_steps = args.report_per_steps
@@ -326,7 +321,6 @@ class TrainMonitor(Monitor):
             optim_lr=dict()
         )
 
-
     def start_epoch(self, epoch: int):
         """
         Initialize the monitor information.
@@ -348,7 +342,6 @@ class TrainMonitor(Monitor):
 
         # logging the beginning information
         self.logger.info(f"The training part of epoch no.{epoch} starts.")
-
 
     def step(self, step_num: int, optim_lr: Dict[str, float], train_metrics: Dict[str, torch.Tensor]):
         """
@@ -397,11 +390,13 @@ class TrainMonitor(Monitor):
                     for optim_name in self.step_records['optim_lr'].keys():
                         # accumulate the backward and optimization times
                         _loss_backward_time = sum(
-                            self.step_records['consumed_time']['loss_backward_time'][optim_name][-self.report_per_steps:])
+                            self.step_records['consumed_time']['loss_backward_time'][optim_name][
+                            -self.report_per_steps:])
                         _optim_time = sum(
                             self.step_records['consumed_time']['optim_time'][optim_name][-self.report_per_steps:])
                         # average the learning rate
-                        _lr = sum(self.step_records['optim_lr'][optim_name][-self.report_per_steps:]) / self.report_per_steps
+                        _lr = sum(
+                            self.step_records['optim_lr'][optim_name][-self.report_per_steps:]) / self.report_per_steps
 
                         # accumulated optimization time and averaged learning_rates are reported
                         step_message += f"{optim_name}: " \
@@ -411,7 +406,6 @@ class TrainMonitor(Monitor):
 
             # logging the information of the current step
             self.logger.info(step_message)
-
 
     def finish_epoch(self):
         """
@@ -467,7 +461,6 @@ class TrainMonitor(Monitor):
         # logging the information for the current epoch
         self.logger.info(epoch_message)
 
-
         # ---- The SnapShotting Part ---- #
         for key in self.epoch_records.keys():
             # only snapshot the time records in the dry running mode
@@ -487,7 +480,6 @@ class TrainMonitor(Monitor):
         # notify the snapshooter process of the new queue elements
         self.event.set()
 
-
     def state_dict(self):
         """
         Save the information of all the recorded epochs
@@ -503,6 +495,7 @@ class ValidMonitor(Monitor):
     The object used to monitor the validation process and give the real-time logging information.
 
     """
+
     def monitor_init(self, args: argparse.Namespace, model: Model):
         # register a pointer of the model
         self.model = model
@@ -516,7 +509,7 @@ class ValidMonitor(Monitor):
         self.best_model_selection = args.best_model_selection
         # receive a single metric as a standalone list or tuple
         if isinstance(self.best_model_selection, (List, tuple)) and \
-            isinstance(self.best_model_selection[0], str):
+                isinstance(self.best_model_selection[0], str):
             self.best_model_selection = [self.best_model_selection]
         else:
             assert isinstance(self.best_model_selection, List), \
@@ -560,7 +553,6 @@ class ValidMonitor(Monitor):
         # initialize the snapshooter of this validation monitor
         self.model_snapshot_interval = args.model_snapshot_interval
 
-
     def start_epoch(self, epoch: int):
         """
         Initialize the monitor information.
@@ -583,7 +575,6 @@ class ValidMonitor(Monitor):
         # logging the beginning information
         self.logger.info(f"The validation part of epoch no.{epoch} starts.")
 
-
     def step(self, valid_metrics: Dict[str, torch.Tensor]):
         """
         Record and report the information in each validation step.
@@ -596,7 +587,6 @@ class ValidMonitor(Monitor):
         # accumulate the values of validation criteria
         if valid_metrics is not None:
             self.record_step_info('criteria', valid_metrics)
-
 
     def model_snapshot(self, epoch: int, sample_index: str, used_sample: Dict):
         """
@@ -621,7 +611,6 @@ class ValidMonitor(Monitor):
         # put all the visualization logs into the queue
         self.enqueue(vis_logs)
 
-
     @staticmethod
     def is_better(query: int or float, target: int or float, mode: str, threshold: float = 0.0):
         """
@@ -638,7 +627,6 @@ class ValidMonitor(Monitor):
 
         # the threshold is applied to the better comparison
         return query > _target if mode == 'max' else query < _target
-
 
     def model_insert(self, train_records: Dict):
         """
@@ -671,16 +659,16 @@ class ValidMonitor(Monitor):
                 self.best_model_performance[_metric_name][self.epoch] = curr_performance
 
         # save the model of the latest epoch onto the disk
-        epoch_save_path = os.path.join(self.model_save_path, f"epoch_{self.epoch}.mdl")
+        epoch_save_path = os.path.join(self.model_save_path, f"epoch_{self.epoch}.pth")
         if not os.path.exists(epoch_save_path):
             torch.save(self.model.state_dict(), epoch_save_path)
-
 
     def update_best_and_pop_worst(self, epoch_message: str):
         """
         Controls whether to pop out the worst model from the best models so far and update the current best model
 
         """
+
         def whether_remove(remove_epoch: int):
             """
             Whether to remove the model file of a given epoch.
@@ -713,7 +701,6 @@ class ValidMonitor(Monitor):
                 model_num=_model_num
             )
 
-
         # --- Pop out the worst model and Update the model symbol links --- #
         metric_pop_flags = dict()
         for metric_name, epoch_record in metric_epoch_records.items():
@@ -728,28 +715,27 @@ class ValidMonitor(Monitor):
                 metric_pop_flags[metric_name] = True
 
                 # remove the actual model file of the worst epoch
-                epoch_model_path = os.path.join(self.model_save_path, f"epoch_{worst_epoch}.mdl")
+                epoch_model_path = os.path.join(self.model_save_path, f"epoch_{worst_epoch}.pth")
                 if whether_remove(worst_epoch) and os.path.exists(epoch_model_path):
                     os.remove(epoch_model_path)
 
             # update the symbol links of all the best models so far
             for i, epoch in enumerate(epoch_record['sorted_epochs']):
-                _best_model_pointer = f"{metric_name}_best.mdl" if i == 0 else f"{metric_name}_best_{i + 1}.mdl"
+                _best_model_pointer = f"{metric_name}_best.pth" if i == 0 else f"{metric_name}_best_{i + 1}.pth"
                 # create a soft link from the best model pointer to the model file of the current epoch
                 symlink_dst = os.path.join(self.model_save_path, _best_model_pointer)
                 if os.path.islink(symlink_dst) or os.path.exists(symlink_dst):
                     os.unlink(symlink_dst)
-                os.symlink(os.path.join(self.model_save_path, f"epoch_{epoch}.mdl"), symlink_dst)
+                os.symlink(os.path.join(self.model_save_path, f"epoch_{epoch}.pth"), symlink_dst)
 
         # update the symbol links of the last several models
         for epoch in range(self.epoch, max(0, self.epoch - self.last_model_number), -1):
-            _last_model_pointer = f"latest.mdl" if epoch == self.epoch else f"last_{self.epoch - epoch + 1}.mdl"
+            _last_model_pointer = f"latest.pth" if epoch == self.epoch else f"last_{self.epoch - epoch + 1}.pth"
             # create a soft link from the best model pointer to the model file of the current epoch
             symlink_dst = os.path.join(self.model_save_path, _last_model_pointer)
             if os.path.islink(symlink_dst) or os.path.exists(symlink_dst):
                 os.unlink(symlink_dst)
-            os.symlink(os.path.join(self.model_save_path, f"epoch_{epoch}.mdl"), symlink_dst)
-
+            os.symlink(os.path.join(self.model_save_path, f"epoch_{epoch}.pth"), symlink_dst)
 
         # --- Early-Stopping epoch number checking for the early-stopping metric --- #
         best_epoch = metric_epoch_records[self.early_stopping_metric]['sorted_epochs'][0]
@@ -786,7 +772,6 @@ class ValidMonitor(Monitor):
 
         return epoch_message, early_stopping_flag, metric_pop_flags
 
-
     def save_aver_model(self, epoch_message: str, metric_pop_flags: Dict[str, bool]):
         """
         save the average models of the best models so far if there is a model being pooped out in the current epoch
@@ -798,6 +783,7 @@ class ValidMonitor(Monitor):
         Returns:
 
         """
+
         def save_aver_models(aver_epoch_list: List, aver_num: int, aver_model_name: str):
             # sum up the parameters of all best models
             avg_model = None
@@ -805,9 +791,9 @@ class ValidMonitor(Monitor):
                 _avg = None
                 # access self.model_save_path from the outer scope
                 if avg_model is not None:
-                    _avg = torch.load(os.path.join(self.model_save_path, f"epoch_{epoch}.mdl"), map_location="cpu")
+                    _avg = torch.load(os.path.join(self.model_save_path, f"epoch_{epoch}.pth"), map_location="cpu")
                 else:
-                    avg_model = torch.load(os.path.join(self.model_save_path, f"epoch_{epoch}.mdl"), map_location="cpu")
+                    avg_model = torch.load(os.path.join(self.model_save_path, f"epoch_{epoch}.pth"), map_location="cpu")
 
                 if _avg is not None:
                     for key in avg_model.keys():
@@ -825,7 +811,6 @@ class ValidMonitor(Monitor):
 
             return f"{aver_model_name} has been updated to the average of epochs {aver_epoch_list}.\n"
 
-
         # --- Save the average model for the best models of each metric --- #
         # loop each metric for best model selection
         for metric in self.best_model_selection:
@@ -836,7 +821,7 @@ class ValidMonitor(Monitor):
                 epoch_message += save_aver_models(
                     aver_epoch_list=list(self.best_model_performance[_metric_name].keys()),
                     aver_num=len(self.best_model_performance[_metric_name]),
-                    aver_model_name=f"{_model_num}_{_metric_name}_average.mdl"
+                    aver_model_name=f"{_model_num}_{_metric_name}_average.pth"
                 )
 
         # --- Save the average model of the last models --- #
@@ -844,11 +829,10 @@ class ValidMonitor(Monitor):
             epoch_message += save_aver_models(
                 aver_epoch_list=list(range(self.epoch, self.epoch - self.last_model_number, -1))[::-1],
                 aver_num=self.last_model_number,
-                aver_model_name=f"{self.last_model_number}_last_average.mdl"
+                aver_model_name=f"{self.last_model_number}_last_average.pth"
             )
 
         return epoch_message
-
 
     def finish_epoch(self, train_records: Dict):
         """
@@ -904,7 +888,6 @@ class ValidMonitor(Monitor):
         self.logger.info(epoch_message)
         return early_stopping_flag
 
-
     def state_dict(self):
         """
         Save the best models and current number of early-stopping epochs
@@ -927,6 +910,7 @@ class TrainValidMonitor(object):
         1. enable multi-metric best model recording among training and validatio metrics.
         2. decouple TrainMonitor and ValidMonitor from Runner to improve cohesion and code readability.
     """
+
     def __init__(self, logger, args: argparse.Namespace, model: Model):
         self.logger = logger
 
@@ -1004,7 +988,6 @@ class TestMonitor(Monitor):
         elif not isinstance(self.bad_cases_selection[0], List):
             self.bad_cases_selection = [self.bad_cases_selection]
 
-
     def start_epoch(self, total_step_num: int):
         """
         For the evaluation stage, we only need to initialize the step_info to register the results
@@ -1021,7 +1004,6 @@ class TestMonitor(Monitor):
             )
         if not hasattr(self, 'finished_group_num'):
             self.finished_group_num = 0
-
 
     def step(self, step_num: int, test_results: Dict[str, Dict], test_index: List[str]):
         """
@@ -1049,13 +1031,13 @@ class TestMonitor(Monitor):
                 folder_path = os.path.join(self.result_path, name)
                 os.makedirs(folder_path, exist_ok=True)
 
-                # save the feature vectors as .npz files
-                if result['format'].lower() == 'npz':
+                # save the feature vectors as .npy files
+                if result['format'].lower() == 'npy':
                     for index, feat in zip(test_index, result['content']):
                         if isinstance(feat, torch.Tensor):
                             feat = to_cpu(feat, tgt='numpy')
                         feat = feat.astype(np.float32)
-                        np.savez(os.path.join(folder_path, f'{index}.npz'), feat=feat, index=index)
+                        np.save(os.path.join(folder_path, f'{index}.npz'), feat)
                 # save the waveforms as .wav files, sampling rate needs to be given in the result Dict as 'sample_rate'
                 elif result['format'].lower() == 'wav':
                     for index, wav in zip(test_index, result['content']):
@@ -1130,7 +1112,6 @@ class TestMonitor(Monitor):
         if test_step_message is not None:
             self.logger.info(test_step_message)
 
-
     def finish_epoch(self, meta_info: Dict = None):
         """
 
@@ -1154,7 +1135,6 @@ class TestMonitor(Monitor):
                     if group not in group_meta_info[meta_type].keys():
                         group_meta_info[meta_type][group] = []
                     group_meta_info[meta_type][group].append(index)
-
 
         # --- Gather the checkpoint information of all the processes --- #
         final_path = '.'.join(self.result_path.split('.')[:-1])
@@ -1180,7 +1160,6 @@ class TestMonitor(Monitor):
             # normal .txt files have the prefix 'idx2' attached at the beginning of their names
             else:
                 np.savetxt(os.path.join(final_path, f'idx2{key}'), list(self.step_info[key].items()), fmt="%s")
-
 
         # --- Gather all the save-during-testing files & Generate their path files --- #
         for file_name in os.listdir(self.result_path):
@@ -1220,13 +1199,12 @@ class TestMonitor(Monitor):
                 idx2path = list(sorted(idx2path, key=lambda x: x[0]))
                 np.savetxt(os.path.join(final_path, f'idx2{file_name}'), idx2path, fmt="%s")
 
-
-        # --- Portion-level Evaluation Report Production --- #
+        # --- Group-level Evaluation Report Production --- #
         result_path = os.path.join(final_path, "overall_results.md")
         result_string = ""
 
         # The overall evaluation performance
-        result_string += "***Overall Evaluation (mean ± std):***\n\n"
+        result_string += "# Overall Evaluation (mean ± std):\n"
         content_dict = dict()
         # loop each metric and record the overall model performance
         for metric, result_dict in self.step_info.items():
@@ -1238,17 +1216,18 @@ class TestMonitor(Monitor):
             content_dict[metric] = f"{np.mean(result_list):.4f} ± {np.std(result_list):.4f}"
         result_string += get_list_strings(content_dict=content_dict)
 
-        # record the portion-level model performance
+        # record the group-level model performance
         if group_meta_info is not None:
             for meta_name, group_dict in group_meta_info.items():
-                result_string += f"\n" \
-                                 f"***{meta_name} Evaluation:***\n\n"
+                result_string += f"# {meta_name}-wise Evaluation:\n" \
+                                 f"(***bold&italic*** numbers represent the maximal ones in all groups while " \
+                                 f"**bold** numbers represent the minimal ones.)\n\n"
                 table_headers, table_contents = [meta_name], dict()
                 # loop each group and calculate the group-specific performance
                 for group_name, group_list in group_dict.items():
                     # loop each metric
                     for metric, result_dict in self.step_info.items():
-                        result_list = [result_dict[sample] for sample in group_list if sample in result_dict.keys()]
+                        result_list = [result_dict[index] for index in group_list if index in result_dict.keys()]
                         # skip the non-numerical results
                         if len(result_list) > 0 and not isinstance(result_list[0], (int, float)):
                             continue
@@ -1260,17 +1239,33 @@ class TestMonitor(Monitor):
 
                             if metric not in table_headers:
                                 table_headers.append(metric)
-                            table_contents[group_name].append(f"{np.mean(result_list):.4f}")
+                            table_contents[group_name].append(np.mean(result_list))
 
+                # get the max and min group value for each numerical metric
+                for i in range(len(table_headers) - 1):
+                    metric_value_list = [value[i] for value in table_contents.values()]
+                    max_value, min_value = max(metric_value_list), min(metric_value_list)
+                    # loop each group
+                    for group in table_contents.keys():
+                        # turn the max number into a bold&italic string
+                        if table_contents[group][i] == max_value:
+                            table_contents[group][i] = f"***{table_contents[group][i]:.4f}***"
+                        # turn the min number into a bold string
+                        elif table_contents[group][i] == min_value:
+                            table_contents[group][i] = f"**{table_contents[group][i]:.4f}**"
+                        # turn other numbers into pure strings
+                        else:
+                            table_contents[group][i] = f"{table_contents[group][i]:.4f}"
+
+                # attach the list of the current group into the result string
                 result_string += get_table_strings(contents=list(table_contents.values()),
                                                    first_col=list(table_contents.keys()),
                                                    headers=table_headers)
         np.savetxt(result_path, [result_string], fmt="%s")
 
-
         # --- Top-N Bad Cases Presentation --- #
-        # only present topn bad cases if sample_reports.md is given
-        if 'sample_reports.md' in self.step_info.keys():
+        # only present topn bad cases if instance_reports.md is given
+        if 'instance_reports.md' in self.step_info.keys():
             # loop each tri-tuple
             for metric, mode, num in self.bad_cases_selection:
                 result_path = os.path.join(final_path, f"top{num}_{mode}_{metric}.md")
@@ -1284,9 +1279,8 @@ class TestMonitor(Monitor):
                     # make the .md string for all the top-n bad samples
                     sample_reports = ""
                     for s_index in selected_samples:
-                        sample_reports += f"***{s_index}***" + self.step_info['sample_reports.md'][s_index]
+                        sample_reports += f"**{s_index}**" + self.step_info['instance_reports.md'][s_index]
                     np.savetxt(result_path, [sample_reports], fmt="%s")
-
 
         # --- Histograms Plotting --- #
         # loop each metric and plot the histogram figure
@@ -1309,7 +1303,6 @@ class TestMonitor(Monitor):
         # copy the plotted figures into final_path
         shutil.move(src=os.path.join(self.result_path, 'figures'),
                     dst=os.path.join(final_path, 'figures'))
-
 
     def state_dict(self):
         """

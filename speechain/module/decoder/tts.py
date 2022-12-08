@@ -21,13 +21,14 @@ from speechain.module.prenet.spk_embed import SpeakerEmbedPrenet
 from speechain.module.transformer.decoder import TransformerDecoder
 from speechain.module.postnet.conv1d import Conv1dPostnet
 
+
 class TTSDecoder(Module):
     """
 
     """
     frontend_class_dict = dict(
-        speech2linear=Speech2LinearSpec,
-        speech2mel=Speech2MelSpec
+        stft_spec=Speech2LinearSpec,
+        mel_fbank=Speech2MelSpec
     )
 
     prenet_class_dict = dict(
@@ -86,7 +87,6 @@ class TTSDecoder(Module):
         _prev_output_size *= self.reduction_factor
         feat_dim = _prev_output_size
 
-
         # --- Main Body of TTS Decoder --- #
         # feature embedding layer of the E2E TTS decoder
         if prenet is not None:
@@ -121,7 +121,6 @@ class TTSDecoder(Module):
         postnet_class = self.postnet_class_dict[postnet['type']]
         postnet['conf'] = dict() if 'conf' not in postnet.keys() else postnet['conf']
         self.postnet = postnet_class(input_size=feat_dim, **postnet['conf'])
-
 
     def forward(self,
                 enc_text: torch.Tensor, enc_text_mask: torch.Tensor,
@@ -172,14 +171,11 @@ class TTSDecoder(Module):
             padded_feat = torch.nn.functional.pad(feat, (0, 0, 1, 0), "constant", 0)
             feat = padded_feat[:, :-1]
             # target feature & length, used for loss & metric calculation
-            dec_outputs = dict(
-                tgt_feat=padded_feat[:, 1:],
-                tgt_feat_len=feat_len
-            )
+            tgt_feat, tgt_feat_len = padded_feat[:, 1:], feat_len
+
         # in the testing stage, input data has already been processed and structured, so no frontend processing here
         else:
-            dec_outputs = dict()
-
+            tgt_feat, tgt_feat_len = None, None
 
         # --- Decoder Feature Transformation Part --- #
         # feature Embedding
@@ -201,30 +197,14 @@ class TTSDecoder(Module):
             feat = self.spk_emb.combine_spk_emb(spk_feat=spk_feat, tgt=feat)
 
         # Decoding
-        dec_results = self.decoder(src=enc_text, src_mask=enc_text_mask,
-                                   tgt=feat, tgt_mask=feat_mask)
-        dec_stop = self.stop_pred(dec_results['output'])
-        dec_feat_before = self.feat_pred(dec_results['output'])
-        dec_feat_after = dec_feat_before + self.postnet(dec_feat_before, feat_len)
+        dec_feat, self_attmat, encdec_attmat, hidden = self.decoder(src=enc_text, src_mask=enc_text_mask,
+                                                                    tgt=feat, tgt_mask=feat_mask)
+        pred_stop = self.stop_pred(dec_feat)
+        pred_feat_before = self.feat_pred(dec_feat)
+        pred_feat_after = pred_feat_before + self.postnet(pred_feat_before, feat_len)
 
-        # initialize the decoder outputs
-        dec_outputs.update(
-            pred_stop=dec_stop,
-            pred_feat_before=dec_feat_before,
-            pred_feat_after=dec_feat_after
-        )
-        # if the build-in decoder has the attention results
-        if 'att' in dec_results.keys():
-            dec_outputs.update(
-                att=dec_results['att']
-            )
-        # if the build-in decoder has the hidden results
-        if 'hidden' in dec_results.keys():
-            dec_outputs.update(
-                hidden=dec_results['hidden']
-            )
-        return dec_outputs
-
+        return pred_stop, pred_feat_before, pred_feat_after, \
+            tgt_feat, tgt_feat_len, self_attmat, encdec_attmat, hidden
 
     def turn_on_dropout(self):
         """
@@ -237,7 +217,6 @@ class TTSDecoder(Module):
         assert hasattr(self, 'prenet'), \
             "If you want to apply dropout during TTS inference, your TTS model should have a decoder prenet."
         self.prenet.train()
-
 
     def spec_to_wav(self, feat: torch.Tensor, feat_len: torch.Tensor):
         """
@@ -254,31 +233,7 @@ class TTSDecoder(Module):
         if hasattr(self, 'frontend'):
             wav, wav_len = self.frontend.recover(feat, feat_len)
         else:
-            wav, wav_len = None, None
+            raise RuntimeError
 
         # return both the un-normalized features and waveforms
         return wav, wav_len
-
-
-    def get_trainable_scalars(self) -> Dict or None:
-        trainable_scalars = dict()
-        # decoder-prenet layers
-        if hasattr(self, 'prenet'):
-            pre_scalars = self.prenet.get_trainable_scalars()
-            if pre_scalars is not None:
-                trainable_scalars.update(**pre_scalars)
-        # speaker embedding layers
-        if hasattr(self, 'spk_emb'):
-            spk_emb_scalars = self.spk_emb.get_trainable_scalars()
-            if spk_emb_scalars is not None:
-                trainable_scalars.update(**spk_emb_scalars)
-        # decoder layers
-        dec_scalars = self.decoder.get_trainable_scalars()
-        if dec_scalars is not None:
-            trainable_scalars.update(**dec_scalars)
-        # decoder-postnet layers
-        post_scalars = self.postnet.get_trainable_scalars()
-        if post_scalars is not None:
-            trainable_scalars.update(**post_scalars)
-
-        return trainable_scalars

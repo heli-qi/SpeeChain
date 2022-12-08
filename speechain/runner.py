@@ -27,7 +27,7 @@ from speechain.model.abs import Model
 from speechain.optim_sche.abs import OptimScheduler
 
 from speechain.utilbox.log_util import logger_stdout_file, model_summary
-from speechain.utilbox.import_util import import_class, get_port
+from speechain.utilbox.import_util import import_class, get_idle_port, parse_path_args
 from speechain.utilbox.type_util import str2bool
 from speechain.utilbox.yaml_util import load_yaml
 
@@ -81,32 +81,33 @@ class Runner(object):
         parser.add_argument(
             "--config",
             type=str,
-            default="/ahc/work4/heli-qi/euterpe-heli-qi/recipes/asr/librispeech/train_clean_100-360/transformer/exp_cfg/real-syn_nower_bpe5k_accum3.yaml",
-            help="All-in-one argument setting file. "
-                 "You can write all the arguments in this file instead of giving them by command lines."
+            # default=None,
+            default="recipes/tts/ljspeech/exp_cfg/factor4_transformer_default-loss_accum1.yaml",
+            help="The path of the all-in-one experiment configuration file. You can write all the arguments in this "
+                 "all-in-one file instead of giving them to `runner.py` by command lines."
         )
 
         # Experimental environment
-        group = parser.add_argument_group("Experimental environment.")
+        group = parser.add_argument_group("Group 1: Calculation and System Backend")
         group.add_argument(
             '--seed',
             type=int,
             default=0,
-            help="Random seed for initializing your experiment. (default: 0)"
+            help="Initial random seed for the experiment. (default: 0)"
         )
         group.add_argument(
             '--cudnn_enabled',
             type=str2bool,
             default=True,
-            help="Whether to enable torch.backends.cudnn. (default: True)"
+            help="Whether to activate torch.backends.cudnn. (default: True)"
         )
         group.add_argument(
             '--cudnn_benchmark',
             type=str2bool,
             default=False,
             help="Whether to activate torch.backends.cudnn.benchmark. "
-                 "When True, your training will be speed up and the model performance may improve somewhat. "
-                 "But your results will become less reproducible. (default: False)"
+                 "When True, the process of model training will be speed up and the model performance may improve "
+                 "somewhat. But your results will become less reproducible. (default: False)"
         )
         group.add_argument(
             '--cudnn_deterministic',
@@ -119,305 +120,350 @@ class Runner(object):
             '--num_workers',
             type=int,
             default=1,
-            help="Number of workers used by each Dataloader. "
-                 "If you find that the speed of loading data from the disk is very slow, "
-                 "you can try to raise the value of this argument within your machine capability. "
-                 "If you want to debug, please set this argument to 0. (default: 1)"
+            help="The number of worker processes in the `torch.utils.data.DataLoader` of each epoch. "
+                 "If you have complicated logic of data loading and data augmentation in the memory before passing the "
+                 "data to the model (e.g., speech speed perturbation, environmental noise addition, ...), raising this "
+                 "argument may improve the speed of data loading and pre-augmentation. But the choice of the argument "
+                 "value should be within your machine capability (i.e., the number of CPU cores). "
+                 "If you want to debug your programs, we recommend you to set this argument to 0. (default: 1)"
         )
         group.add_argument(
             '--pin_memory',
             type=str2bool,
             default=False,
-            help="Whether enable the pin_memory option of each Dataloader. "
-                 "This option can activate the pinned memory in your dataloaders and speed up the data loading. "
-                 "Often used together with non_blocking=True. (default: False)"
+            help="Whether to activate `pin_memory` for the Dataloader of each epoch. "
+                 "If True, the pinned memory in the dataloaders will be activated and the data loading will be further "
+                 "speed up. "
+                 "pin_memory=True is often used together with non_blocking=True. Note that this combination requires a "
+                 "large amount of memory and CPU cores. (default: False)"
         )
         group.add_argument(
             '--non_blocking',
             type=str2bool,
             default=False,
-            help="Whether enable the non_blocking option when putting data on GPUs. "
-                 "This option can speed up the model processing. "
-                 "Often used together with pin_memory=True. (default: False)"
+            help="Whether to activate `non_blocking` when transferring data from the memory to GPUs. "
+                 "If True, the process of model training will be speed up. "
+                 "non_blocking=True is often used together with pin_memory=True. Note that this combination requires a "
+                 "large amount of memory and CPU cores. (default: False)"
         )
 
         # gradient descent related
-        group = parser.add_argument_group("Gradient calculation and back-propagation.")
+        group = parser.add_argument_group("Group 2: Gradient Calculation and Back-Propagation")
         group.add_argument(
             '--use_amp',
             type=str2bool,
             default=True,
-            help="Whether use Automatic Mixed Precision for back-propagation. (default: True)"
+            help="Whether activate AMP (Automatic Mixed Precision) during the back-propagation. "
+                 "If True, the GPU consumption of your model will be smaller so that you can include more data "
+                 "instances in a single batch. (default: True)"
         )
         group.add_argument(
             '--grad_clip',
             type=float,
             default=5.0,
-            help="Gradient clipping to prevent NaN gradients during training. (default: 5.0)"
+            help="Gradient clipping threshold during the back-propagation. (default: 5.0)"
         )
         group.add_argument(
             '--grad_norm_type',
             type=float,
             default=2.0,
-            help="Gradient normalization type used when clipping the gradients. (default: 2.0)"
+            help="Normalization type used when clipping the gradients. (default: 2.0)"
         )
         group.add_argument(
             '--accum_grad',
             type=int,
             default=1,
-            help="Gradient accumulation steps for back-propagation. "
-                 "This argument is used for mimicking large batch training on few GPUs. (default: 1)"
+            help="The number of gradient accumulation steps. "
+                 "To mimic the gradients calculated by large batches with only a small amount of GPUs, please raise "
+                 "this argument. "
+                 "The virtual batch size will become (accum_grad * the actual batch size). "
+                 "Note that the model trained by accum_grad is not identical to the one actually trained by large "
+                 "batches because of the different randomness in each training step and the existence of BatchNorm. "
+                 "(default: 1)"
         )
         group.add_argument(
             '--ft_factor',
             type=float,
             default=1.0,
-            help="The finetuing factor used to scale down the learning rates of your optimizers. "
-                 "Usual ft_factor settings for finetuning range from 0.1 to 0.5. (default: 1.0)"
+            help="The finetuing factor used to scale down learning rates during the parameter optimization. "
+                 "If `ft_factor` is smaller than 1.0, the learning rates will be proportionally decreased without "
+                 "changing its scheduling strategy. Usually, ft_factor could be set from 0.1 to 0.5 depending on your "
+                 "finetuning scenarios. (default: 1.0)"
         )
 
         # multi-GPU distributed training
-        group = parser.add_argument_group("GPU-related configuration")
+        group = parser.add_argument_group("Group 3: Multi-GPU Distribution")
         group.add_argument(
             "--dist_backend",
             default="nccl",
             type=str,
-            help="Distributed backend. "
+            help="Communication backend for multi-GPU distribution. "
                  "If you are using NVIDIA GPUs, we recommend you set this argument to 'nccl'. (default: nccl)",
         )
         group.add_argument(
             "--dist_url",
             type=str,
             default="tcp://127.0.0.1",
-            help="If you want to train your model on multiple nodes, please set dist_url='env://'. "
-                 "In this case, env values of 'MASTER_PORT', 'MASTER_ADDR', 'WORLD_SIZE', and 'RANK' are referred in "
-                 "the command line. "
-                 "The default value is 'tcp://127.0.0.1' for single-node distributed training and a free port will be "
+            help="Communication URL for multi-GPU distribution. "
+                 "The default value is 'tcp://127.0.0.1' for single-node distributed training and an idle port will be "
                  "automatically selected. "
                  "The port number cannot be set manually, which means that the argument 'tcp://127.0.0.1:xxxxx' will "
-                 "have no effect and the port will still be selected automatically.",
+                 "have the same effect with 'tcp://127.0.0.1'. "
+                 "If you want to train your model on multiple nodes, please set dist_url='env://' "
+                 "(Note: multi-node model distribution is still in beta). "
+                 "In this case, env values of 'MASTER_PORT', 'MASTER_ADDR', 'WORLD_SIZE', and 'RANK' are referred in "
+                 "the command line.",
         )
         group.add_argument(
             "--world_size",
             default=1,
             type=int,
-            help="The number of nodes for distributed training. "
-                 "This argument is fixed to 1 and currently we don't recommend you to modify its value."
-                 "If you want to conduct multi-node distributed training by the command line, "
-                 "please give this argument through the command line."
+            help="The number of nodes for model distribution. "
+                 "This argument is fixed to 1. Currently, we don't recommend you to modify its value."
+                 "If you want to conduct multi-node model distribution, please give `world_size` by `WORLD_SIZE=XXX` "
+                 "in your terminal (Note: multi-node model distribution is still in beta)."
         )
         group.add_argument(
             '--rank',
             default=0,
             type=int,
-            help="The global rank of the node for distributed training. "
-                 "This argument is fixed to 0 and currently we don't recommend you to modify its value."
-                 "If you want to conduct multi-node distributed training by the command line, "
-                 "please give this argument through the command line."
+            help="The global rank of the current node for model distribution. "
+                 "This argument is fixed to 0. Currently, we don't recommend you to modify its value."
+                 "If you want to conduct multi-node model distribution, please give `rank` by `RANK=XXX` in your "
+                 "terminal (Note: multi-node model distribution is still in beta)."
         )
         group.add_argument(
             '--ngpu',
             type=int,
             default=1,
-            help="Number of GPUs used to run your experiment. "
-                 "This argument replaces the traditional 'multiprocessing-distributed' for distributed training. "
-                 "(default: 1)"
+            help="The number of GPUs used to run your experiment. "
+                 "If ngpu is larger than 1, multi-GPU model distribution will be activated. (default: 1)"
         )
         group.add_argument(
             '--gpus',
             type=str,
             default=None,
-            help="Specified GPUs used to run your experiment. "
+            help="This argument specifies the GPUs used to run your experiment. "
                  "If you want to specify multiple GPUs, please give this argument in the form of 'x,x,x' "
-                 "where different GPU numbers are separated by a comma (please don't end this argument with ','). "
-                 "If there are no specified GPUs, they will be automatically selected from the available free GPUs. "
-                 "Of course, you could also give your specified GPUs by CUDA_VISIBLE_DEVICES!"
+                 "where different GPUs are separated by a comma (please don't end this argument with ','). "
+                 "Of course, you could also specify your target GPUs by `CUDA_VISIBLE_DEVICES` in the terminal."
+                 "If this argument is not given, the framework will automatically select `ngpu` idle GPUs. "
         )
         group.add_argument(
             '--same_proc_seed',
             type=str2bool,
             default=False,
-            help="Whether to set the same random seed for all the GPU processes in DDP mode. "
-                 "(default: False)"
+            help="Whether to set the same initial random seed for all the GPU processes in DDP mode. "
+                 "The different random seeds can prevent model distribution from the process homogeneity, "
+                 "e.g., different GPU processes may have the same on-the-fly data augmentation strategy "
+                 "(noise addition, SpecAugment, ...) if they have the same initial random seed. "
+                 "Note: please set this argument to True if you want to use random data selection for your dataloaders "
+                 "in the DDP mode. (default: False)"
         )
 
         # Training monitoring
-        group = parser.add_argument_group("Training process monitoring.")
+        group = parser.add_argument_group("Group 4: Model Training")
         group.add_argument(
-            '--result_path',
+            '--train_result_path',
             type=str,
             default=None,
-            help="The folder path to store all the result files of your experiment. "
-                 "If None, the result path will be automatically made by the file name of your input exp_cfg. "
+            help="Where to place all the result files generated during model training. "
+                 "If not given, `train_result_path` wil be automatically initialized to the same directory with your "
+                 "input `config`. For example, if your input `config` is "
+                 "`{SPEECHAIN_ROOT}/recipes/asr/librispeech/train-960/exp_cfg/XXXXX.yaml`, your `train_result_path` "
+                 "will be automatically initialized to `{SPEECHAIN_ROOT}/recipes/asr/librispeech/train-960/exp/XXXXX`."
                  "(default: None)")
         group.add_argument(
             '--train',
-            action='store_true',
-            help="Whether go through the training phase. "
-                 "For training, please attach the argument '--train' to your command. "
-                 "(default: False)"
+            type=str2bool,
+            default=False,
+            help="Whether to go through the model training branch. (default: False)"
         )
         group.add_argument(
             '--dry_run',
-            action='store_true',
-            help="Whether to turn on the dry running mode. "
+            type=str2bool,
+            default=False,
+            help="Whether to turn on the dry-running mode. "
                  "In this mode, only the data loading will be done to see its speed and robustness. "
-                 "For dry running, please attach the argument '--dry_run' to your command. (default: False)"
+                 "Model calculation and parameter optimization will be skipped. (default: False)"
         )
         group.add_argument(
             '--no_optim',
-            action='store_true',
-            help="Whether to skip the optimization part. "
-                 "In this mode, only the data loading and model forward will be done to see its speed and robustness. "
-                 "For no optimization, please attach the argument '--no_optim' to your command. "
-                 "Note: 'dry_run' has the higher priority than 'no_optim'. "
-                 "It means that the model forward part will be skipped if you give both '--dry_run' and '--no_optim'. "
-                 "(default: False)"
+            type=str2bool,
+            default=False,
+            help="Whether to turn on the no-optimization mode. "
+                 "In this mode, only the data loading and model calculation will be done to see their speed, "
+                 "robustness, and memory consumption. (default: False) "
+                 "(Note: 'dry_run' has the higher priority than 'no_optim'. It means that the model calculation will "
+                 "be skipped if you give both '--dry_run True' and '--no_optim True'.) "
         )
         group.add_argument(
             '--resume',
-            action='store_true',
-            help="Whether continue your unfinished training and testing jobs. "
-                 "If True, there must be the checkpoint file of your last experiment. "
-                 "This argument is shared by the training and testing branches. (default: False)"
+            type=str2bool,
+            default=False,
+            help="Whether to resume your model training or testing experiment from the checkpoints. "
+                 "If True, there must be .pth checkpoint files of your existing experiment in `train_result_path` or "
+                 "`test_result_path`. This argument is shared by the training and testing branches. (default: False)"
         )
         group.add_argument(
             '--start_epoch',
             type=int,
             default=1,
-            help="The starting epoch of your experiments. (default: 1)"
+            help="The starting epoch of your experiments. This argument will be automatically initialized by your "
+                 "checkpoint files if `--resume` is given. (default: 1)"
         )
         group.add_argument(
             '--num_epochs',
             type=int,
             default=1000,
-            help="Maximum number of training epochs of your experiments. (default: 1000)"
+            help="The maximum number of training epochs of your experiments. (default: 1000)"
         )
         group.add_argument(
             '--valid_per_epochs',
             type=int,
             default=1,
-            help="The interval of going through validation phase during training. "
-                 "If not specified, validation will be done right after training in each epoch. (default: 1)"
+            help="The interval of going through the validation phase during training. "
+                 "If not given, validation will be done right after parameter optimization in each epoch. (default: 1)"
         )
         group.add_argument(
             '--report_per_steps',
             type=int,
             default=0,
-            help="The interval of reporting the step information during training and testing. "
-                 "Positive integers (absolute interval) mean a report will be made after each 'report_per_steps' "
-                 "steps; negative integers (relative interval) mean there will be '-report_per_steps' reports in each "
-                 "epoch. (default: 0 → there will be 10 reports in each epoch.)"
+            help="The interval of reporting step information logs during model training or testing. "
+                 "Positive integers mean the absolute reporting intervals that a step report will be made after each "
+                 "'report_per_steps' steps; "
+                 "Negative integers mean the relative reporting intervals that there will be -'report_per_steps' "
+                 "reports in each epoch. "
+                 "If not given, there will be default 10 reports in each epoch. "
         )
         group.add_argument(
             '--best_model_selection',
-            type=list,
+            type=List,
             default=None,
-            help="The ways of selecting the best models. This argument should be given as a list of quad-tuples. "
-                 "The tuple is in the format of ('metric_group', 'metric_name', 'metric_mode', 'number'). "
-                 "'metric_group' can be either 'train' or 'valid' which indicates the group this metric belongs to; "
+            help="The ways of selecting the best models. This argument should be given as a list of quad-tuples, i.e., "
+                 "('metric_group', 'metric_name', 'metric_mode', 'model_number'). "
+                 "'metric_group' can be either 'train' or 'valid' which indicates the group the metric belongs to; "
                  "'metric_name' is the name of the metric you select; "
                  "'metric_mode' can be either 'min' or 'max' which indicates how to select the models by this metric; "
-                 "'number' indicates how many best models will be saved by this metric. "
-                 "Note that the metric of the first tuple in the list will be used to perform early-stopping. "
+                 "'model_number' indicates how many best models will be saved by this metric. "
+                 "Note: the metric of the first tuple in the list will be used to do early-stopping for model training."
                  "(default: None)"
         )
         group.add_argument(
             '--early_stopping_patience',
             type=int,
             default=10,
-            help="The maximum number of epochs when the model doesn't improve its performance. (default: 10)"
+            help="The maximum number of epochs when the model doesn't improve its performance before stopping the "
+                 "model training. (default: 10)"
         )
         group.add_argument(
             '--early_stopping_threshold',
             type=float,
             default=0.005,
-            help="The threshold to refresh early-stopping in the monitor. "
-                 "Positive values in (0.0, 1.0) represent the relative threshold over the current best results, "
-                 "negative values represent the absolute threshold over the current best results. "
-                 "0 means no threshold is applied in the monitor. (default: 0.005)"
+            help="The threshold to refresh the early-stopping status in the monitor during model training. "
+                 "Positive float numbers in (0.0, 1.0) mean the relative threshold over the current best performance. "
+                 "Negative float numbers main the absolute threshold over the current best performance. "
+                 "early_stopping_threshold=0 means no early-stopping threshold is applied to the current best "
+                 "performance when deciding whether to refresh the status. (default: 0.005)"
         )
         group.add_argument(
             '--last_model_number',
             type=int,
             default=10,
             help="The number of models saved for the last several epochs. "
-                 "This argument usually has the same value with 'early_stopping_patience'. (default: 10)"
+                 "Usually, it's better to set this argument to the same value with 'early_stopping_patience'. "
+                 "(default: 10)"
         )
 
         # Training Snapshotting
-        group = parser.add_argument_group("Training Snapshotting-related")
+        group = parser.add_argument_group("Group 5: Real-time Model Visualization Snapshotting")
         group.add_argument(
             '--monitor_snapshot_conf',
             default=dict(),
-            help="The configuration of how to plot curve figures used by the SnapShooters during training. "
+            help="The configuration given to `matploblib.plot()` in `{SPEECHAIN_ROOT/speechain/snapshooter.py}` to "
+                 "plot curve figures for real-time model visualization during model training. "
                  "This argument should be given in the form of a Dict. (default: an empty Dict)"
         )
         group.add_argument(
             '--visual_snapshot_number',
             type=int,
             default=0,
-            help="The number of the snapshots made in each model visualization step. "
-                 "The snapshots will be taken by the first sample of each validation batch, "
-                 "so this argument should be smaller than the number of your validation batches. "
-                 "(default: 3)"
+            help="The number of the validation data instances used to make snapshots made during model visualization. "
+                 "This argument should be smaller than the number of your validation data instances. "
+                 "(default: 0)"
         )
         group.add_argument(
             '--visual_snapshot_interval',
             type=int,
             default=5,
-            help="The snapshotting interval of your model during model visualization . "
-                 "This argument determines how frequently the visualization snapshots are produced. "
-                 "(default: 5, unit: epoch)"
+            help="The snapshotting interval of model visualization during model training. "
+                 "This argument should be a positive integer which means that model visualization will be done once "
+                 "in every `visual_snapshot_interval` epochs. (default: 5)"
         )
 
         # Testing
-        group = parser.add_argument_group("Testing-related")
+        group = parser.add_argument_group("Group 6: Model Testing")
+        group.add_argument(
+            '--test_result_path',
+            type=str,
+            default=None,
+            help="Where to place all the result files generated during model testing. "
+                 "If not given, `train_result_path` wil be automatically initialized by your input `train_result_path` "
+                 "and `test_model`. For example, if your `train_result_path` is "
+                 "`{SPEECHAIN_ROOT}/recipes/asr/librispeech/train-960/exp/XXXXX`, and `test_model` is `MMMMM`, "
+                 "then your `test_result_path` will be automatically initialized to "
+                 "`{SPEECHAIN_ROOT}/recipes/asr/librispeech/train-960/exp/XXXXX/MMMMM/`."
+        )
         group.add_argument(
             '--test',
-            action='store_true',
-            help="Whether go through the testing phase. "
-                 "For testing, please attach the argument '--test' to your command. (default: False)"
+            type=str2bool,
+            default=False,
+            help="Whether to go through the model testing branch. (default: False)"
         )
         group.add_argument(
             '--test_model',
             type=str,
             default=None,
-            help="The names of the model you want to evaluate in the testing phase. "
-                 "Multiple model names can be given as a list. "
-                 "If you only want to evaluate one model, directly giving the string of its name is OK. (default: None)"
+            help="The names of the model you want to evaluate during model testing. "
+                 "If not given, `{train_result_path}/model/{test_model}.pth` will be used to initialize the parameters "
+                 "of the Model object. If you only want to evaluate multiple models in one job, please give the "
+                 "strings of their names in a List. (default: None)"
         )
         group.add_argument(
             '--bad_cases_selection',
-            type=list,
+            type=List,
             default=None,
-            help="The selection method of the top-n bad cases. "
-                 "This argument should be given as a list of tri-tuples ('metric', 'mode', 'number'). "
-                 "For example, ('wer', 'max', 10) means the testing samples with top-10 largest wer will be selected. "
+            help="The selection methods of the top-N bad cases during model testing. "
+                 "This argument should be given as a list of tri-tuples "
+                 "('selection_metric', 'selection_mode', 'case_number'). "
+                 "For example, ('wer', 'max', 50) means 50 testing waveforms with the largest WER will be selected. "
                  "Multiple tuples can be given to present different sets of top-n bad cases. (default: None)"
         )
 
         # Experiment configuration
-        group = parser.add_argument_group("Experiment configuration files.")
+        group = parser.add_argument_group("Group 7: Experiment .yaml Configuration File")
         group.add_argument(
             '--data_cfg',
             type=str,
             default=None,
-            help="The configuration file of data loading and batching."
+            help="The path of the configuration file for data loading and batching. "
+                 "This argument is required for both model training and testing."
         )
         group.add_argument(
             '--train_cfg',
             type=str,
             default=None,
-            help="The configuration file of the structure of the model and optimschedulers."
+            help="The path of the configuration file for model construction and parameter optimization. "
+                 "This argument is required for both model training (both 'model' and 'optim_sche' need to be given) "
+                 "and testing (only 'model' needs to be given)."
         )
         group.add_argument(
-            '--test_cfg',
+            '--infer_cfg',
             type=str,
             default=None,
-            help="The configuration file of the testing hyperparameters. "
-                 "Multiple testing configuration files can be given as a list. "
-                 "If you only want to use one file, directly giving the string of its name is OK. (default: None)"
+            help="The configuration file for model inference during model testing. "
+                 "This argument is required for model testing."
+                 "For more details about how to give infer_cfg, please refer to the handbook.md. (default: None)"
         )
 
         # Add customized arguments if needed
@@ -482,7 +528,7 @@ class Runner(object):
                     _output += flatten_dict_to_list(value)
                 return _output
 
-        # get the target datasets of the current experiment
+        # get the target groups of the current experiment
         if args.train:
             dset_keys = ['train', 'valid']
         elif args.test:
@@ -566,28 +612,22 @@ class Runner(object):
         """
         # single-optimizer scenario
         if len(optim_sche_cfg) == 2 and ('type' in optim_sche_cfg.keys() and 'conf' in optim_sche_cfg.keys()):
-            optim_sche_class = import_class('speechain.optim_sche.' + optim_sche_cfg['type'])
-            optim_sches = optim_sche_class(model=model,
-                                           distributed=args.distributed,
-                                           use_amp=args.use_amp,
-                                           accum_grad=args.accum_grad,
-                                           ft_factor=args.ft_factor,
-                                           grad_clip=args.grad_clip,
-                                           grad_norm_type=args.grad_norm_type,
-                                           **optim_sche_cfg['conf'])
-        # multi-optimizer scenario
-        else:
-            optim_sches = dict()
-            for name, optim_sche in optim_sche_cfg.items():
-                optim_sche_class = import_class('speechain.optim_sche.' + optim_sche['type'])
-                optim_sches[name] = optim_sche_class(model=model,
-                                                     use_amp=args.use_amp,
-                                                     accum_grad=args.accum_grad,
-                                                     ft_factor=args.ft_factor,
-                                                     grad_clip=args.grad_clip,
-                                                     grad_norm_type=args.grad_norm_type,
-                                                     **optim_sche['conf'])
+            optim_sche_cfg = dict(main=optim_sche_cfg)
 
+        optim_sches = dict()
+        for name, optim_sche in optim_sche_cfg.items():
+            optim_sche_class = import_class('speechain.optim_sche.' + optim_sche['type'])
+            optim_sches[name] = optim_sche_class(model=model,
+                                                 distributed=args.distributed,
+                                                 use_amp=args.use_amp,
+                                                 accum_grad=args.accum_grad,
+                                                 ft_factor=args.ft_factor,
+                                                 grad_clip=args.grad_clip,
+                                                 grad_norm_type=args.grad_norm_type,
+                                                 **optim_sche['conf'])
+
+        # multi-optimizer scenario
+        if len(optim_sches) > 1:
             # adjust whether there are parameter overlapping among updated_modules of all the OptimSchedulers
             is_all_para = [o.updated_modules is None for o in optim_sches.values()]
             # updated_modules of all the OptimSchedulers cannot be None at the same time
@@ -595,9 +635,7 @@ class Runner(object):
                 raise RuntimeError
             else:
                 # collect the updated_modules of all the OptimScheduler
-                para_list = []
-                for o in optim_sches.values():
-                    para_list.extend(o.updated_modules)
+                para_list = [o.updated_modules for o in optim_sches.values()]
                 # adjust whether there are redundant keys
                 para_set = set(para_list)
                 # there is parameter overlapping if there are redundant keys
@@ -607,21 +645,13 @@ class Runner(object):
         # resuming from an existing checkpoint
         if args.resume:
             try:
-                checkpoint = torch.load(os.path.join(args.result_path, "checkpoint.pth"), map_location=model.device)
-                # single-optimizer scenario
-                if isinstance(optim_sches, OptimScheduler):
-                    # for compatibility with previous version
-                    if len(checkpoint['optim_sches']) == 1:
-                        cpt_key = list(checkpoint['optim_sches'].keys())[0]
-                        optim_sches.load_state_dict(checkpoint['optim_sches'][cpt_key])
-                    else:
-                        optim_sches.load_state_dict(checkpoint['optim_sches'])
-                # multi-optimizer scenario
-                elif isinstance(optim_sches, Dict):
-                    for name in optim_sches.keys():
-                        optim_sches[name].load_state_dict(checkpoint['optim_sches'][name])
+                checkpoint = torch.load(
+                    os.path.join(args.train_result_path, "checkpoint.pth"), map_location=model.device)
+                for name in optim_sches.keys():
+                    optim_sches[name].load_state_dict(checkpoint['optim_sches'][name])
             except FileNotFoundError:
-                print(f"No checkpoint is found in {args.result_path}. The training process will start from scratch.")
+                print(f"No checkpoint is found in {args.train_result_path}. "
+                      f"The training process will start from scratch.")
 
         return optim_sches
 
@@ -632,7 +662,7 @@ class Runner(object):
                monitor: TrainValidMonitor) -> int:
         """
         load the model parameters to the current process. This operation is necessary in our toolkit because we need to
-        makes sure that the models in all the processes have the same buffer and parameter tensors.
+        make sure that the models in all the processes have the same buffer and parameter tensors.
 
         Args:
             args: argparse.Namespace
@@ -651,7 +681,8 @@ class Runner(object):
         if args.resume:
             # load the existing checkpoint
             try:
-                checkpoint = torch.load(os.path.join(args.result_path, "checkpoint.pth"), map_location=model.device)
+                checkpoint = torch.load(
+                    os.path.join(args.train_result_path, "checkpoint.pth"), map_location=model.device)
                 # load the latest training epoch
                 start_epoch = checkpoint['start_epoch']
                 # for compatibility with old versions
@@ -659,7 +690,8 @@ class Runner(object):
                     model.load_state_dict(checkpoint['latest_model'])
                 else:
                     model.load_state_dict(
-                        torch.load(os.path.join(args.result_path, "models", "latest.mdl"), map_location=model.device)
+                        torch.load(
+                            os.path.join(args.train_result_path, "models", "latest.mdl"), map_location=model.device)
                     )
 
                 # loading the monitor
@@ -678,7 +710,7 @@ class Runner(object):
             # checkpoint does not exist
             except FileNotFoundError:
                 start_epoch = 1
-                monitor.logger.info(f"No checkpoint is found in {args.result_path}. "
+                monitor.logger.info(f"No checkpoint is found in {args.train_result_path}. "
                                     f"The training process will start from scratch.")
 
         # start the training from scratch
@@ -754,6 +786,8 @@ class Runner(object):
                 The model to be trained.
             optim_sches: Dict
                 The dictionary that contains all the OptimSchedulers used to update the model parameters.
+            logger:
+
             monitor: TrainValidMonitor
                 The wrapper class for a training monitor and a validation monitor.
                 The training monitor controls the training process of the model and generates the real-time logging
@@ -837,23 +871,12 @@ class Runner(object):
                     if not args.no_optim:
                         # --- loss backward and optimization part --- #
                         optim_lr = dict()
-                        # single-optimizer scenario, default optimizer name is 'main'
-                        if isinstance(optim_sches, OptimScheduler):
-                            optim_sches.step(losses=losses,
-                                             time_func=cls.measure_time(
-                                                 None if monitor is None else monitor.train_monitor
-                                             ), optim_name='main', step_num=step_num)
-                            optim_lr['main'] = optim_sches.get_lr()
-                        # multi-optimizer scenario, each optimizer has its own name
-                        elif isinstance(optim_sches, Dict):
-                            for name, optim_sche in optim_sches.items():
-                                optim_sche.step(losses=losses,
-                                                time_func=cls.measure_time(
-                                                    None if monitor is None else monitor.train_monitor
-                                                ), optim_name=name, step_num=step_num)
-                                optim_lr[name] = optim_sche.get_lr()
-                        else:
-                            raise RuntimeError
+                        for name, optim_sche in optim_sches.items():
+                            optim_sche.step(losses=losses,
+                                            time_func=cls.measure_time(
+                                                None if monitor is None else monitor.train_monitor
+                                            ), optim_name=name, step_num=step_num)
+                            optim_lr[name] = optim_sche.get_lr()
 
                 # log the information of the current training step
                 if monitor is not None:
@@ -870,7 +893,7 @@ class Runner(object):
                     monitor.start_valid_epoch(epoch)
                 # initialize all the validation dataloaders
                 data_loaders = cls.dict_transform(iterators['valid'], lambda x: iter(x.build_loader(epoch)))
-                valid_indices = cls.dict_transform(iterators['valid'], lambda x: x.batches)
+                valid_indices = cls.dict_transform(iterators['valid'], lambda x: x.get_batch_indices())
 
                 # make sure that no gradient appears during validation
                 model.eval()
@@ -932,12 +955,10 @@ class Runner(object):
                     torch.save(
                         {
                             "start_epoch": epoch + 1,
-                            # "latest_model": model.state_dict() if not args.distributed else model.module.state_dict(),
                             "monitor": monitor.state_dict(),
-                            "optim_sches": optim_sches.state_dict() if isinstance(optim_sches, OptimScheduler) else
-                            {name: o.state_dict() for name, o in optim_sches.items()}
+                            "optim_sches": {name: o.state_dict() for name, o in optim_sches.items()}
                         },
-                        os.path.join(args.result_path, "checkpoint.pth")
+                        os.path.join(args.train_result_path, "checkpoint.pth")
                     )
 
         # check whether all the monitor queues become empty in every minute
@@ -965,26 +986,66 @@ class Runner(object):
                 The model to be trained.
 
         """
-        # load the test configuration into a Dict
-        assert 'test_cfg' in args and args.test_cfg is not None, "Please specify at least one test configuration file!"
-        if isinstance(args.test_cfg, str):
-            args.test_cfg = [args.test_cfg]
-        test_cfg_dict = {'.'.join(cfg.split("/")[-1].split(".")[:-1]): cfg for cfg in args.test_cfg}
+
+        # parse infer_cfg depending on different situations
+        if isinstance(args.infer_cfg, str):
+            infer_cfg_dict = {'.'.join(args.infer_cfg.split("/")[-1].split(".")[:-1]): load_yaml(open(args.infer_cfg))}
+
+        elif isinstance(args.infer_cfg, List):
+            infer_cfg_dict = dict()
+            for cfg in args.infer_cfg:
+                if isinstance(cfg, str):
+                    infer_cfg_dict['.'.join(cfg.split("/")[-1].split(".")[:-1])] = load_yaml(open(cfg))
+                elif isinstance(cfg, Dict):
+                    cfg = dict(sorted(cfg.items(), key=lambda x: x[0]))
+                    infer_cfg_dict['_'.join([f"{key}={value}" for key, value in cfg.items()])] = cfg
+                else:
+                    raise TypeError("If infer_cfg is given in the form of a List, "
+                                    "it must be either a List[str] or a List[Dict]!")
+
+        elif isinstance(args.infer_cfg, Dict):
+            if 'shared_args' in args.infer_cfg.keys() and 'exclu_args' in args.infer_cfg.keys():
+                assert isinstance(args.infer_cfg['shared_args'], Dict) and \
+                       isinstance(args.infer_cfg['exclu_args'], List), \
+                    "If infer_cfg is given by 'shared_args' and 'exclu_args', " \
+                    "infer_cfg['shared_args'] must be a Dict and infer_cfg['exclu_args'] must be a List."
+                infer_cfg_dict = dict()
+                for cfg in args.infer_cfg['exclu_args']:
+                    assert isinstance(cfg, Dict), ""
+                    cfg.update(args.infer_cfg['shared_args'])
+                    cfg = dict(sorted(cfg.items(), key=lambda x: x[0]))
+                    infer_cfg_dict['_'.join([f"{key}={value}" for key, value in cfg.items()])] = cfg
+
+            elif 'shared_args' not in args.infer_cfg.keys() and 'exclu_args' not in args.infer_cfg.keys():
+                args.infer_cfg = dict(sorted(args.infer_cfg.items(), key=lambda x: x[0]))
+                infer_cfg_dict = {'_'.join([f"{key}={value}" for key, value in args.infer_cfg.items()]): args.infer_cfg}
+
+            else:
+                raise RuntimeError("If infer_cfg is given in the form of a Dict, "
+                                   "'shared_args' and 'exclu_args' must be or not be in the key list at the same time!")
+
+        elif args.infer_cfg is None:
+            infer_cfg_dict = dict(default=dict())
+
+        else:
+            raise TypeError("infer_cfg must be given in the form of a string, a List, or a Dict!")
 
         # loop each test configuration
-        for test_cfg_name, test_cfg in test_cfg_dict.items():
+        for infer_cfg_name, infer_cfg in infer_cfg_dict.items():
             # configuration-specific result path
-            test_result_path = os.path.join(args.result_path, test_cfg_name)
+            test_result_path = os.path.join(
+                args.train_result_path if args.test_result_path is None else args.test_result_path, infer_cfg_name)
             os.makedirs(test_result_path, exist_ok=True)
 
             # load the existing testing configuration for resuming
-            test_cfg_path = os.path.join(test_result_path, "test_cfg.yaml")
-            test_cfg = load_yaml(open(test_cfg_path)) if args.resume else load_yaml(open(test_cfg))
+            infer_cfg_path = os.path.join(test_result_path, "infer_cfg.yaml")
+            if args.resume:
+                infer_cfg = load_yaml(open(infer_cfg_path))
 
-            # save the testing configuration file to result_path
+            # save the testing configuration file to infer_cfg_path
             if not args.distributed or args.rank == 0:
-                with open(test_cfg_path, 'w', encoding="utf-8") as f:
-                    yaml.dump(test_cfg, f, sort_keys=False)
+                with open(infer_cfg_path, 'w', encoding="utf-8") as f:
+                    yaml.dump(infer_cfg, f, sort_keys=False)
 
             # unlike training and validation, the testing iterators are looped one by one
             for name, iterator in iterators['test'].items():
@@ -1027,7 +1088,7 @@ class Runner(object):
 
                 # initialize the dataloaders from the given starting point
                 data_loaders = cls.dict_transform(iterator, lambda x: iter(x.build_loader(start_step=start_step)))
-                test_indices = cls.dict_transform(iterator, lambda x: x.get_sample_indices())
+                test_indices = cls.dict_transform(iterator, lambda x: x.get_batch_indices())
                 # if there are multiple dataloaders for the current testing set,
                 # the sample indices of the first element will be used to make the reports
                 if isinstance(test_indices, Dict):
@@ -1045,14 +1106,16 @@ class Runner(object):
                         if i < start_step:
                             continue
 
+                        # model inference
                         try:
                             # only fetch the testing data right before decoding and evaluation
                             test_batch = cls.dict_transform(src_dict=data_loaders, transform_func=next)
-                            test_results = model.evaluate(test_batch=test_batch, infer_conf=test_cfg)
+                            test_results = model.evaluate(test_batch=test_batch, infer_conf=infer_cfg)
+                            # record evaluation results
+                            monitor.step(step_num=i + 1, test_results=test_results, test_index=test_indices[i])
                         except RuntimeError as e:
                             logger.info(
                                 f'Meet {e} at the step no{i}, skip the current step and continue the inference.')
-                            monitor.step(step_num=i + 1, test_results=test_results, test_index=test_indices[i])
 
                         # reduce the number of IO operations to speed up the testing
                         if (i + 1) % monitor.report_per_steps == 0 or i == total_step_num - 1:
@@ -1066,23 +1129,23 @@ class Runner(object):
                     torch.distributed.barrier()
 
                 if not args.distributed or args.rank == 0:
-                    # obtain the metadata information of the current iterator
-                    meta_info = None
+                    # obtain the group information of the current iterator
+                    group_info = None
                     if isinstance(iterator, Iterator):
                         # Dict[str, Dict[str, str]]
-                        meta_info = iterator.get_meta_info()
+                        group_info = iterator.get_group_info()
                     elif isinstance(iterator, Dict):
                         # List[Dict[str, Dict[str, str]]]
-                        meta_info_list = [value.get_meta_info() for value in iterator.values()]
-                        for meta_dict in meta_info_list:
-                            if meta_dict is not None:
-                                meta_info = meta_dict
+                        group_info_list = [value.get_group_info() for value in iterator.values()]
+                        for group_dict in group_info_list:
+                            if group_dict is not None:
+                                group_info = group_dict
                                 break
                     else:
                         raise RuntimeError
 
                     # finish the evaluation and store the results to the disk
-                    monitor.finish_epoch(meta_info=meta_info)
+                    monitor.finish_epoch(meta_info=group_info)
 
     @classmethod
     def set_random_seeds(cls, seed: int):
@@ -1142,7 +1205,7 @@ class Runner(object):
 
         """
         # --- 0. Random Seed Preparation --- #
-        # set distinct random seeds for all the processes in DDP mode to avoid the process homogeneity
+        # set different random seeds for the different GPU processes in DDP mode to avoid the process homogeneity
         if args.distributed and not args.same_proc_seed:
             args.seed += gpu
         cls.set_random_seeds(args.seed)
@@ -1173,14 +1236,15 @@ class Runner(object):
 
         # --- 3. Experimental Environment Logging --- #
         # automatically decide the result path if not given
-        if args.result_path is None:
+        if args.train_result_path is None:
             assert args.config is not None, \
-                "If you want to automatically generate the result_path, please give the configuration by '--config'."
+                "If you want to automatically generate train_result_path, please give the configuration by '--config'."
             _config_split = args.config.split('/')
-            args.result_path = '/'.join(_config_split[:-2] + ['exp', '.'.join(_config_split[-1].split('.')[:-1])])
+            args.train_result_path = '/'.join(_config_split[:-2] + ['exp', '.'.join(_config_split[-1].split('.')[:-1])])
 
         # initialize the logger and save current script command
-        logger = logger_stdout_file(args.result_path, 'train' if args.train else None, args.distributed, args.rank)
+        logger = logger_stdout_file(args.train_result_path,
+                                    'train' if args.train else None, args.distributed, args.rank)
 
         # logging the beginning info of the experiment
         logger.info(f"Current script command: {' '.join([xi for xi in sys.argv])}")
@@ -1206,10 +1270,10 @@ class Runner(object):
             if args.data_cfg is not None:
                 data_cfg = load_yaml(open(args.data_cfg))
             else:
-                data_cfg = load_yaml(open(os.path.join(args.result_path,
+                data_cfg = load_yaml(open(os.path.join(args.train_result_path,
                                                        f"{'train' if args.train else 'test'}_data_cfg.yaml")))
             # training configuration will be loaded from the existing file
-            train_cfg = load_yaml(open(os.path.join(args.result_path, "train_cfg.yaml")))
+            train_cfg = load_yaml(open(os.path.join(args.train_result_path, "train_cfg.yaml")))
         # start from scratch, loading the new data and train configurations
         else:
             assert args.data_cfg is not None and args.train_cfg is not None, \
@@ -1261,13 +1325,13 @@ class Runner(object):
 
         # for the process of single-GPU training or the rank 0 process of multi-GPUs training
         if not args.distributed or args.rank == 0:
-            # dumping all the configuration files into result_path for resuming
-            with open(os.path.join(args.result_path, "exp_cfg.yaml"), 'w', encoding="utf-8") as f:
+            # dumping all the configuration files into train_result_path for resuming
+            with open(os.path.join(args.train_result_path, "exp_cfg.yaml"), 'w', encoding="utf-8") as f:
                 yaml.dump(vars(args), f, sort_keys=False)
-            with open(os.path.join(args.result_path, f"{'train' if args.train else 'test'}_data_cfg.yaml"),
+            with open(os.path.join(args.train_result_path, f"{'train' if args.train else 'test'}_data_cfg.yaml"),
                       'w', encoding="utf-8") as f:
                 yaml.dump(data_cfg, f, sort_keys=False)
-            with open(os.path.join(args.result_path, "train_cfg.yaml"), 'w', encoding="utf-8") as f:
+            with open(os.path.join(args.train_result_path, "train_cfg.yaml"), 'w', encoding="utf-8") as f:
                 yaml.dump(train_cfg, f, sort_keys=False)
 
         # --- 7.1. Model Training Branch --- #
@@ -1291,21 +1355,14 @@ class Runner(object):
             optim_sches = cls.build_optim_sches(model=model, optim_sche_cfg=train_cfg['optim_sches'], args=args)
 
             # logging the information of the optimschedulers
-            # single-optimizer scenario
-            if isinstance(optim_sches, OptimScheduler):
-                logger.info(f"OptimScheduler: {optim_sches}")
-            # multi-optimizer scenario
-            elif isinstance(optim_sches, Dict):
-                for name, optim_sche in optim_sches.items():
-                    logger.info(f"The {name} OptimScheduler: {optim_sche}")
-            else:
-                raise RuntimeError
+            for name, optim_sche in optim_sches.items():
+                logger.info(f"The {name} OptimScheduler: {optim_sche}")
 
             # start the training process
             cls.train(args=args, iterators=iterators, model=model,
                       optim_sches=optim_sches, logger=logger, monitor=monitor)
 
-        # --- 7.1. Model Testing Branch --- #
+        # --- 7.2. Model Testing Branch --- #
         elif args.test:
             if isinstance(args.test_model, str):
                 args.test_model = [args.test_model]
@@ -1314,15 +1371,24 @@ class Runner(object):
 
             # loop each model to be tested
             for model_name in args.test_model:
+                # get the path of the target model parameters
+                _models_path = os.path.join(args.train_result_path, 'models')
+                # for compatibility with the older version
+                if os.path.exists(os.path.join(_models_path, f'{model_name}.mdl')):
+                    model_path = os.path.join(_models_path, f'{model_name}.mdl')
+                elif os.path.exists(os.path.join(_models_path, f'{model_name}.pth')):
+                    model_path = os.path.join(_models_path, f'{model_name}.pth')
+                else:
+                    raise RuntimeError
+
                 # load the target model parameters
-                model.load_state_dict(
-                    torch.load(os.path.join(args.result_path, 'models', f'{model_name}.mdl'),
-                               map_location=model.device),
-                    strict=False
-                )
+                model.load_state_dict( torch.load(model_path, map_location=model.device), strict=False)
 
                 # start the testing process
                 cls.test(args=args, test_model=model_name, iterators=iterators, model=model)
+
+        else:
+            raise RuntimeError
 
         # --- 8. Release Computational Resource --- #
         if args.distributed and args.rank == 0:
@@ -1404,7 +1470,7 @@ class Runner(object):
 
             # automatic port selection if no specified port (only one ':' in args.dist_url)
             if len(args.dist_url.split(':')) < 3:
-                args.dist_url += f':{get_port()}'
+                args.dist_url += f':{get_idle_port()}'
             else:
                 raise RuntimeError
 
@@ -1430,15 +1496,14 @@ class Runner(object):
     @classmethod
     def run(cls):
         """
-        The entrypoint of Runner where the configuration is first parsed and the experiment branch (training or
-        testing) is decided.
+        The preparation area of Runner where the configuration is parsed and converted into code-friendly format.
 
         """
-        # --- 0. Parse the Command Line Arguments --- #
+        # --- 0. Get the Command Line Arguments --- #
         args = cls.parse()
 
         # --- 1. Read the Non-Config Arguments from the Command Line --- #
-        # Currently, 'world_size' and 'rank' are set to fixed values
+        # Currently, 'world_size' and 'rank' are not provided to users to set
         given_args = ['world_size', 'rank']
         # The arguments that users give in the command line should not be refreshed by the argument '--config'
         for i in sys.argv:
@@ -1447,30 +1512,29 @@ class Runner(object):
 
         # check the train and test flags
         if 'train' in given_args and 'test' in given_args:
-            raise ValueError(
-                "A running job can only conduct either training process or testing process, "
-                "so '--train' and '--test' cannot be used at the same time. "
-                "If you want to conduct training and testing sequentially, "
-                "please make two running jobs where "
-                "the first job has '--train' only and the second job has '--test' only."
-            )
+            assert (args.train ^ args.test) is True, \
+                "A running job can only conduct either training process or testing process, " \
+                "so args.train and args.test cannot be True at the same time. " \
+                "If you want to conduct training and testing sequentially, " \
+                "please make two running jobs where the first job has args.train=True and args.test=False and " \
+                "the second job has args.train=False and args.test=True."
         elif 'train' in given_args:
             given_args.append('test')
-            args.test = False
+            args.test = not args.train
         elif 'test' in given_args:
             given_args.append('train')
-            args.train = False
+            args.train = not args.test
 
         # the command 'CUDA_VISIBLE_DEVICES' has the higher priority than the argument 'gpus'
         if 'CUDA_VISIBLE_DEVICES' in os.environ.keys():
             given_args.append('gpus')
             args.gpus = None
 
-        # --- 2. Read the Arguments in Config --- #
+        # --- 2. Overwrite the Arguments by '--config' --- #
         # overwrite args from the args.config
         # Note: the ones given in the command line has the higher priority than args.config
         if args.config is not None:
-            args.config = os.path.abspath(args.config)
+            args.config = parse_path_args(args.config)
             config = load_yaml(open(args.config, mode='r', encoding='utf-8'))
             for c in config.keys():
                 if c not in given_args:
@@ -1483,20 +1547,22 @@ class Runner(object):
                     setattr(args, c, config[c])
 
         # make sure that all the paths are absolute paths
-        if args.result_path is not None:
-            args.result_path = os.path.abspath(args.result_path)
+        if args.train_result_path is not None:
+            args.train_result_path = parse_path_args(args.train_result_path)
+        if args.test_result_path is not None:
+            args.test_result_path = parse_path_args(args.test_result_path)
         if args.data_cfg is not None:
-            args.data_cfg = os.path.abspath(args.data_cfg)
+            args.data_cfg = parse_path_args(args.data_cfg)
         if args.train_cfg is not None:
-            args.train_cfg = os.path.abspath(args.train_cfg)
-        if args.test_cfg is not None:
-            if isinstance(args.test_cfg, str):
-                args.test_cfg = os.path.abspath(args.test_cfg)
-            elif isinstance(args.test_cfg, List):
-                args.test_cfg = [os.path.abspath(cfg) for cfg in args.test_cfg]
-            else:
-                raise TypeError("test_cfg should be either a string or a list of string, "
-                                f"but got type(args.test_cfg)={type(args.test_cfg)}.")
+            args.train_cfg = parse_path_args(args.train_cfg)
+        if args.infer_cfg is not None:
+            if isinstance(args.infer_cfg, str):
+                args.infer_cfg = parse_path_args(args.infer_cfg)
+            elif isinstance(args.infer_cfg, List):
+                args.infer_cfg = [parse_path_args(cfg) if isinstance(cfg, str) else cfg for cfg in args.infer_cfg]
+            elif not isinstance(args.infer_cfg, Dict):
+                raise TypeError("infer_cfg should be either a string, a List, or a Dict, "
+                                f"but got type(args.infer_cfg)={type(args.infer_cfg)}.")
 
         # --- 3. Start the Experimental Pipeline --- #
         assert (args.train ^ args.test) is True, \

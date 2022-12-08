@@ -1,80 +1,203 @@
 ### Author: Heli Qi
 ### Affiliation: NAIST
-### Date: 2022.09
+### Date: 2022.12
 
-### --- Reference Values --- ###
-python=/home/is/heli-qi/anaconda3/envs/speechain/bin/python3.8
-infer_root=/ahc/work4/heli-qi/euterpe-heli-qi/config/infer/asr
-speechain=/ahc/work4/heli-qi/euterpe-heli-qi/speechain
-### ------------------------ ###
+if [ -z "${SPEECHAIN_ROOT}" ] || [ -z "${SPEECHAIN_PYTHON}" ];then
+  echo "Cannot find environmental variables SPEECHAIN_ROOT and SPEECHAIN_PYTHON.
+  Please move to the root path of the toolkit and run envir_preparation.sh there!"
+  exit 1
+fi
+
+function print_help_message {
+  echo "usage:
+  $0 \\ (The arguments in [] are optional while other arguments must be given)
+    [--dry_run false or true] \\                            # Whether to activate dry-running mode (default: false)
+    [--no_optim false or true] \\                           # Whether to activate no-optimization mode (default: false)
+    [--resume false or true] \\                             # Whether to activate resuming mode (default: false)
+    [--train_result_path TRAIN_RESULT_PATH] \\              # The value of train_result_path given to runner.py (default: none)
+    [--test_result_path TEST_RESULT_PATH] \\                # The value of train_result_path given to runner.py (default: none)
+    --exp_cfg EXP_CFG \\                                    # The name of your specified configuration file in ${SPEECHAIN_ROOT}/recipes/asr/librispeech/train-960/exp_cfg
+    [--data_cfg DATA_CFG] \\                                # The name of your specified configuration file in ${SPEECHAIN_ROOT}/recipes/asr/librispeech/train-960/data_cfg (default: none)
+    [--train_cfg TRAIN_CFG] \\                              # The name of your specified configuration file in ${SPEECHAIN_ROOT}/recipes/asr/librispeech/train-960/train_cfg (default: none)
+    [--infer_cfg INFER_CFG] \\                              # The name of your specified configuration file in ${SPEECHAIN_ROOT}/config/asr/ (default: none)
+    [--num_workers NUM_WORKERS] \\                          # The value of num_workers given to runner.py (default: 1)
+    [--ngpu NGPU] \\                                        # The value of ngpu given to runner.py (default: 1)
+    [--gpus GPUS] \\                                        # The value of gpus given to runner.py (default: none)
+    --train false or true \\                                # Whether to activate training mode (default: false)
+    --test false or true                                   # Whether to activate testing mode (default: false)" >&2
+  exit 1
+}
+
+# --- Absolute Path References --- #
+recipe_run_root=${SPEECHAIN_ROOT}/recipes/run.sh
 
 
-### --- (optional) 1. Data Loading Part Pre-heating --- ###
-# For the first time you run a job using a new dataset, your job may suffer from long data loading time. It's probably
-# because your target data haven't been accessed since your machine is turned on, hence it's difficult for your machine
-# to read them into memory. If that happens, you could use the argument '--dry_run' to only perform the data loading for
-# one epoch with '--num_epochs 1'. This will help your machine better access your target dataset.
+# --- Arguments --- #
+dry_run=false
+no_optim=false
+
+resume=false
+train=false
+test=false
+train_result_path=
+test_result_path=
+
+exp_cfg=
+data_cfg=
+train_cfg=
+infer_cfg=
+
+num_workers=
+ngpu=
+gpus=
+
+
+### get args from the command line ###
+while getopts ":h-:" optchar; do
+  case "${optchar}" in
+    -)
+      case "${OPTARG}" in
+        dry_run)
+          val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
+          dry_run=${val}
+          ;;
+        no_optim)
+          val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
+          no_optim=${val}
+          ;;
+        resume)
+          val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
+          resume=${val}
+          ;;
+        train)
+          val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
+          train=${val}
+          ;;
+        test)
+          val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
+          test=${val}
+          ;;
+        train_result_path)
+          val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
+          train_result_path=${val}
+          ;;
+        test_result_path)
+          val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
+          test_result_path=${val}
+          ;;
+        exp_cfg)
+          val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
+          exp_cfg=${val}
+          ;;
+        data_cfg)
+          val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
+          data_cfg=${val}
+          ;;
+        train_cfg)
+          val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
+          train_cfg=${val}
+          ;;
+        infer_cfg)
+          val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
+          infer_cfg=${val}
+          ;;
+        num_workers)
+          val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
+          num_workers=${val}
+          ;;
+        ngpu)
+          val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
+          ngpu=${val}
+          ;;
+        gpus)
+          val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
+          gpus=${val}
+          ;;
+        help)
+          print_help_message
+          ;;
+        ?)
+          echo "Unknown variable $OPTARG"
+          ;;
+      esac
+      ;;
+    h)
+      print_help_message
+      ;;
+    *)
+      echo "Please refer to an argument by '--'."
+      ;;
+  esac
+done
+
+
+# --- 1. Argument Initialization --- #
 #
-# If the data loading speed of your job is still very slow even after the pre-heating, it's probably because your machine
-# doesn't have enough memory for your target dataset. The lack of memory could be caused by either the limited equippment
-# of your machine or occupation by the jobs of other memebers in your team.
-### ----------------------------------------- ###
-CUDA_VISIBLE_DEVICES=0,1,2,3 ${python} ${speechain}/runner.py \
-  --config ./transformer/exp_cfg/transformer_specaug.yaml \
-  --train \
-  --dry_run \
-  --num_epochs 1 \
-  --ngpu 4
+args="
+  --task asr \
+  --dataset librispeech \
+  --subset train-960 \
+  --dry_run ${dry_run} \
+  --no_optim ${no_optim} \
+  --resume ${resume} \
+  --train ${train} \
+  --test ${test}"
+
+#
+if [ -z ${exp_cfg} ];then
+   echo "Please give an experimental configuration by '--exp_cfg'!"
+   exit 1
+else
+  args="${args} --exp_cfg ${exp_cfg}"
+fi
+
+#
+if [ -n "${num_workers}" ];then
+  args="${args} --num_workers ${num_workers}"
+fi
+#
+if [ -n "${gpus}" ];then
+  args="${args} --gpus ${gpus}"
+fi
+#
+if [ -n "${ngpu}" ];then
+  args="${args} --ngpu ${ngpu}"
+fi
+
+#
+if [ -n "${data_cfg}" ];then
+  args="${args} --data_cfg ${data_cfg}"
+fi
+#
+if [ -n "${train_cfg}" ];then
+  args="${args} --train_cfg ${train_cfg}"
+fi
+
+#
+if [ -n "${train_result_path}" ];then
+  args="${args} --train_result_path ${train_result_path}"
+fi
+
+#
+if ${test};then
+  #
+  if [ -n "${infer_cfg}" ];then
+    args="${args} --infer_cfg ${infer_cfg}"
+  fi
+  #
+  if [ -n "${test_result_path}" ];then
+    args="${args} --test_result_path ${test_result_path}"
+  fi
+fi
 
 
-### --- 2. Model Training --- ###
-# The GPUs can be specified by either 'CUDA_VISIBLE_DEVICES' or '--gpus'. They are identical to the backbone.
-# If '--result_path' is not given, the experimental files will be automatically saved to /exp under the same directory
-# of your given '--config'.
-# In the example below, the experimental files will be saved to ./transformer/exp/transformer_specaug
-### ------------------------- ###
-${python} ${speechain}/runner.py \
-  --config ./transformer/exp_cfg/transformer_specaug.yaml \
-  --data_cfg ./data_cfg/train_frame10M_batch6k.yaml \
-  --train \
-  --gpus 0,1,2,3 \
-  --ngpu 4
-
-
-### --- (optional) 3. Model Training Resuming --- ###
-# The training can be resumed from an existing checkpoint by giving the argument '--resume'.
-# Note that if you give 'data_cfg' explicitly as the example below, the new data loading configuration will be adopted
-# for resuming the model training. Otherwise, the data loading configuration of the last time will be used.
-### --------------------------------------------- ###
-#${python} ${speechain}/runner.py \
-#  --config ./transformer/exp_cfg/transformer_specaug.yaml \
-#  (--data_cfg <your new data loading configuration file path> \)
-#  --train \
-#  --resume \
-#  --gpus 2,3 \
-#  --ngpu 2
-
-
-### --- 4. Model Testing --- ###
-# To start the testing stage, you only need to replace the argument '--train' with '--test' like the way below.
-### ------------------------- ###
-${python} ${speechain}/runner.py \
-  --config ./transformer/exp_cfg/transformer_specaug.yaml \
-  --data_cfg ./data_cfg/test_clean+other_ngpu2.yaml \
-  --test_cfg ${infer_root}/beam16_temperature1.3.yaml \
-  --test \
-  --ngpu 2
-
-
-### --- (optional) 5. Model Testing Resuming --- ###
-# The testing stage can also be resumed in our toolkit. The configuration is the same with training resuming.
-# But one thing should be noted is that you must use the identical data loading configuration for resuming.
-# It means that you should not give a new configuration by '--data_cfg'.
-### -------------------------------------------- ###
-#CUDA_VISIBLE_DEVICES=2,3 ${python} ${speechain}/runner.py \
-#  --config ./transformer/exp_cfg/transformer_specaug.yaml \
-#  ×(--data_cfg <your new data loading configuration file path> \)×
-#  --data_cfg ./data_cfg/test_clean+other_ngpu2.yaml \
-#  --test \
-#  --resume \
-#  --ngpu 2
+# --- 2. Execute the Job --- #
+# ${args} should not be surrounded by double-quote
+# shellcheck disable=SC2086
+bash "${recipe_run_root}" ${args}
+if $? != 0;then
+  # ${args} should not be surrounded by double-quote
+  # shellcheck disable=SC2086
+  # shellcheck disable=SC1090
+  source "${recipe_run_root}" ${args}
+fi

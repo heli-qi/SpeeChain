@@ -3,326 +3,378 @@
     Affiliation: NAIST
     Date: 2022.07
 """
-from typing import List, Dict, Any, Tuple
 
 import torch
-from abc import ABC, abstractmethod
+import numpy as np
+
+from typing import List, Dict, Any
+from abc import ABC
+
+from speechain.utilbox.data_loading_util import read_idx2data_file_to_dict
 
 
 class Dataset(torch.utils.data.Dataset, ABC):
     """
-    Dataset is the base class for all dataset classes in this toolkit. The main job of the dataset is loading
-    the raw data from the disk into the pipeline.
+    Dataset is the base class that takes charge of reading the data instances from the disk into the memory and
+    packaging them into a batch for model training or testing.
 
-    If you want to inherit this class to make your own implementations, you need to override all abstract methods of this
-    class.
+    This object receives indices of the selected data instances from the Dataloader object created by the high-level
+    Iterator object. The output batches of packaged data instances may not be well-processed. Some post-processing steps
+    need to be done in the Model object later.
 
     """
+
     def __init__(self,
-                 src_data: str or List[str] = None,
-                 tgt_label: str or List[str] = None,
-                 meta_info: Dict[str, str or List[str]] = None,
+                 main_data: Dict[str, str or List[str]],
+                 data_selection: List[List[str] or str] = None,
                  **dataset_conf):
         """
-        If we want to initialize some member variables in our implementations, it's mandatory for us to first write
-        the code 'super(Dataset, self).__init__()'.
+        This initialization function reads the main body of the data instances into its memory. The main body is used to
+        extract individual data instances from the disk to form a batch during model training or testing.
 
-        It's very troublesome to type this code every time when we make a new implementation, so we include this
-        command into the initialization function fo the base class and make a new interface function to do the job of
-        dataset initialization.
+        The hook dataset_init_fn() is executed here after reading the main body of data instances.
 
         Args:
-            src_data: str or List[str]
-                The name of the source data files that contain the input data for model training. This argument can be
-                given in either a single string or a list of strings. If a list is given, all the given feat_scp files
-                will be mixed into a single dictionary.
-            tgt_label: str or List[str]
-                The name of the target label files that contain the ourput labels for model training. This argument can
-                be given in either a single string or a list of strings. If a list is given, all the given text files
-                will be mixed into a single dictionary.
-            meta_info: Dict[str, str or List[str]]
-
+            main_data: Dict[str, str or List[str]]
+                The main body dictionary of the data instances used in this Dataset object. In each key-value item, the
+                key is the name of the data variable and the value is the absolute path of the target 'idx2data' files.
+                The value can be given as a single path string or a list of multiple path strings.
+            data_selection: List[List[str] or str] = None
+                The strategies for data selection during the iterator initialization to shrink the used data instances.
+                Multiple strategies can be specified in a list. Each data selection strategy must be either a bi-list
+                (non-meta strategy) or tri-list (meta strategy).
+                1. non-meta strategy:
+                    The selection strategies that don't involve metadata. These strategies should be given as a bi-list,
+                    i.e., ['selection mode', 'selection number']. 'selection mode' indicates the way to select data
+                    instances while 'selection number' indicates how many data instances to be selected.
+                    Currently, available non-meta selection modes include:
+                        1. 'order': Select the given number of data instances from the beginning.
+                        2. 'rev_order': Select the given number of data instances from the end.
+                        3. 'random': Randomly select the given number of data instances.
+                            Note: You should keep the same random seeds for all the GPU processes in the DDP mode to
+                            ensure that the selected data instances are the same in each process. In this case, please
+                            set the 'same_proc_seed' argument to True in your configuration given to speechain.runner
+                2. meta strategy:
+                    The selection strategies that involves metadata. These strategies should be given as a tri-list,
+                    i.e., ['selection mode', 'selection threshold', 'metadata path']. 'selection mode' indicates the
+                    way to select data instances, 'selection threshold' indicates the metadata threshold to select data
+                    instances, and 'metadata path' indicates where is the metadata used for selection.
+                    Currently, available meta selection modes include:
+                        1. 'min': Select the data instances whose metadata is smaller than the threshold.
+                        2. 'max': Select the data instances whose metadata is larger than the threshold.
+                        3. 'middle': Remove the data instances whose metadata is the largest and smallest.
             **dataset_conf:
-                The configuration for initializing your dataset implementation.
+                The configuration arguments for customized Dataset initialization.
         """
+        # For declaring some member variables in the initialization function, it's mandatory to write the code
+        # 'super(Dataset, self).__init__()' here.
         super(Dataset, self).__init__()
 
-        # --- Source Data and Target Label Reading and Processing --- #
-        assert (src_data is not None) or (tgt_label is not None), \
-            "A Dataset must contain at least one of src_data and tgt_label, or both of them!"
+        # --- 1. Loading the Main Body of Data Instances from the Disk to the Memory --- #
+        assert isinstance(main_data, Dict), \
+            f"main_data must be given in Dict, but got type(main_data)={type(main_data)}"
+        self.main_data, self.data_index = read_idx2data_file_to_dict(main_data)
 
-        # source data init, make sure that self.src_data is a list of str where each str corresponds to a file
-        if src_data is not None:
-            assert isinstance(src_data, (str, list)), \
-                f"src_data must be given in str or List[str], but got type(src_data)={type(src_data)}"
-            self.src_data = [src_data] if isinstance(src_data, str) else src_data
+        # --- 2. Executing the Data Selection --- #
+        # select a part of data instances to generate batches if specified
+        if data_selection is not None:
+            if sum([isinstance(i, List) for i in data_selection]) == 0:
+                data_selection = [data_selection]
+            elif sum([isinstance(i, List) for i in data_selection]) != len(data_selection):
+                raise RuntimeError
 
-            # transform self.src_data into a single dictionary
-            # data file reading, List[str] -> List[Dict[str, str]]
-            self.src_data = [self.read_data_file(_data_file) for _data_file in self.src_data]
-            # data Dict combination, List[Dict[str, str]] -> Dict[str, str]
-            self.src_data = {key: value for _data_dict in self.src_data for key, value in _data_dict.items()}
-            # sort the key-value items in the dict by their key names for the scenario of multiple data sources
-            self.src_data = dict(sorted(self.src_data.items(), key=lambda x: x[0]))
-        else:
-            self.src_data = None
+            # loop each data selection strategy in order of the input list
+            for i in data_selection:
+                # non-meta selection
+                if len(i) == 2:
+                    selection_mode, selection_num, meta_info = i[0], i[1], None
+                    assert selection_mode in ['random', 'order', 'rev_order']
+                # meta-required selection
+                elif len(i) == 3:
+                    selection_mode, selection_num, meta_info = i[0], i[1], i[2]
+                    assert selection_mode in ['min', 'max', 'middle']
+                else:
+                    raise ValueError("The elements of data_selection should be either a bi-list or tri-list, "
+                                     f"but got {i}!")
 
-        # target label init, make sure that self.tgt_label is a list of str where each str corresponds to a file
-        if tgt_label is not None:
-            assert isinstance(tgt_label, (str, list)), \
-                f"tgt_label must be given in str or List[str], but got type(tgt_label)={type(tgt_label)}"
-            self.tgt_label = [tgt_label] if isinstance(tgt_label, str) else tgt_label
+                assert (isinstance(selection_num, float) and 0 < selection_num < 1) or \
+                       (isinstance(selection_num, int) and -len(self.data_index) < selection_num < 0) or \
+                       isinstance(selection_num, str), \
+                    f"Data selection number should be either a float number between 0 and 1, a negative integer, " \
+                    f"or a number in the string format. But got selection_num={selection_num}"
 
-            # transform self.tgt_label into a single dictionary
-            # label file reading, List[str] -> List[Dict[str, str]]
-            self.tgt_label = [self.read_label_file(_label_file) for _label_file in self.tgt_label]
-            # label Dict combination, List[Dict[str, str]] -> Dict[str, str]
-            self.tgt_label = {key: value for _label_dict in self.tgt_label for key, value in _label_dict.items()}
-            # sort the key-value items in the dict by their key names for the scenario of multiple data sources
-            self.tgt_label = dict(sorted(self.tgt_label.items(), key=lambda x: x[0]))
-        else:
-            self.tgt_label = None
+                if not isinstance(selection_num, str) and selection_num < 0:
+                    assert -selection_num < len(self.data_index), \
+                        "The data selection amount cannot be larger than the total number of data instances. " \
+                        f"You have {len(self.data_index)} instances but give selection_num={-selection_num}."
 
+                # portion the old self.sorted_data to get the new self.sorted_data
+                self.data_index = self.data_selection(self.data_index, selection_mode, selection_num, meta_info)
 
-        # --- Extra Information Reading and Processing --- #
-        self.meta_info = None
-        if meta_info is not None:
-            # extra information initialization
-            # make sure that self.meta_info is a Dict of List and each List corresponds to a kind of information
-            assert isinstance(meta_info, Dict), \
-                f"meta_info must be given in Dict, but got type(meta_info)={type(meta_info)}"
-            self.meta_info = {key: [value] if isinstance(value, str) else value for key, value in meta_info.items()}
+        # --- 3. Customized Initialization for Individual Dataset Subclasses --- #
+        self.dataset_init_fn(**dataset_conf)
 
-            # loop each kind of information
-            for meta_type in self.meta_info.keys():
-                # information file reading, List[str] -> List[Dict[str, str]]
-                self.meta_info[meta_type] = [self.read_meta_file(_meta_file, meta_type=meta_type)
-                                             for _meta_file in self.meta_info[meta_type]]
-                # information Dict combination, List[Dict[str, str]] -> Dict[str, str]
-                self.meta_info[meta_type] = {key: value for _meta_dict in self.meta_info[meta_type]
-                                             for key, value in _meta_dict.items()}
-                # sort the key-value items in the dict by their key names for the scenario of multiple data sources
-                self.meta_info[meta_type] = dict(sorted(self.meta_info[meta_type].items(), key=lambda x: x[0]))
-
-        # --- Dict keys mismatch checking of self.src_data, self.tgt_label, and self.meta_info --- #
-        # combine the key lists of all data sources
-        dict_keys = []
-        # collect the data index keys from the source data
-        if self.src_data is not None:
-            src_data_keys = set(self.src_data.keys())
-            dict_keys.append(src_data_keys)
-        else:
-            src_data_keys = None
-        # collect the data index keys from the target labels
-        if self.tgt_label is not None:
-            tgt_label_keys = set(self.tgt_label.keys())
-            dict_keys.append(tgt_label_keys)
-        else:
-            tgt_label_keys = None
-        # collect the data index keys from the metadata information
-        if self.meta_info is not None:
-            meta_info_keys = {key: set(value.keys()) for key, value in self.meta_info.items()}
-            dict_keys += list(meta_info_keys.values())
-        else:
-            meta_info_keys = None
-
-        # get the intersection of the key lists of all data sources
-        key_intersection = dict_keys[0]
-        for i in range(1, len(dict_keys)):
-            key_intersection &= dict_keys[i]
-
-        # remove the redundant key-value pairs that are in self.src_data but not in the intersection
-        if src_data_keys is not None:
-            for redundant_key in src_data_keys.difference(key_intersection):
-                self.src_data.pop(redundant_key)
-        # remove the redundant key-value pairs that are in self.tgt_label but not in the intersection
-        if tgt_label_keys is not None:
-            for redundant_key in tgt_label_keys.difference(key_intersection):
-                self.tgt_label.pop(redundant_key)
-        # remove the redundant key-value pairs that are in self.meta_info but not in the intersection
-        if self.meta_info is not None:
-            # loop each type of extra information
-            for meta_type in self.meta_info.keys():
-                # remove the redundant key-value pairs that are in self.tgt_label but not in the intersection
-                for redundant_key in meta_info_keys[meta_type].difference(key_intersection):
-                    self.meta_info[meta_type].pop(redundant_key)
-
-        # initialize the customized part of the dataset
-        self.dataset_init(**dataset_conf)
-
-
-    @abstractmethod
-    def dataset_init(self, **dataset_conf):
+    def dataset_init_fn(self, **dataset_conf):
         """
-        This function initializes the customized part of your dataset implementations.
+        This hook function initializes the customized part of your dataset implementations.
+        This hook is not mandatory to be overridden and the original one in the base class does nothing.
+        If your Dataset subclass has some customized part, please override this hook function and put your logic here.
 
         Args:
             **dataset_conf:
+                The arguments used for the customized initialization of your Dataset subclass.
 
         """
-        raise NotImplementedError
+        pass
 
-
-    @abstractmethod
-    def read_data_file(self, data_file: str) -> Dict[str, str]:
+    @staticmethod
+    def data_selection(data_index: List[str], selection_mode: str, selection_num: float or int or str,
+                       meta_info: str = None) -> List:
         """
-        In this function, you need to read the data files you give in 'src_data' into memory.
-
-        The input of this function is one string that indicate the absolute paths of a data file.
-        You need to first read the contents of the file into memory, and then transform the contents into a Dict.
-
-        Finally, this Dict will be returned.
-
-        Here is an implementation example:
-        >>> from speechain.dataset.abs import Dataset
-        >>> class MyDataset(Dataset):
-        ...     def read_data_file(self, data_file: str):
-        ...         # read the content of the data file
-        ...         data = read_func(data_file)
-        ...         # transform the read information into a Dict
-        ...         data = dict(transform(data))
-        ...         return data
-
-        For more details, please refer to the SpeechTextDataset in ./speechain/dataset/speech/speech_text.py as an example.
+        This function performs the data selection by the input selection strategy arguments.
+        A new batching view of the selected data instances will be returned.
 
         Args:
-            data_file: str
-                The absolute path of a data file.
+            data_index: List[str]
+                The list of data instance indices before data selection.
+            selection_num: float or int or str
+                This argument has the different usage with different data types.
+                1. float type:
+                    Float value represents the relative number of data instances to be selected.
+                    If selection_num is given as a float number, it must be between 0 and 1.
+                2. int type:
+                    Integer value represents the absolute number of data instances to be selected. If selection_num is
+                    given as an interger number, it must be negative (its absolute value will be taken).
+                3. str type:
+                    String value represents the metadata threshold used to select the data instances.
+                    Only 'min' and 'max' modes support string _selection_num_.
+                    Note: You can use the !-suffixed representer `!str` to convert a float or integer number to a
+                    string in your .yaml file.
+            selection_mode: str
+                The mode indicating how the data instances are selected.
+                Selection modes are grouped by different types of data selection strategies.
+                1. non-meta strategy:
+                  The rule-based selection strategies that don't involve metadata.
+                  Currently, available non-meta selection modes include:
+                     1. 'order': Select the given number of data instances from the beginning.
+                     2. 'rev_order': Select the given number of data instances from the end.
+                     3. 'random': Randomly select the given number of data instances.
+                     Note: You should keep the same
+                     random seeds for all the GPU processes in the DDP mode to ensure that the selected data instances
+                     are the same in each process. In this case, please set the 'same_proc_seed' argument to True in
+                     your configuration given to speechain.runner.py.
+                2. meta strategy:
+                  The selection strategies that involves metadata.
+                  Currently, available meta selection modes include:
+                   1. 'min': Select the data instances whose metadata is smaller than the threshold.
+                   2. 'max': Select the data instances whose metadata is larger than the threshold.
+                   3. 'middle': Remove the data instances whose metadata is the largest and smallest.
+            meta_info: str = None
+                The path where the metadata information used for selection is placed.
 
-        Returns:
-            The Dict of the contents of the input data file.
-
-        """
-        raise NotImplementedError
-
-
-    @abstractmethod
-    def read_label_file(self, label_file: str) -> Dict[str, str]:
-        """
-        In this function, you need to read the label files you give in 'tgt_label' into memory.
-
-        The input of this function is one strings that indicate the absolute paths of a label file.
-        You need to first read the contents of the file into memory, and then transform the contents into a Dict.
-
-        Finally, this Dict will be returned.
-
-        Here is an implementation example:
-        >>> from speechain.dataset.abs import Dataset
-        >>> class MyDataset(Dataset):
-        ...     def read_label_file(self, label_file: str):
-        ...         # read the content of the label file
-        ...         label = read_func(label_file)
-        ...         # transform the read information into a Dict
-        ...         label = dict(transform(label))
-        ...         return label
-
-        For more details, please refer to the SpeechTextDataset in ./speechain/dataset/speech/speech_text.py as an example.
-
-        Args:
-            label_file: str
-                The absolute path of a label file.
-
-        Returns:
-            The Dict of the contents of the input label file.
-
-        """
-        raise NotImplementedError
-
-
-    def read_meta_file(self, meta_file: str, meta_type: str) -> Dict[str, str]:
-        """
-        In this function, you need to read the info  files you give in 'meta_info' into memory.
-
-        The input of this function is one string that indicate the absolute paths of a info file.
-        You need to first read the contents of the file into memory, and then transform the contents into a Dict.
-
-        Finally, this Dict will be returned.
-
-        This interface is not mandatory to be overridden unless you would like to introduce meta information in your batches.
-
-        Here is an implementation example:
-        >>> from speechain.dataset.abs import Dataset
-        >>> class MyDataset(Dataset):
-        ...     def read_meta_file(self, meta_file: str, meta_type: str):
-        ...         if meta_type == 'type1':
-        ...             # read the content of the meta file
-        ...             meta = read_func1(meta_file)
-        ...             # transform the read information into a Dict
-        ...             meta = dict(transform1(meta))
-        ...         elif meta_type == 'type2':
-        ...             # read the content of the meta file
-        ...             meta = read_func2(meta_file)
-        ...             # transform the read information into a Dict
-        ...             meta = dict(transform2(meta))
-        ...         return meta
-
-        For more details, please refer to the SpeechTextDataset in ./speechain/dataset/speech/speech_text.py as an example.
-
-        Args:
-            meta_file: str
-                The absolute path of a info file.
-            meta_type: str
-                The type of the information in the current input info file.
-
-        Returns:
-            The Dict of the contents of the input info file.
+        Returns: List[str]
+            A list of indices of the selected data instances
 
         """
-        raise NotImplementedError
+        # turn into numpy.array for clipping operations
+        sorted_data = np.array(data_index, dtype=str)
 
+        # for non-meta selection strategies
+        if meta_info is None:
+            assert isinstance(selection_num, (int, float))
+            # 0 < selection_num < 1 means that we relatively select data instances by a percentage number
+            # selection_num < 0 means that we absolutely select data instances by the given value
+            selection_num = int(-selection_num if selection_num < 0 else len(sorted_data) * selection_num)
+            # 'order' means we select the data instances from the beginning to the end
+            if selection_mode == 'order':
+                sorted_data = sorted_data[:selection_num]
+            # 'rev_order' means we select the data instances from the end to the beginning
+            elif selection_mode == 'rev_order':
+                sorted_data = sorted_data[-selection_num:]
+            # 'random' means we randomly select the data instances
+            elif selection_mode == 'random':
+                sorted_data = sorted_data[np.random.randint(0, len(sorted_data), selection_num)]
+
+        # for meta-required selection strategies
+        else:
+            # read the metadata information for data selection
+            meta_info = np.loadtxt(meta_info, dtype=str, delimiter=" ")
+            # initialize the sorted indices and metadata values of the data instances
+            meta_sorted_data = meta_info[:, 0][np.argsort(meta_info[:, 1].astype(float))]
+            meta_sorted_value = np.sort(meta_info[:, 1].astype(float))
+            # retain only the intersection of data instances in case that there is a index mismatch
+            intsec_indices = np.in1d(meta_sorted_data, sorted_data)
+            meta_sorted_data, meta_sorted_value = meta_sorted_data[intsec_indices], meta_sorted_value[intsec_indices]
+
+            # select a certain amount of data instances
+            if isinstance(selection_num, (int, float)):
+                # 0 < selection_num < 1 means that we relatively select data instances by a percentage number
+                # selection_num < 0 means that we absolutely select data instances by the given value
+                selection_num = int(-selection_num if selection_num < 0 else len(meta_sorted_data) * selection_num)
+                # 'min' means the instances with the minimal meta values will be selected
+                if selection_mode == 'min':
+                    removed_sorted_data = meta_sorted_data[selection_num:]
+                # 'max' means the instances with the maximal meta values will be selected
+                elif selection_mode == 'max':
+                    removed_sorted_data = meta_sorted_data[:-selection_num]
+                # 'middle' means the instances with the minimal and maximal meta values will be excluded
+                elif selection_mode == 'middle':
+                    removed_sorted_data = meta_sorted_data[:int((meta_sorted_data.shape[0] - selection_num) / 2)] + \
+                                          meta_sorted_data[-int((meta_sorted_data.shape[0] - selection_num) / 2):]
+                else:
+                    raise ValueError
+
+            # select the data instances by a certain threshold
+            elif isinstance(selection_num, str):
+                selection_num = float(selection_num)
+                # 'min' means the instances whose metadata is lower than the given threshold will be selected
+                if selection_mode == 'min':
+                    removed_sorted_data = meta_sorted_data[meta_sorted_value > selection_num]
+                # 'max' means the instances whose metadata is larger than the given threshold will be selected
+                elif selection_mode == 'max':
+                    removed_sorted_data = meta_sorted_data[meta_sorted_value < selection_num]
+                # 'middle' is not supported for the threshold selection
+                else:
+                    raise ValueError
+
+            else:
+                raise TypeError
+
+            # remove the undesired instances from the accessible instance indices
+            sorted_data = np.setdiff1d(sorted_data, removed_sorted_data)
+
+        # return the list of indices
+        return sorted_data.tolist()
 
     def get_data_index(self) -> List[str]:
         """
+        This function is designed to make users know the data indices of this Dataset object without accessing its
+        members for lower coupling.
 
-        Returns:
-            returns the list of the indices of all data samples in this dataset.
+        Returns: List[str]
+            The list of the indices of all data instances in this dataset.
 
         """
-        if self.src_data is not None:
-            return list(self.src_data.keys())
-        return list(self.tgt_label.keys())
-
+        return self.data_index
 
     def remove_data_by_index(self, index: str):
         """
-        This function removes the corresponding data sample from the dataset by the given index. Mainly used for
-        solving the index mismatch of data samples with the iterator during training.
+        This function removes the corresponding data instance from this Dataset object by the given index. It's mainly
+        used for solving the index mismatch of data instances with the high-level Iterator object.
 
         """
-        if self.src_data is not None:
-            self.src_data.pop(index)
+        # remove the data instances with the given index from self.main_data
+        for data_type in self.main_data.keys():
+            if index in self.main_data[data_type].keys():
+                self.main_data[data_type].pop(index)
 
-        if self.tgt_label is not None:
-            self.tgt_label.pop(index)
-
-        if self.meta_info is not None:
-            for meta_type in self.meta_info.keys():
-                if index in self.meta_info[meta_type].keys():
-                    self.meta_info[meta_type].pop(index)
-
-
-    @abstractmethod
-    def __getitem__(self, index) -> Dict[str, Any]:
+    def __getitem__(self, index: str) -> Dict[str, Any]:
         """
-        This function decides how to load the raw data from the disk by the given index from the Dataloader.
+        This function is the implementation of the one in the parent class `torch.utils.data.Dataset`.  This function
+        is activated by the _Dataloader_ object one data instance a time. In each time, this function receives an index
+        and returns the selected data instance.
 
-        """
-        raise NotImplementedError
-
-
-    @abstractmethod
-    def collate_fn(self, batch: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """
-        This function decides how to preprocess a batch of data generated by the Dataloader before giving it to the model.
-
-        Sometimes, the data cannot be directly used by the model after reading the data from the disk. For example,
-        the utterances and sentences used for training a ASR model may have different lengths, so we need to do the
-        padding operations to make them equal in length.
-
-        This function should return the processed batch data in a Dict.
+        The hook `proc_main_data_fn()` is executed here after extracting the main body of the selected data instance.
 
         Args:
-            batch: The tuple of data samples loaded from the disk
+            index: str
+                The index of the selected data instance given by the Dataloader object.
+
+        Returns: Dict[str, Any]
+            A dictionary containing a data instance.
+        """
+        # pre-extract the data instances from self.main_data dictionary by the given index
+        outputs = {key: value[index] for key, value in self.main_data.items()}
+
+        # process the main body of data instances by the hook interface implementation
+        outputs = self.extract_main_data_fn(outputs)
+        return outputs
+
+    def extract_main_data_fn(self, main_data: Dict[str, str]) -> Dict[str, Any]:
+        """
+        This hook function extracts the selected data instance from the disk to the memory. If you want to implement
+        your own data instance extraction, please override this hook function and give your logic here.
+
+        Args:
+            main_data: Dict[str, str]
+                The dictionary containing necessary information for extracting the data instance from the disk to the
+                memory. For example, the audio file path for the waveform data and the feature file path for the speaker
+                embedding.
+
+        Returns: Dict[str, Any]
+            The dictionary containing the extracted data instance.
 
         """
-        raise NotImplementedError
+        return main_data
+
+    def collate_fn(self, batch: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        This hook function decides how to preprocess a list of extracted data instance dictionary before giving them to
+        the model. This hook function is used as the value of the argument collate_fn for initializing Dataloader object
+        at the beginning of each epoch.
+
+        If you have your own batch collating strategy, we don't recommend you to override this hook but another hook
+        named `collate_main_data_fn()`.
+
+        This function should return the processed batch data in the form of a dictionary.
+
+        Args:
+            batch: List[Dict[str, Any]]
+                The tuple of data instance dictionaries extracted by `extract_main_data_fn()`.
+
+        Returns: Dict[str, Any]
+            The batch dictionary that will be passed to the model.
+
+        """
+        # preprocess List[Dict[str, Any]] to Dict[str, List[Any]]
+        outputs = dict()
+        while len(batch) != 0:
+            ele_dict = batch[0]
+            for key in ele_dict.keys():
+                if key not in outputs.keys():
+                    outputs[key] = []
+                outputs[key].append(ele_dict[key])
+            # remove the redundant data for memory safety
+            batch.remove(ele_dict)
+
+        # postprocess Dict[str, List[Any]] by the hook implementation
+        return self.collate_main_data_fn(outputs)
+
+    def collate_main_data_fn(self, batch_dict: Dict[str, List]) -> Dict[str, torch.Tensor or List]:
+        """
+        This hook function decides how to preprocess a dictionary of the extracted batch of data instances before giving
+        them to the model. The original hook in the base class packages all the elements other than strings of the batch
+        into a `torch.Tensor`. Therefore, the `torch.Tensor` elements must have the same shape. The string elements will
+        remain a list.
+
+        If you have your own batch collating strategy, please override this hook function and give your logic here.
+
+        Args:
+            batch_dict: Dict[str, List]
+                The reshaped dictionary of the extracted batch. In each key-value item, the key is the name of the data
+                variable that will be passed to the model and the value is the list of unorganized data from all the
+                elements in the batch.
+
+        Returns: Dict[str, torch.Tensor or List]
+            The dictionary containing the collated batch of data instances.
+
+        """
+        # extract the main body of data instances by the hook interface implementation
+        for key in batch_dict.keys():
+            # List[torch.Tensor] -> torch.Tensor
+            if isinstance(batch_dict[key][0], torch.Tensor):
+                batch_dict[key] = torch.stack([ele for ele in batch_dict[key]])
+            # List[numpy.ndarry] -> List[torch.Tensor] -> torch.Tensor
+            elif isinstance(batch_dict[key][0], np.ndarray):
+                batch_dict[key] = torch.stack([torch.tensor(ele) for ele in batch_dict[key]])
+            # List[int] -> torch.LongTensor
+            elif isinstance(batch_dict[key][0], int):
+                batch_dict[key] = torch.LongTensor(batch_dict[key])
+            # List[float] -> torch.FloatTensor
+            elif isinstance(batch_dict[key][0], float):
+                batch_dict[key] = torch.FloatTensor(batch_dict[key])
+            # List[str] remains List[str]
+            elif not isinstance(batch_dict[key][0], str):
+                raise RuntimeError
+
+        return batch_dict

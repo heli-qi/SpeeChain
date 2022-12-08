@@ -10,6 +10,7 @@ from typing import Dict
 from speechain.criterion.abs import Criterion
 from speechain.utilbox.train_util import make_mask_from_len
 
+
 class CrossEntropy(Criterion):
     """
     This criterion calculates the cross entropy between model predictions and target labels.
@@ -20,6 +21,7 @@ class CrossEntropy(Criterion):
         If you want to customize the weights, you need to give the token dictionary.
 
     """
+
     def criterion_init(self,
                        is_normalized: bool = False,
                        label_smoothing: float = 0.0,
@@ -63,10 +65,10 @@ class CrossEntropy(Criterion):
             for token, weight in new_weights.items():
                 self.token_weights[token_dict[token]] = weight
 
-    def forward(self,
-                logits: torch.Tensor,
-                text: torch.Tensor,
-                text_len: torch.Tensor):
+    def __call__(self,
+                 logits: torch.Tensor,
+                 text: torch.Tensor,
+                 text_len: torch.Tensor):
         """
 
         Args:
@@ -85,8 +87,8 @@ class CrossEntropy(Criterion):
         if logits.size(1) == text.size(1) - 1:
             # text_len must match the sequence dimension of text
             assert text_len.max() == text.size(1), \
-                f"There is a mismatch of the sentence length between text and text_len. "\
-                f"Expect text_len.max() is either equal to or 1 smaller than text.size(1), "\
+                f"There is a mismatch of the sentence length between text and text_len. " \
+                f"Expect text_len.max() is either equal to or 1 smaller than text.size(1), " \
                 f"but got text_len.max()={text_len.max()} and text.size(1)={text.size(1)}."
             # remove the <sos/eos> at the beginning
             text = text[:, 1:].squeeze()

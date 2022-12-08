@@ -8,6 +8,7 @@ import torch
 from speechain.criterion.abs import Criterion
 from speechain.utilbox.train_util import make_mask_from_len
 
+
 class Accuracy(Criterion):
     """
     This criterion calculates the accuracy rate (0.0~1.0) between model predictions and target labels.
@@ -15,11 +16,10 @@ class Accuracy(Criterion):
 
     """
 
-    def forward(self,
-                logits: torch.Tensor,
-                text: torch.Tensor,
-                text_len: torch.Tensor,
-                **kwargs):
+    def __call__(self,
+                 logits: torch.Tensor,
+                 text: torch.Tensor,
+                 text_len: torch.Tensor):
         """
 
         Args:
@@ -29,7 +29,6 @@ class Accuracy(Criterion):
                 The ground-truth token sequences
             text_len: (batch,)
                 The length for the token predictions.
-            **kwargs:
 
         Returns:
             The accuracy of the token predictions.

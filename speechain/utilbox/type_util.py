@@ -3,10 +3,12 @@
     Affiliation: NAIST
     Date: 2022.08
 """
-def str2bool(str: str) -> bool:
-    if str.lower() == 'true':
+
+
+def str2bool(input_str: str) -> bool:
+    if input_str.lower() == 'true':
         return True
-    elif str.lower() == 'false':
+    elif input_str.lower() == 'false':
         return False
     else:
         raise ValueError

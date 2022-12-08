@@ -9,13 +9,16 @@ from abc import ABC, abstractmethod
 
 class SpeechTextMetaPostProcessor(ABC):
     """
+    The base class for metadata post-processing of all the datasets. This class is not mandatory to be overridden.
+    For contributing a new dataset dumping pipeline, please inherit this class in your meta_post_processor.py if needed
+    and implement the abstract functions meta_post_process().
 
     """
 
     def parse(self):
         """
-
-        Returns:
+        Declaration function for the general arguments shared by all dataset implementations.
+        There is one shared general argument here: 'src_path'.
 
         """
         parser = argparse.ArgumentParser(description='params')
@@ -30,6 +33,7 @@ class SpeechTextMetaPostProcessor(ABC):
     def add_parse(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         """
         The interface where users can add their own arguments.
+        This function is not mandatory to be overridden.
 
         Args:
             parser: argparse.ArgumentParser
@@ -44,14 +48,29 @@ class SpeechTextMetaPostProcessor(ABC):
 
     @abstractmethod
     def meta_post_process(self, src_path: str, **kwargs):
+        """
+        The abstract function that must be overridden to post-process the metadata files in the given src_path for your
+        target dataset.
+
+        Args:
+            src_path: str
+                The path where the original dataset is placed.
+            **kwargs:
+                The newly-added arguments for your dataset implementation.
+
+        """
         raise NotImplementedError
 
     def main(self):
+        """
+        The entrance of SpeechTextMetaPostProcessor.
+
+        """
         # --- 0. Argument Initialization --- #
         args = vars(self.parse())
         src_path = args.pop('src_path')
 
-        # --- 1.  --- #
+        # --- 1. Metadata Post-processing --- #
         self.meta_post_process(src_path, **args)
 
 

@@ -104,11 +104,10 @@ After the installation of *Anaconda*, please follow the steps below to deploy ou
 1. Find a path with enough disk memory space.
 2. Clone our toolkit by `git clone https://github.com/ahclab/SpeeChain.git`.
 3. Move to the root path of our toolkit by `cd SpeeChain`.
-4. Run `conda env create -f environment.yaml` to create our virtual conda environment named *speechain*.
-(don't forget to change the _prefix_ inside this .yaml file to the place in your machine). 
-5. Activate the environment *speechain* by `conda activate speechain`
-6. Run `pip install -e .` to install our toolkit into the environment.
-7. Read the [handbook](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#speechain-handbook) and start your journey in SpeeChain!
+4. Run `source envir_preparation.sh` to build the environment for SpeeChain toolkit. 
+After execution, a virtual environment named `speechain` will be created and two environmental variables `SPEECHAIN_ROOT` and `SPEECHAIN_PYTHON` will be initialized in your `~/.bashrc`.  
+**Note:** It must be executed in the root path `SpeeChain` and by the command `source` rather than `./envir_preparation.sh`.
+6. Read the [handbook](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#speechain-handbook) and start your journey in SpeeChain!
 
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain#table-of-contents)
 
@@ -127,6 +126,9 @@ For better readability, we follow the Google Docstring format.
 4. **In-line comments**:  
 Our codes are grouped by their functions to improve the readability. 
 For each functional code block, we provide some in-line comments to explain the block such as its working flow and data shape transformation.
+
+**Note:** If there is a mismatch between codes and documents, the code shall prevail. 
+We would appreciate it if you could report any documents that are not updated to us.
 
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain#table-of-contents)
 

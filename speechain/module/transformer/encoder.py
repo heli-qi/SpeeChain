@@ -69,7 +69,6 @@ class TransformerEncoderLayer(Module):
         self.att_layernorm = nn.LayerNorm(d_model, eps=1e-6)
         self.fdfwd_layernorm = nn.LayerNorm(d_model, eps=1e-6)
 
-
     def forward(self, src: torch.Tensor, mask: torch.Tensor):
         """
         Forward pass for a single transformer encoder layer.
@@ -110,7 +109,6 @@ class TransformerEncoderLayer(Module):
         return fdfwd_output, attmat
 
 
-
 class TransformerEncoder(Module):
     """
         The Transformer encoder for any Sequence-to-Sequence tasks.
@@ -132,6 +130,7 @@ class TransformerEncoder(Module):
             4. Before performing residual connect in a Transformer layer.
 
     """
+
     def module_init(self,
                     posenc_type: str = 'mix',
                     posenc_scale: bool = False,
@@ -165,6 +164,9 @@ class TransformerEncoder(Module):
                 Usually, the default value of this argument is enough for the research.
             posenc_dropout: float
                 The dropout rate for the Dropout layer after adding the positional encoding to the input
+            emb_layernorm: bool
+                Controls whether the embedding vectors are normalized by LayerNorm before adding into the positional
+                encoding or not.
             emb_scale: bool
                 Controls whether the embedding vectors are scaled up by sqrt(d_model) before adding into the positional
                 encoding or not.
@@ -225,7 +227,8 @@ class TransformerEncoder(Module):
 
         # padding the self.dwsmpl_factors if the length of the given list is shorter than self.num_layers
         if self.dwsmpl_factors is not None:
-            self.dwsmpl_factors = self.dwsmpl_factors if isinstance(self.dwsmpl_factors, List) else [self.dwsmpl_factors]
+            self.dwsmpl_factors = self.dwsmpl_factors if isinstance(self.dwsmpl_factors, List) else [
+                self.dwsmpl_factors]
 
             if len(self.dwsmpl_factors) < self.num_layers:
                 _diff = self.num_layers - len(self.dwsmpl_factors)
@@ -254,7 +257,6 @@ class TransformerEncoder(Module):
         # initialize layernorm layer if necessary
         if self.layernorm_first:
             self.layernorm = nn.LayerNorm(d_model, eps=1e-6)
-
 
     def forward(self, src: torch.Tensor, mask: torch.Tensor):
         """
@@ -303,18 +305,4 @@ class TransformerEncoder(Module):
         if self.layernorm_first:
             src = self.layernorm(src)
 
-        return dict(
-            output=src,
-            mask=mask,
-            att=attmat,
-            hidden=hidden
-        )
-
-
-    def get_trainable_scalars(self):
-        if hasattr(self.posenc, 'posenc_scalar'):
-            return dict(
-                posenc_scalar=self.posenc.posenc_scalar.data
-            )
-        else:
-            return None
+        return src, mask, attmat, hidden

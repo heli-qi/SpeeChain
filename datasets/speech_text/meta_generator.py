@@ -1,3 +1,8 @@
+"""
+    Author: Heli Qi
+    Affiliation: NAIST
+    Date: 2022.11
+"""
 import argparse
 import os
 from abc import ABC, abstractmethod
@@ -8,13 +13,15 @@ import numpy as np
 
 class SpeechTextMetaGenerator(ABC):
     """
+    The base class for metadata generators of all the datasets. For contributing a new dataset dumping pipeline,
+    please inherit this class in your meta_generator.py and implement the abstract functions generate_meta_dict().
 
     """
 
     def parse(self):
         """
-
-        Returns:
+        Declaration function for the general arguments shared by all dataset implementations.
+        There are two shared general arguments here: 'src_path' and 'txt_format'.
 
         """
         parser = argparse.ArgumentParser(description='params')
@@ -32,6 +39,7 @@ class SpeechTextMetaGenerator(ABC):
     def add_parse(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         """
         The interface where users can add their own arguments.
+        This function is not mandatory to be overridden.
 
         Args:
             parser: argparse.ArgumentParser
@@ -48,18 +56,35 @@ class SpeechTextMetaGenerator(ABC):
     def generate_meta_dict(self, src_path: str, txt_format: str, **kwargs) \
             -> Dict[str, Dict[str, Dict[str, str] or List[str]]]:
         """
+        The abstract function that must be overridden to generate the metadata Dict for the specified dataset.
 
         Args:
-            src_path:
-            txt_format:
+            src_path: str
+                The path where the original dataset is placed.
+            txt_format: str = 'normal'
+                The text processing format controlling how to process the transcript sentence of each utterance before
+                saving them into 'idx2text' and 'text'.
             **kwargs:
+                The newly-added arguments for your dataset implementation.
 
-        Returns:
+        Returns: Dict[str, Dict[str, Dict[str, str] or List[str]]]
+            The metadata dictionary you want to save on the disk for later use.
+            The first-level keys indicate the names of subsets in the dataset.
+            The second-level keys indicate the names of metadata files you want to save.
+                The third-level elements can be either Dict or List. Dict represents those 'idx2XXX' files where each
+                line contains a file index and corresponding metadata value. List represents those 'XXX' files where
+                each line only contains metadata value without any file indices.
 
         """
         raise NotImplementedError
 
     def main(self):
+        """
+        The entrance of SpeechTextMetaGenerator. There are twp steps in this function:
+        1. obtain the metadata dictionary by self.generate_meta_dict()
+        2. save the metadata in the dictionary in the given src_path where each subset will have a specific folder.
+
+        """
         # --- 0. Argument Initialization --- #
         args = vars(self.parse())
         src_path = args.pop('src_path')

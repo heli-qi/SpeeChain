@@ -5,9 +5,12 @@
     Date: 2022.07
 """
 import math
+from typing import Dict
+
 import torch
 
 from speechain.module.abs import Module
+
 
 class PositionalEncoding(Module):
     """
@@ -81,7 +84,7 @@ class PositionalEncoding(Module):
         if emb_layernorm:
             self.emb_layernorm = torch.nn.LayerNorm(d_model)
         if posenc_scale:
-            self.posenc_scalar = torch.nn.Parameter(torch.tensor(1.0))
+            self.alpha = torch.nn.Parameter(torch.tensor(1.0))
 
         # positional encoding matrix
         self.update_posenc(max_len, d_model)
@@ -89,14 +92,12 @@ class PositionalEncoding(Module):
         # positional encoding Dropout layer
         self.dropout = torch.nn.Dropout(p=dropout)
 
-
     def reset_parameters(self):
         """
         Make sure that the scalar value is not influenced by different model initialization methods.
         """
-        if hasattr(self, 'posenc_scalar'):
-            self.posenc_scalar.data = torch.tensor(1.0)
-
+        if hasattr(self, 'alpha'):
+            self.alpha.data = torch.tensor(1.0)
 
     def update_posenc(self, max_len: int, d_model: int):
         """
@@ -129,7 +130,6 @@ class PositionalEncoding(Module):
         # here register_buffer() allows posenc to be automatically put onto GPUs as a buffer member
         self.register_buffer('posenc', posenc.unsqueeze(0))
 
-
     def forward(self, emb_feat):
         """
         Embedded feature
@@ -160,14 +160,19 @@ class PositionalEncoding(Module):
 
         # 3. (optional) scale the positional encoding vectors
         posenc = self.posenc[:, :emb_feat.size(1)]
-        if hasattr(self, 'posenc_scalar'):
-            # avoid posenc *= self.posenc_scalar to protect the original positional encoding
-            posenc = posenc * self.posenc_scalar
+        if hasattr(self, 'alpha'):
+            # avoid posenc *= self.alpha to protect the original positional encoding
+            posenc = posenc * self.alpha
 
         # 4. (mandatory) add positional encoding into embedded feature and apply the dropout
         return self.dropout(emb_feat + posenc)
 
+    def get_recordable_para(self) -> Dict or None:
+        if hasattr(self, 'alpha'):
+            return dict(alpha=self.alpha)
+        else:
+            return None
 
     def extra_repr(self) -> str:
-        return f"emb_scale={self.emb_scale}" \
-               f"\nposenc_scale={hasattr(self, 'posenc_scalar')}"
+        return f"emb_scale={self.emb_scale}\n" \
+               f"posenc_scale={hasattr(self, 'alpha')}"

@@ -4,6 +4,8 @@
     Date: 2022.07
 """
 import copy
+import warnings
+
 import numpy as np
 import torch
 from typing import Dict, Any, List
@@ -14,12 +16,11 @@ from speechain.tokenizer.subword import SubwordTokenizer
 from speechain.infer_func.beam_search import beam_searching
 from speechain.utilbox.tensor_util import to_cpu
 from speechain.utilbox.eval_util import get_word_edit_alignment
-from speechain.utilbox.md_util import get_list_strings
+from speechain.utilbox.train_util import text2tensor_and_len
 
 from speechain.module.encoder.asr import ASREncoder
 from speechain.module.decoder.asr import ASRDecoder
 
-from speechain.criterion.abs import Criterion
 from speechain.criterion.cross_entropy import CrossEntropy
 from speechain.criterion.accuracy import Accuracy
 from speechain.criterion.error_rate import ErrorRate
@@ -30,19 +31,19 @@ class ASR(Model):
     Encoder-Decoder Automatic Speech Recognition (Enc-Dec ASR) implementation.
 
     """
-    def model_construction(self,
-                           token_type: str,
-                           token_vocab: str,
-                           frontend: Dict,
-                           enc_prenet: Dict,
-                           encoder: Dict,
-                           dec_prenet: Dict,
-                           decoder: Dict,
-                           normalize: Dict or bool = None,
-                           specaug: Dict or bool = None,
-                           cross_entropy: Dict = None,
-                           sample_rate: int = 16000,
-                           audio_format: str = 'wav'):
+
+    def module_init(self,
+                    token_type: str,
+                    token_vocab: str,
+                    frontend: Dict,
+                    enc_prenet: Dict,
+                    encoder: Dict,
+                    dec_prenet: Dict,
+                    decoder: Dict,
+                    normalize: Dict or bool = None,
+                    specaug: Dict or bool = None,
+                    sample_rate: int = 16000,
+                    audio_format: str = 'wav'):
         """
 
         Args:
@@ -51,12 +52,12 @@ class ASR(Model):
                 The configuration of the acoustic feature extraction frontend.
                 This argument must be given since our toolkit doesn't support time-domain ASR.
             (optional) normalize:
-                The configuration of the feature normalization module (speechain.module.norm.feat_norm.FeatureNormalization).
+                The configuration of the feature normalization module.
                 This argument can be given in either a Dict or a bool value.
                 In the case of the bool value, True means the default configuration and False means no normalization.
                 If this argument is not given, there will be also no normalization.
             (optional) specaug:
-                The configuration of the SpecAugment module (speechain.module.augment.specaug.SpecAugment).
+                The configuration of the SpecAugment module.
                 This argument can be given in either a Dict or a bool value.
                 In the case of the bool value, True means the default configuration and False means no SpecAugment.
                 If this argument is not given, there will be also no SpecAugment.
@@ -75,10 +76,6 @@ class ASR(Model):
             (mandatory) decoder:
                 The configuration of the decoder module.
                 The decoder predicts the probability of the next token at each time steps based on the token embeddings.
-            # --- criterion_conf arguments --- #
-            (optional) cross_entropy:
-                The configuration of the cross entropy criterion (speechain.criterion.cross_entropy.CrossEntropy).
-                If this argument is not given, the default configuration will be used.
             # --- customize_conf arguments --- #
             (mandatory) token_type:
                 The type of the built-in tokenizer.
@@ -86,21 +83,16 @@ class ASR(Model):
                 The absolute path of the vocabulary for the built-in tokenizer.
             (optional) sample_rate:
                 The sampling rate of the input speech.
-                Currently it's used for acoustic feature extraction frontend initialization and tensorboard register of
+                Currently, it's used for acoustic feature extraction frontend initialization and tensorboard register of
                 the input speech during model visualization.
-                In the future, this argument will also be used to dynamically downsample the input speech during training.
+                In the future, this argument will also be used to on-the-fly downsample the input speech.
             (optional) audio_format:
                 The file format of the input speech.
                 It's only used for tensorboard register of the input speech during model visualization.
 
         """
-        def recur_criterion_init(curr_input, criterion_class):
-            if sum([isinstance(value, Dict) for value in curr_input.values()]) == len(curr_input):
-                return {key: recur_criterion_init(value, criterion_class) for key, value in curr_input.items()}
-            else:
-                return criterion_class(**curr_input)
 
-        # --- Model-Customized Part Initialization --- #
+        # --- 1. Module-independent Initialization --- #
         # initialize the tokenizer
         if token_type.lower() == 'char':
             self.tokenizer = CharTokenizer(token_vocab)
@@ -115,24 +107,17 @@ class ASR(Model):
         self.sample_rate = sample_rate
         self.audio_format = audio_format.lower()
 
-        # default values of ASR topn bad case selection
-        self.bad_cases_selection = [
-            ['wer', 'max', 30],
-            ['cer', 'max', 30],
-            ['len_ratio', 'min', 30],
-            ['len_ratio', 'max', 30],
-            ['sent_prob', 'min', 30],
-            ['sent_prob', 'max', 30]
-        ]
-
-
-        # --- Module Part Construction --- #
-        # Encoder construction, the sampling rate will be first initialized
+        # --- 2. Module Initialization --- #
+        # --- 2.1. Encoder construction --- #
+        # the sampling rate will be first initialized
         if 'sr' not in frontend['conf'].keys():
             frontend['conf']['sr'] = self.sample_rate
         else:
-            assert frontend['conf']['sr'] == self.sample_rate, \
-                "The sampling rate in your frontend configuration doesn't match the one in customize_conf!"
+            if frontend['conf']['sr'] != self.sample_rate:
+                warnings.warn(
+                    "The sampling rate in your frontend configuration doesn't match the one in customize_conf. "
+                    "The one in your configuration will be used to extract acoustic features.")
+
         self.encoder = ASREncoder(
             frontend=frontend,
             normalize=normalize,
@@ -142,28 +127,48 @@ class ASR(Model):
             distributed=self.distributed
         )
 
-        # Decoder construction, the vocabulary size will be first initialized
+        # --- 2.2. Decoder construction --- #
+        # the vocabulary size is given by the built-in tokenizer instead of the input configuration
         if 'vocab_size' in dec_prenet['conf'].keys():
-            assert dec_prenet['conf']['vocab_size'] == self.tokenizer.vocab_size, \
-                f"The vocab_size values are different in dec_prenet and self.tokenizer! " \
-                f"Got dec_prenet['conf']['vocab_size']={dec_prenet['conf']['vocab_size']} and " \
-                f"self.tokenizer.vocab_size={self.tokenizer.vocab_size}"
+            if dec_prenet['conf']['vocab_size'] != self.tokenizer.vocab_size:
+                warnings.warn(f"Your input vocabulary size is different from the one obtained from the built-in "
+                              f"tokenizer ({self.tokenizer.vocab_size}). The latter one will be used to initialize the "
+                              f"decoder for correctness.")
+            dec_prenet['conf'].pop('vocab_size')
         self.decoder = ASRDecoder(
             vocab_size=self.tokenizer.vocab_size,
             prenet=dec_prenet,
             decoder=decoder
         )
 
+    def criterion_init(self, is_normalized: bool = False, label_smoothing: float = 0.0):
+        """
 
-        # --- Criterion Part Initialization --- #
+        Args:
+            is_normalized:
+            label_smoothing:
+
+        Returns:
+
+        """
         # training loss
-        self.cross_entropy = recur_criterion_init(cross_entropy, CrossEntropy)
+        self.cross_entropy = CrossEntropy(is_normalized=is_normalized, label_smoothing=label_smoothing)
         # validation metrics
         self.accuracy = Accuracy()
-        self.error_rate = ErrorRate()
+        self.error_rate = ErrorRate(tokenizer=self.tokenizer)
 
+    @staticmethod
+    def bad_cases_selection_init_fn() -> List[List[str or int]] or None:
+        return [
+            ['wer', 'max', 30],
+            ['cer', 'max', 30],
+            ['len_ratio', 'min', 30],
+            ['len_ratio', 'max', 30],
+            ['text_confid', 'min', 30],
+            ['text_confid', 'max', 30]
+        ]
 
-    def batch_preprocess(self, batch_data: Dict):
+    def batch_preprocess_fn(self, batch_data: Dict):
         """
 
         Args:
@@ -184,38 +189,35 @@ class ASR(Model):
 
             """
             # --- Process the Text String and its Length --- #
-            assert 'text' in data_dict.keys() and isinstance(data_dict['text'], List)
-            for i in range(len(data_dict['text'])):
-                data_dict['text'][i] = self.tokenizer.text2tensor(data_dict['text'][i])
-            text_len = torch.LongTensor([t.size(0) for t in data_dict['text']])
-            text = torch.full((text_len.size(0), text_len.max().item()), self.tokenizer.ignore_idx,
-                              dtype=text_len.dtype)
-            for i in range(text_len.size(0)):
-                text[i][:text_len[i]] = data_dict['text'][i]
+            if 'text' in data_dict.keys():
+                assert isinstance(data_dict['text'], List)
+                data_dict['text'], data_dict['text_len'] = text2tensor_and_len(
+                    text_list=data_dict['text'], text2tensor_func=self.tokenizer.text2tensor,
+                    ignore_idx=self.tokenizer.ignore_idx
+                )
 
-            data_dict['text'] = text
-            data_dict['text_len'] = text_len
-
-            # data_dict['spk_ids'] still remains in data_dict in the form of strings as metainfo
             return data_dict
 
         # check whether the batch_data is made by multiple dataloaders
-        multi_flag = sum([isinstance(value, Dict) for value in batch_data.values()]) == len(batch_data)
-        return process_strings(batch_data) if not multi_flag else \
-            {key: process_strings(value) for key, value in batch_data.items()}
+        leaf_flags = [not isinstance(value, Dict) for value in batch_data.values()]
+        if sum(leaf_flags) == 0:
+            return {key: process_strings(value) for key, value in batch_data.items()}
+        elif sum(leaf_flags) == len(batch_data):
+            return process_strings(batch_data)
+        else:
+            raise RuntimeError
 
-
-    def model_forward(self,
-                      feat: torch.Tensor,
-                      text: torch.Tensor,
-                      feat_len: torch.Tensor,
-                      text_len: torch.Tensor,
-                      epoch: int = None,
-                      domain: str = None,
-                      return_att: bool = False,
-                      return_hidden: bool = False,
-                      return_enc: bool = False,
-                      **kwargs) -> Dict[str, torch.Tensor]:
+    def module_forward(self,
+                       feat: torch.Tensor,
+                       text: torch.Tensor,
+                       feat_len: torch.Tensor,
+                       text_len: torch.Tensor,
+                       epoch: int = None,
+                       domain: str = None,
+                       return_att: bool = False,
+                       return_hidden: bool = False,
+                       return_enc: bool = False,
+                       **kwargs) -> Dict[str, torch.Tensor]:
         """
 
         Args:
@@ -230,6 +232,7 @@ class ASR(Model):
             epoch: int
                 The number of the current training epoch.
                 Mainly used for mean&std calculation in the feature normalization
+            domain: str = None
             return_att: bool
                 Controls whether the attention matrices of each layer in the encoder and decoder will be returned.
             return_hidden: bool
@@ -258,82 +261,61 @@ class ASR(Model):
         text, text_len = text[:, :-1], text_len - 1
 
         # Encoding
-        enc_outputs = self.encoder(feat=feat, feat_len=feat_len, epoch=epoch, domain=domain)
+        enc_feat, enc_feat_mask, enc_attmat, enc_hidden = self.encoder(
+            feat=feat, feat_len=feat_len, epoch=epoch, domain=domain)
 
         # Decoding
-        dec_outputs = self.decoder(enc_feat=enc_outputs['enc_feat'],
-                                   enc_feat_mask=enc_outputs['enc_feat_mask'],
-                                   text=text, text_len=text_len)
+        dec_feat, dec_attmat, encdec_attmat, dec_hidden = self.decoder(
+            enc_feat=enc_feat, enc_feat_mask=enc_feat_mask, text=text, text_len=text_len)
 
         # initialize the asr output to be the decoder predictions
         outputs = dict(
-            logits=dec_outputs['output']
+            logits=dec_feat
         )
-
         # return the attention results of either encoder or decoder if specified
         if return_att:
             outputs.update(
-                att=dict()
+                att=dict(
+                    enc_att=enc_attmat,
+                    dec_att=dict(
+                        self_att=dec_attmat,
+                        encdec_att=encdec_attmat
+                    )
+                )
             )
-            if 'att' in enc_outputs.keys():
-                outputs['att'].update(
-                    enc_att=enc_outputs['att']
-                )
-            if 'att' in dec_outputs.keys():
-                outputs['att'].update(
-                    dec_att=dec_outputs['att']
-                )
-            assert len(outputs['att']) > 0
-
         # return the internal hidden results of both encoder and decoder if specified
         if return_hidden:
             outputs.update(
-                hidden=dict()
+                hidden=dict(
+                    enc_hidden=enc_hidden,
+                    dec_hidden=dec_hidden
+                )
             )
-            if 'hidden' in enc_outputs.keys():
-                outputs['hidden'].update(
-                    enc_hidden=enc_outputs['hidden']
-                )
-            if 'hidden' in dec_outputs.keys():
-                outputs['hidden'].update(
-                    dec_hidden=dec_outputs['hidden']
-                )
-            assert len(outputs['hidden']) > 0
-
         # return the encoder outputs if specified
         if return_enc:
-            assert 'enc_feat' in enc_outputs.keys() and 'enc_feat_mask' in enc_outputs.keys()
             outputs.update(
-                enc_feat=enc_outputs['enc_feat'],
-                enc_feat_mask=enc_outputs['enc_feat_mask']
+                enc_feat=enc_feat,
+                enc_feat_mask=enc_feat_mask
             )
         return outputs
 
-
-    def loss_calculation(self,
-                         logits: torch.Tensor,
-                         text: torch.Tensor,
-                         text_len: torch.Tensor,
-                         domain: str = None,
-                         return_scalars: bool = True,
-                         **kwargs) -> (Dict[str, torch.Tensor], Dict[str, torch.Tensor]):
+    def criterion_forward(self,
+                          logits: torch.Tensor,
+                          text: torch.Tensor,
+                          text_len: torch.Tensor,
+                          **kwargs) -> (Dict[str, torch.Tensor], Dict[str, torch.Tensor]) or Dict[str, torch.Tensor]:
         """
 
         Args:
             logits:
             text:
             text_len:
-            domain:
-            return_scalars:
             **kwargs:
 
         Returns:
 
         """
-        if isinstance(self.cross_entropy, Criterion):
-            loss = self.cross_entropy(logits=logits, text=text, text_len=text_len)
-        else:
-            loss = self.cross_entropy[domain](logits=logits, text=text, text_len=text_len)
+        loss = self.cross_entropy(logits=logits, text=text, text_len=text_len)
         accuracy = self.accuracy(logits=logits, text=text, text_len=text_len)
 
         # the loss and accuracy must be calculated before being assigned to the returned dict
@@ -342,39 +324,10 @@ class ASR(Model):
         # .clone() here prevents the loss from being modified by accum_grad
         metrics = dict(loss=loss.clone().detach(), accuracy=accuracy.detach())
 
-        # whether to also return the trainable scalars in the model
-        if return_scalars:
-            # get the values of trainable scalars from the encoder
-            encoder_scalars = self.encoder.get_trainable_scalars()
-            if encoder_scalars is not None:
-                metrics.update(**{'enc_' + key: value.clone().detach() for key, value in encoder_scalars.items()})
-            # get the values of trainable scalars from the decoder
-            decoder_scalars = self.decoder.get_trainable_scalars()
-            if decoder_scalars is not None:
-                metrics.update(**{'dec_' + key: value.clone().detach() for key, value in decoder_scalars.items()})
-
-        return losses, metrics
-
-
-    def metrics_calculation(self,
-                            logits: torch.Tensor,
-                            text: torch.Tensor,
-                            text_len: torch.Tensor,
-                            **kwargs) -> Dict[str, torch.Tensor]:
-        """
-
-        Args:
-            logits:
-            text:
-            text_len:
-            **kwargs:
-
-        Returns:
-
-        """
-        _, metrics = self.loss_calculation(logits=logits, text=text, text_len=text_len)
-        return metrics
-
+        if self.training:
+            return losses, metrics
+        else:
+            return metrics
 
     def matrix_snapshot(self, vis_logs: List, hypo_attention: Dict, subfolder_names: List[str] or str, epoch: int):
         """
@@ -406,7 +359,6 @@ class ASR(Model):
                 )
             )
 
-
     def attention_reshape(self, hypo_attention: Dict, prefix_list: List = None) -> Dict:
         """
 
@@ -436,7 +388,6 @@ class ASR(Model):
                         for index, element in enumerate(hypo_attention)}
             else:
                 raise RuntimeError
-
 
     def visualize(self,
                   epoch: int,
@@ -525,18 +476,16 @@ class ASR(Model):
 
         return vis_logs
 
-
     def inference(self,
                   infer_conf: Dict,
-                  feat: torch.Tensor,
-                  feat_len: torch.Tensor,
-                  text: torch.Tensor,
-                  text_len: torch.Tensor,
+                  feat: torch.Tensor = None,
+                  feat_len: torch.Tensor = None,
+                  text: torch.Tensor = None,
+                  text_len: torch.Tensor = None,
                   domain: str = None,
                   return_att: bool = False,
                   decode_only: bool = False,
-                  teacher_forcing: bool = False,
-                  **meta_info) -> Dict[str, Any]:
+                  teacher_forcing: bool = False) -> Dict[str, Any]:
         """
 
         Args:
@@ -546,26 +495,26 @@ class ASR(Model):
             text:
             text_len:
             domain:
-            meta_info:
-            # --- General inference arguments --- #
+            # --- Explicit inference arguments --- #
             return_att:
             decode_only:
             teacher_forcing:
-            # --- Beam searching arguments --- #
+            # --- Implicit inference arguments given by infer_cfg from runner.py --- #
             infer_conf:
 
         """
-        # --- Hyperparameter & Model Preparation Stage --- #
+        assert feat is not None and feat_len is not None
+
+        # --- 0. Hyperparameter & Model Preparation Stage --- #
         # in-place replace infer_conf to protect the original information
         infer_conf = copy.deepcopy(infer_conf)
         if 'decode_only' in infer_conf.keys():
             decode_only = infer_conf.pop('decode_only')
         if 'teacher_forcing' in infer_conf.keys():
             teacher_forcing = infer_conf.pop('teacher_forcing')
-        hypo_text, hypo_text_len, hypo_len_ratio, hypo_text_prob, hypo_att = None, None, None, None, None
+        hypo_text, hypo_text_len, hypo_len_ratio, hypo_text_confid, hypo_att = None, None, None, None, None
 
-
-        # --- The 1st Pass: ASR Decoding by Beam Searching --- #
+        # --- 1. The 1st Pass: ASR Decoding by Beam Searching --- #
         if not teacher_forcing:
             # copy the input data in advance for data safety
             model_input = copy.deepcopy(
@@ -573,11 +522,11 @@ class ASR(Model):
             )
 
             # Encoding input speech
-            enc_outputs = self.encoder(domain=domain, **model_input)
+            enc_feat, enc_feat_mask, _, _ = self.encoder(domain=domain, **model_input)
 
             # generate the model hypothesis
-            infer_results = beam_searching(enc_feat=enc_outputs['enc_feat'],
-                                           enc_feat_mask=enc_outputs['enc_feat_mask'],
+            infer_results = beam_searching(enc_feat=enc_feat,
+                                           enc_feat_mask=enc_feat_mask,
                                            decode_one_step=self.decoder,
                                            vocab_size=self.tokenizer.vocab_size,
                                            sos_eos=self.tokenizer.sos_eos_idx,
@@ -586,10 +535,9 @@ class ASR(Model):
             hypo_text = infer_results['hypo_text']
             hypo_text_len = infer_results['hypo_text_len']
             hypo_len_ratio = infer_results['hypo_len_ratio']
-            hypo_text_prob = infer_results['hypo_text_prob']
+            hypo_text_confid = infer_results['hypo_text_confid']
 
-
-        # --- The 2nd Pass: ASR Decoding by Teacher Forcing --- #
+        # --- 2. The 2nd Pass: ASR Decoding by Teacher Forcing --- #
         if teacher_forcing or return_att:
             infer_results = self.model_forward(feat=feat, feat_len=feat_len,
                                                text=text if teacher_forcing else hypo_text,
@@ -604,28 +552,28 @@ class ASR(Model):
                 # the last token is meant to be eos which should not appear in the hypothesis text
                 infer_results['logits'] = torch.log_softmax(infer_results['logits'][:, :-1] / infer_conf['temperature'],
                                                             dim=-1)
-                hypo_text_prob, hypo_text = torch.max(infer_results['logits'], dim=-1)
+                hypo_text_confid, hypo_text = torch.max(infer_results['logits'], dim=-1)
                 # the original text contains both sos at the beginning and eos at the end
                 hypo_text_len = text_len - 2
                 hypo_len_ratio = torch.ones_like(hypo_text_len)
-                hypo_text_prob = torch.sum(hypo_text_prob, dim=-1) / (hypo_text_len ** infer_conf['length_penalty'])
+                hypo_text_confid = torch.sum(hypo_text_confid, dim=-1) / (hypo_text_len ** infer_conf['length_penalty'])
 
         # turn the data all the unsupervised metrics into the cpu version (List)
         # consider one <sos/eos> at the end, so hypo_text_len is added to 1
-        hypo_text_len, hypo_len_ratio, hypo_text_prob = \
-            to_cpu(hypo_text_len + 1), to_cpu(hypo_len_ratio), to_cpu(hypo_text_prob)
+        hypo_text_len, hypo_len_ratio, hypo_text_confid = \
+            to_cpu(hypo_text_len + 1), to_cpu(hypo_len_ratio), to_cpu(hypo_text_confid)
 
-        # --- Unsupervised Metrics Calculation (Reference is not involved here) --- #
+        # --- 3. Unsupervised Metrics Calculation (ground-truth text is not involved here) --- #
         # recover the text tensors back to text strings (removing the padding and sos/eos tokens)
         hypo_text = [self.tokenizer.tensor2text(hypo[(hypo != self.tokenizer.ignore_idx) &
                                                      (hypo != self.tokenizer.sos_eos_idx)]) for hypo in hypo_text]
 
         # in the decoding-only mode, only the hypothesis-related results will be returned
         outputs = dict(
-            sent=dict(format='txt', content=hypo_text),
-            sent_len=dict(format='txt', content=hypo_text_len),
+            text=dict(format='txt', content=hypo_text),
+            text_len=dict(format='txt', content=hypo_text_len),
             len_ratio=dict(format='txt', content=hypo_len_ratio),
-            sent_prob=dict(format='txt', content=hypo_text_prob)
+            text_confid=dict(format='txt', content=hypo_text_confid)
         )
 
         # add the attention matrix into the output Dict, only used for model visualization during training
@@ -639,53 +587,70 @@ class ASR(Model):
         text = [self.tokenizer.tensor2text(real[(real != self.tokenizer.ignore_idx) &
                                                 (real != self.tokenizer.sos_eos_idx)]) for real in text]
         # evaluation reports for all the testing samples
-        sample_reports, cer, wer, insertion, deletion, substitution = [], [], [], [], [], []
+        instance_report_dict, align_table_list, cer_list, wer_list, insertion_list, deletion_list, substitution_list = \
+            {}, [], [], [], [], [], []
         # loop each sentence
         for i in range(len(text)):
-            # initialize the report string by the unsupervised metrics
-            _curr_report = '\n\n' + get_list_strings(
-                {
-                    'Hypothesis Probability': f"{hypo_text_prob[i]:.6f}",
-                    'Length Ratio': f"{hypo_len_ratio[i]:.2f}",
-                }
-            )
+            # add the confidence into instance_reports.md
+            if 'Hypothesis Confidence' not in instance_report_dict.keys():
+                instance_report_dict['Hypothesis Confidence'] = []
+            instance_report_dict['Hypothesis Confidence'].append(f"{hypo_text_confid[i]:.6f}")
 
-            # --- Supervised Metrics Calculation (Reference is involved here)  --- #
+            # add the frame-token length ratio into instance_reports.md
+            if 'Length Ratio' not in instance_report_dict.keys():
+                instance_report_dict['Length Ratio'] = []
+            instance_report_dict['Length Ratio'].append(f"{hypo_len_ratio[i]:.2f}")
+
+            # --- 4. Supervised Metrics Calculation (Reference is involved here)  --- #
             if not decode_only:
                 # obtain the cer and wer metrics
-                cer_wer = self.error_rate(hypo_text=hypo_text[i], real_text=text[i], tokenizer=self.tokenizer)
+                cer, wer = self.error_rate(hypo_text=hypo_text[i], real_text=text[i])
                 i_num, d_num, s_num, align_table = get_word_edit_alignment(hypo_text[i], text[i])
 
-                # update the report string by the supervised metrics and hypo-real alignment tables
-                _curr_report += get_list_strings(
-                    {
-                        'CER': f"{cer_wer['cer'][0]:.2%}",
-                        'WER': f"{cer_wer['wer'][0]:.2%}",
-                        'Word Insertion': f"{i_num}",
-                        'Word Deletion': f"{d_num}",
-                        'Word Substitution': f"{s_num}"
-                    }
-                ) + '\n' + align_table
+                # record the string of hypothesis-reference alignment table
+                align_table_list.append(align_table)
 
-                cer.append(cer_wer['cer'][0])
-                wer.append(cer_wer['wer'][0])
-                insertion.append(i_num)
-                deletion.append(d_num)
-                substitution.append(s_num)
+                # record the CER value of the current data instance
+                cer_list.append(cer[0])
+                if 'CER' not in instance_report_dict.keys():
+                    instance_report_dict['CER'] = []
+                instance_report_dict['CER'].append(f"{cer[0]:.2%}")
 
-            # update the current report with a line break at the end
-            sample_reports.append(_curr_report + '\n')
+                # record the WER value of the current data instance
+                wer_list.append(wer[0])
+                if 'WER' not in instance_report_dict.keys():
+                    instance_report_dict['WER'] = []
+                instance_report_dict['WER'].append(f"{wer[0]:.2%}")
 
-        # For both decoding-only mode or normal evaluation mode, sample_reports.md will be given
-        outputs['sample_reports.md'] = dict(format='txt', content=sample_reports)
+                # record the word insertion value of the current data instance
+                insertion_list.append(i_num)
+                if 'Word Insertion' not in instance_report_dict.keys():
+                    instance_report_dict['Word Insertion'] = []
+                instance_report_dict['Word Insertion'].append(f"{i_num}")
+
+                # record the word deletion value of the current data instance
+                deletion_list.append(d_num)
+                if 'Word Deletion' not in instance_report_dict.keys():
+                    instance_report_dict['Word Deletion'] = []
+                instance_report_dict['Word Deletion'].append(f"{d_num}")
+
+                # record the word substitution value of the current data instance
+                substitution_list.append(s_num)
+                if 'Word Substitution' not in instance_report_dict.keys():
+                    instance_report_dict['Word Substitution'] = []
+                instance_report_dict['Word Substitution'].append(f"{s_num}")
+
+        # register the instance reports and the strings of alignment tables for generating instance_reports.md
+        self.register_instance_reports(md_list_dict=instance_report_dict, extra_string_list=align_table_list)
+
         # not return the supervised metrics in the decoding-only mode
         if not decode_only:
             outputs.update(
-                cer=dict(format='txt', content=cer),
-                wer=dict(format='txt', content=wer),
-                insertion=dict(format='txt', content=insertion),
-                deletion=dict(format='txt', content=deletion),
-                substitution=dict(format='txt', content=substitution)
+                cer=dict(format='txt', content=cer_list),
+                wer=dict(format='txt', content=wer_list),
+                insertion=dict(format='txt', content=insertion_list),
+                deletion=dict(format='txt', content=deletion_list),
+                substitution=dict(format='txt', content=substitution_list)
             )
         return outputs
 
@@ -694,6 +659,7 @@ class SemiASR(ASR):
     """
 
     """
+
     def model_construction(self,
                            token_type: str,
                            token_vocab: str,
@@ -725,7 +691,6 @@ class SemiASR(ASR):
         for key, value in loss_weights.items():
             self.__setattr__(key, value)
 
-
     def model_forward(self, **batch_data) -> Dict[str, Dict or torch.Tensor]:
         """
 
@@ -755,7 +720,6 @@ class SemiASR(ASR):
             # (each sub-batch corresponds to a dataloader)
             return {key: super(SemiASR, self).model_forward(domain=key, **general_args, **value)
                     for key, value in batch_data.items()}
-
 
     def loss_calculation(self, **data_output_dict) -> (Dict[str, torch.Tensor], Dict[str, torch.Tensor]):
         """
@@ -804,7 +768,6 @@ class SemiASR(ASR):
             )
         return losses, metrics
 
-
     def metrics_calculation(self, **data_output_dict) -> Dict[str, torch.Tensor]:
         """
 
@@ -816,7 +779,6 @@ class SemiASR(ASR):
         """
         _, metrics = self.loss_calculation(**data_output_dict)
         return metrics
-
 
     def inference(self,
                   infer_conf: Dict,

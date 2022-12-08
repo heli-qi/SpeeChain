@@ -11,11 +11,13 @@ import torch
 
 eps = 1e-10
 
+
 class BeamHypotheses(object):
     """
     Beam Hypothesis Container.
 
     """
+
     def __init__(self, beam_size: int, max_length: int, length_penalty: float):
         """
         Initialize n-best list of hypotheses.
@@ -33,7 +35,7 @@ class BeamHypotheses(object):
         # static variables
         self.max_length = max_length - 1  # ignoring bos_token
         self.beam_size = beam_size
-        self.length_penalty = length_penalty # length_penalty=1 means no penalty on length
+        self.length_penalty = length_penalty  # length_penalty=1 means no penalty on length
 
         # dynamic variables
         self.beams = []
@@ -213,7 +215,7 @@ def beam_searching(enc_feat: torch.Tensor,
     while hypo_text_len.max() < hypo_maxlen:
         # (batch_size × beam_size, curr_len) -> (batch_size × beam_size, curr_len, vocab_size)
         curr_outputs = decode_one_step(enc_feat=enc_feat, enc_feat_mask=enc_feat_mask,
-                                       text=hypo_text, text_len=hypo_text_len)['output'].detach()
+                                       text=hypo_text, text_len=hypo_text_len)[0].detach()
 
         # (batch_size × beam_size, curr_len, vocab_size) -> (batch_size × beam_size, vocab_size)
         curr_outputs = curr_outputs[:, -1, :]
@@ -231,7 +233,8 @@ def beam_searching(enc_feat: torch.Tensor,
         #   1. for different tokens of each beam in the first time step
         #   2. when meeting an eos token, complement the beams with the rest predictions
         assert beam_size + 1 <= vocab_size, "beam_size cannot be larger than vocab_size - 1 (exclude <sos/eos>)!"
-        next_scores, next_tokens = torch.topk(next_scores, beam_size * (beam_size + 1), dim=1, largest=True, sorted=True)
+        next_scores, next_tokens = torch.topk(next_scores, beam_size * (beam_size + 1), dim=1, largest=True,
+                                              sorted=True)
 
         # batch-level beam results for all sentence, each element is a tri-tuple (score, token_id, effective_beam_id)
         next_batch_beam = []
@@ -255,7 +258,8 @@ def beam_searching(enc_feat: torch.Tensor,
                 beam_id = torch.div(beam_token_id, vocab_size, rounding_mode='floor')
                 # the index number of the real token, range from 0 to vocab_size-1
                 token_id = beam_token_id % vocab_size
-                # the index number of the beam across the current batch, ∈ {batch_idx * beam_size, ..., (batch_idx + 1) * beam_size - 1}
+                # the index number of the beam across the current batch
+                # ∈ {batch_idx * beam_size, ..., (batch_idx + 1) * beam_size - 1}
                 effective_beam_id = batch_idx * beam_size + beam_id
 
                 # if the eos token is met, the predictions will be either saved as a hypothesis or simple removed.
@@ -335,7 +339,7 @@ def beam_searching(enc_feat: torch.Tensor,
     # --- Length Calculation --- #
     hypo_text_len = hypo_text_len.new(batch_size * sent_per_beam)
     hypo_text_list = []
-    hypo_text_prob = []
+    hypo_text_confid = []
     # looping each sentence
     for i, hypotheses in enumerate(generated_hyps):
         sorted_hyps = sorted(hypotheses.beams, key=lambda x: x[0])
@@ -348,7 +352,7 @@ def beam_searching(enc_feat: torch.Tensor,
             best_hyp = _hypo[1]
             hypo_text_len[effective_batch_idx] = len(best_hyp)
             hypo_text_list.append(best_hyp)
-            hypo_text_prob.append(_hypo[0])
+            hypo_text_confid.append(_hypo[0])
 
     # --- Padding --- #
     # some sentences are shorter than the maximal length
@@ -367,5 +371,5 @@ def beam_searching(enc_feat: torch.Tensor,
         hypo_text=hypo_text,
         hypo_text_len=hypo_text_len,
         hypo_len_ratio=hypo_text_len / enc_feat_len,
-        hypo_text_prob=torch.Tensor(hypo_text_prob)
+        hypo_text_confid=torch.Tensor(hypo_text_confid)
     )

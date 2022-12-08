@@ -4,6 +4,7 @@ import torch
 
 from speechain.module.abs import Module
 
+
 class SpecAugment(Module):
     """
     Batch-level SpecAugment.
@@ -15,6 +16,7 @@ class SpecAugment(Module):
         https://github.com/speechbrain/speechbrain/blob/develop/speechbrain/lobes/augment.py#L116
 
     """
+
     def module_init(self,
                     time_warp: bool = True,
                     time_warp_window: int = 5,
@@ -81,7 +83,6 @@ class SpecAugment(Module):
         # used for deciding masking values
         self.feat_norm = feat_norm
 
-
     def forward(self, feat: torch.Tensor, feat_len: torch.Tensor):
         """
         Both the time warping and time masking are done within the minimum length of all the utterance in the input batch.
@@ -111,8 +112,9 @@ class SpecAugment(Module):
                 warp_center = torch.randint(low=self.time_warp_window + 1, high=time_minlen - self.time_warp_window,
                                             size=(1,))[0].item()
                 # position ∈ {1, ..., time_minlen - 1} (consider the range of the center)
-                warp_pos = torch.randint(low=warp_center - self.time_warp_window, high=warp_center + self.time_warp_window,
-                                         size=(1,))[0].item()
+                warp_pos = \
+                torch.randint(low=warp_center - self.time_warp_window, high=warp_center + self.time_warp_window,
+                              size=(1,))[0].item()
                 # interpolate the left and right parts of the selected center within time_minlen to protect feat_len
                 # align_corners=True to keep in line with the original paper
                 left_warp = torch.nn.functional.interpolate(feat[:, :, :warp_center], size=(warp_pos, feat_dim),
@@ -125,7 +127,6 @@ class SpecAugment(Module):
 
             # remove the redundant channel dimension
             feat = feat.view(batch_size, time_maxlen, feat_dim)
-
 
         # --- Feature Masking (Frequency axis or Time axis) --- #
         # overall mask
@@ -181,7 +182,6 @@ class SpecAugment(Module):
             feat = feat.masked_fill(mask, mask_value)
 
         return feat, feat_len
-
 
     def extra_repr(self) -> str:
         output = ""

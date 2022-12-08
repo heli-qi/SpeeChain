@@ -3,7 +3,6 @@
     Affiliation: NAIST
     Date: 2022.07
 """
-import math
 import torch
 
 from speechain.criterion.abs import Criterion
@@ -14,6 +13,7 @@ class FBetaScore(Criterion):
     """
 
     """
+
     def criterion_init(self, beta: float = 1.0):
         """
 
@@ -23,8 +23,7 @@ class FBetaScore(Criterion):
         """
         self.beta = beta
 
-
-    def forward(self, pred: torch.Tensor, tgt: torch.Tensor, tgt_len: torch.Tensor):
+    def __call__(self, pred: torch.Tensor, tgt: torch.Tensor, tgt_len: torch.Tensor):
         """
 
         Args:

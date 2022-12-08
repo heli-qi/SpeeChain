@@ -3,8 +3,8 @@
     Affiliation: NAIST
     Date: 2022.07
 """
-import torch
 from speechain.optim_sche.abs import OptimScheduler
+
 
 class Noamlr(OptimScheduler):
     """
@@ -15,6 +15,7 @@ class Noamlr(OptimScheduler):
     This OptimScheduler is mainly used for Transformer-based models.
 
     """
+
     def sche_init(self,
                   d_model: int = None,
                   warmup_steps: int = 4000):
@@ -45,8 +46,7 @@ class Noamlr(OptimScheduler):
         self.init_lr = d_model ** -0.5 if d_model is not None else self.get_lr() * warmup_steps ** 0.5
         self.warmup_steps = warmup_steps
 
-
-    def update_lr(self, real_step: int):
+    def update_lr(self, real_step: int) -> float:
         """
 
         Args:
@@ -58,11 +58,6 @@ class Noamlr(OptimScheduler):
         # the learning rate of the current step for the optimizer
         return self.init_lr * min(real_step ** -0.5, real_step * (self.warmup_steps ** -1.5))
 
-
-    def __repr__(self):
-        return f"{self.__class__.__name__}(" \
-               f"optimizer={self.optimizer.__class__.__name__}, " \
-               f"optim_loss={self.optim_loss}, " \
-               f"updated_modules={self.updated_modules}, " \
-               f"d_model={self.d_model}, " \
-               f"warmup_steps={self.warmup_steps})"
+    def extra_repr_fn(self) -> str:
+        return f"d_model={self.d_model}, " \
+               f"warmup_steps={self.warmup_steps}"

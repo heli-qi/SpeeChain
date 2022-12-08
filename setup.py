@@ -1,4 +1,4 @@
-from setuptools import setup, find_namespace_packages, find_packages
+from setuptools import setup, find_packages
 
 setup(name="speechain",
       version="0.1",

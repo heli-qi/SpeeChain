@@ -7,11 +7,13 @@ import torch
 
 from speechain.module.abs import Module
 
+
 class TokenPostnet(Module):
     """
         The decoder postnet that projects the model output vectors into token predictions.
 
     """
+
     def module_init(self, vocab_size: int, input_dim: int = None):
         """
 

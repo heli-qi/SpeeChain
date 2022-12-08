@@ -70,7 +70,8 @@ The names in the braces({}) mean the undefined names depending on the settings o
 
 
 ## Metadata Format
-The data formats of all metadata files are uniform for all datasets. 
+Metadata files are suffix-free ._txt_ files used to access data instances during training. 
+The data formats of metadata files are uniform for all datasets. 
 The format uniformity enables the automatic configuration for the data loading part of our toolkit. 
 The format for each metadata file is shown below.
 

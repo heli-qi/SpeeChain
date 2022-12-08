@@ -7,6 +7,8 @@ from speechain.tokenizer.abs import Tokenizer
 import sentencepiece as spm
 import torch
 
+from speechain.utilbox.import_util import parse_path_args
+
 
 class SubwordTokenizer(Tokenizer):
     """
@@ -15,7 +17,7 @@ class SubwordTokenizer(Tokenizer):
 
     """
 
-    def tokenizer_init(self, token_model: str, model_package: str = 'sp'):
+    def tokenizer_init_fn(self, token_model: str, model_package: str = 'sp'):
         """
         Initialize the subword tokenizer model.
         For subword tokenizer, tokenization is done by third-party packages instead of the built-in token Dicts.
@@ -30,7 +32,7 @@ class SubwordTokenizer(Tokenizer):
         # tokenization by the sentencepiece package
         if model_package == 'sp':
             self.sp_model = spm.SentencePieceProcessor()
-            self.sp_model.load(token_model)
+            self.sp_model.load(parse_path_args(token_model))
 
             # '_'-prefixed built-in function members that should not be used externally
             self._text2tensor_func = self.sp_model.encode_as_ids
@@ -41,7 +43,7 @@ class SubwordTokenizer(Tokenizer):
                 "The tokenizer packages other than sentencepiece have not been implemented yet~~~"
             )
 
-    def tensor2text(self, tensor: torch.Tensor):
+    def tensor2text(self, tensor: torch.LongTensor):
         """
 
         Args:

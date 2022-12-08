@@ -9,6 +9,7 @@ from speechain.module.frontend.speech2linear import Speech2LinearSpec
 from speechain.module.frontend.linear2mel import LinearSpec2MelSpec
 from speechain.module.frontend.delta_feat import DeltaFeature
 
+
 class Speech2MelSpec(Module):
     """
     The acoustic frontend where the input is raw speech waveforms and the output is log-mel spectrogram.
@@ -17,6 +18,7 @@ class Speech2MelSpec(Module):
     log-mel spectrogram by mel-fbank filters. Finally, the delta features of log-mel spectrogram are calculated if specified.
 
     """
+
     def module_init(self,
                     n_mels: int,
                     hop_length: int or float,
@@ -136,7 +138,6 @@ class Speech2MelSpec(Module):
             self.delta_N = delta_N
             self.delta = DeltaFeature(delta_order=delta_order, delta_N=delta_N)
 
-
     def forward(self, speech: torch.Tensor, speech_len: torch.Tensor):
         """
 
@@ -163,7 +164,6 @@ class Speech2MelSpec(Module):
 
         return feat, feat_len
 
-
     def recover(self, feat: torch.Tensor, feat_len: torch.Tensor):
         """
 
@@ -181,15 +181,14 @@ class Speech2MelSpec(Module):
         feat = self.linear2mel.recover(feat, feat_len)
 
         # Linear Spectrogram -> Waveforms (GL algorithm)
-        wav, wav_len = self.speech2linear.recover(feat, feat_len)
+        feat, feat_len = self.speech2linear.recover(feat, feat_len)
 
-        return wav, wav_len
-
+        return feat, feat_len
 
     def __repr__(self):
         string = f"{self.__class__.__name__}(\n" + \
-            str(self.speech2linear) + '\n' + \
-            str(self.linear2mel)
+                 str(self.speech2linear) + '\n' + \
+                 str(self.linear2mel)
 
         if self.delta_order is not None:
             string += '\n' + str(self.delta)

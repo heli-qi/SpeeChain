@@ -12,40 +12,47 @@ import torch
 import torch.nn.functional as F
 
 from speechain.module.abs import Module
+from speechain.module.prenet.linear import LinearPrenet
 
 
-class Conv1dEv(Module):
-    def module_init(self,
-                    in_channels: int, out_channels: int,
-                    kernel_size, stride, padding: str, bias=True):
+class Conv1dEv(torch.nn.Module):
+    """
+
+    """
+    def __init__(self, in_channels: int, out_channels: int,
+                 kernel_size, stride, padding_mode: str, bias: bool = True):
         """
         A guide to convolution arithmetic for deep learning
         https://arxiv.org/pdf/1603.07285v1.pdf
 
         """
+        super().__init__()
+
         self.cutoff = False
         self.causal_padding = 0
 
         # no padding is used
-        if padding == 'valid':
+        if padding_mode == 'valid':
             padding = 0
         # full padding
-        elif padding == 'full':
+        elif padding_mode == 'full':
             padding = kernel_size - 1
         # same padding, the output is the same in dimension with input
-        elif padding == 'same':
+        elif padding_mode == 'same':
             padding = kernel_size // 2
             if kernel_size % 2 == 0:
                 self.cutoff = True
-        elif padding == 'causal':
+        # causal padding
+        elif padding_mode == 'causal':
             padding = 0
             self.causal_padding = kernel_size - 1
+        else:
+            raise ValueError
 
         self.conv_lyr = torch.nn.Conv1d(
             in_channels=in_channels, out_channels=out_channels,
             kernel_size=kernel_size, stride=stride, padding=padding, bias=bias
         )
-
 
     def forward(self, feat):
         """
@@ -56,9 +63,11 @@ class Conv1dEv(Module):
         Returns:
 
         """
+        # attach additional paddings at the end for the 'causal' padding mode
         if self.causal_padding > 0:
             feat = F.pad(feat, (self.causal_padding, 0))
         output = self.conv_lyr(feat)
+        # cut off the redundant tails for the 'same' padding mode
         if self.cutoff:
             output = output[:, :, :-1]
         return output
@@ -66,29 +75,36 @@ class Conv1dEv(Module):
 
 class Conv1dPrenet(Module):
     """
-        The Conv1d prenet for TTS. Usually used before the Transformer TTS encoder.
-        There are two parts in this prenet:
-            1. Conv1d layers.
-                Each Conv1d layer is followed by a BatchNorm1d layer, an activation function, and a Dropout layer.
-            2. Linear layers.
-                Each Linear layer is followed by an activation function and a Dropout layer.
+        The Conv1d prenet. Usually used before the TTS encoder.
+        This prenet is made up of two parts:
+            1. (mandatory) The Conv1d part contains one or more Conv2d blocks which are composed of the components below
+                1. (mandatory) a Conv1d layer
+                2. (optional) a BatchNorm1d layer
+                3. (optional) an activation function
+                4. (optional) a Dropout layer.
+            2. (optional) The Linear part contains one or more Linear blocks which are composed of the components below
+                1. (mandatory) a Linear layer
+                2. (optional) an activation function
+                3. (optional) a Dropout layer.
 
         Reference:
             Neural Speech Synthesis with Transformer Network
             https://ojs.aaai.org/index.php/AAAI/article/view/4642/4520
     """
+
     def module_init(self,
                     feat_dim: int = None,
                     conv_dims: int or List[int] = [512, 512, 512],
                     conv_kernel: int = 5,
                     conv_stride: int = 1,
-                    conv_padding: str = 'same',
+                    conv_padding_mode: str = 'same',
                     conv_batchnorm: bool = True,
                     conv_activation: str = 'ReLU',
                     conv_dropout: float or List[float] = None,
                     lnr_dims: int or List[int] = -1,
                     lnr_activation: str = None,
-                    lnr_dropout: int or List[int] = None):
+                    lnr_dropout: int or List[int] = None,
+                    zero_centered: bool = False):
         """
 
         Args:
@@ -103,6 +119,8 @@ class Conv1dPrenet(Module):
                 The value of kernel_size of all Conv1d layers.
             conv_stride: int
                 The value of stride of all Conv1d layers.
+            conv_padding_mode: str
+                The padding mode of convolutional layers. Must be one of ['valid', 'full', 'same', 'causal'].
             conv_batchnorm: bool
                 Whether a BatchNorm1d layer is added right after a Conv1d layer
             conv_activation: str
@@ -119,8 +137,14 @@ class Conv1dPrenet(Module):
                 None means no activation function is needed.
             lnr_dropout: float or List[float]
                 The values of p rate of the Dropout layer after each Linear layer.
+            zero_centered: bool
+                Whether the output of this module is centered at 0.
+                If the specified activation function changes the centroid of the output distribution, e.g. ReLU and
+                LeakyReLU, the activation function won't be attached to the final Linear layer if zer_centered is set
+                to True.
 
         """
+        # --- 0. Argument Checking --- #
         # Convolution arguments checking
         assert isinstance(conv_dims, (List, int)), \
             "The dimensions of convolutional layers must be given as a list of integers or an integer!"
@@ -131,6 +155,7 @@ class Conv1dPrenet(Module):
         if conv_dropout is not None:
             assert isinstance(conv_dropout, (List, float)), \
                 "The dropout rates of convolutional layers must be given as a list of integers or an integer!"
+
         # Linear arguments checking
         if lnr_dropout is not None:
             assert isinstance(lnr_dropout, (List, float)), \
@@ -145,63 +170,59 @@ class Conv1dPrenet(Module):
         else:
             assert feat_dim is not None
 
+        # --- 1. Convolutional Part Initialization --- #
         # register convolution arguments
         self.conv_dims = conv_dims if isinstance(conv_dims, List) else [conv_dims]
         self.conv_kernel = conv_kernel
         self.conv_stride = conv_stride
-        self.conv_padding = conv_padding
+        self.conv_padding_mode = conv_padding_mode
         self.conv_dropout = conv_dropout
-        # register linear arguments
-        if lnr_dims is not None:
-            self.lnr_dims = lnr_dims if isinstance(lnr_dims, List) else [lnr_dims]
-            for i in range(len(self.lnr_dims)):
-                _prev_dim = self.conv_dims[-1] if i == 0 else self.lnr_dims[i - 1]
-                if self.lnr_dims[i] == -1:
-                    self.lnr_dims[i] = _prev_dim
-        self.lnr_dropout = lnr_dropout
 
-        # Conv1d layers initialization
+        # Conv1d blocks construction
         _prev_dim = feat_dim
         _tmp_conv = []
         for i in range(len(self.conv_dims)):
-            _tmp_conv.append(Conv1dEv(in_channels=_prev_dim, 
-                                      out_channels=self.conv_dims[i],
-                                      kernel_size=self.conv_kernel,
-                                      stride=self.conv_stride,
-                                      padding=self.conv_padding,
-                                      bias=not conv_batchnorm))
-            # order: BatchNorm1d -> Activation (ReLU) -> Dropout
+            _tmp_conv.append(
+                # don't include bias in the convolutional layer if it is followed by a batchnorm layer
+                # reference: https://stackoverflow.com/questions/46256747/can-not-use-both-bias-and-batch-normalization-in-convolution-layers
+                Conv1dEv(in_channels=_prev_dim,
+                         out_channels=self.conv_dims[i],
+                         kernel_size=self.conv_kernel,
+                         stride=self.conv_stride,
+                         padding_mode=self.conv_padding_mode,
+                         bias=not conv_batchnorm)
+            )
+            # BatchNorm is better to be placed before activation
+            # reference: https://stackoverflow.com/questions/39691902/ordering-of-batch-normalization-and-dropout
             if conv_batchnorm:
                 _tmp_conv.append(torch.nn.BatchNorm1d(self.conv_dims[i]))
             if conv_activation is not None:
-                _tmp_conv.append(getattr(torch.nn, conv_activation)())
+                # no 'ReLU'-series activation is added for the last layer if zero_centered is specified
+                if not (i == len(self.conv_dims) - 1 and lnr_dims is None) or \
+                        not (zero_centered and 'ReLU' in conv_activation):
+                    _tmp_conv.append(getattr(torch.nn, conv_activation)())
             if conv_dropout is not None:
                 _tmp_conv.append(torch.nn.Dropout(
                     p=self.conv_dropout if not isinstance(self.conv_dropout, List) else self.conv_dropout[i]
                 ))
             _prev_dim = conv_dims[i]
-
         self.conv = torch.nn.Sequential(*_tmp_conv)
+        self.output_size = _prev_dim
 
-        # Linear layers initialization
-        if not hasattr(self, 'lnr_dims'):
-            self.output_size = _prev_dim
-        else:
-            _tmp_lnr = []
-            for i in range(len(self.lnr_dims)):
-                _tmp_lnr.append(torch.nn.Linear(in_features=_prev_dim, out_features=self.lnr_dims[i]))
-                # order: Activation (ReLU) -> Dropout
-                if lnr_activation is not None:
-                    _tmp_lnr.append(getattr(torch.nn, lnr_activation)())
-                if lnr_dropout is not None:
-                    _tmp_lnr.append(torch.nn.Dropout(
-                        p=self.lnr_dropout if not isinstance(self.lnr_dropout, List) else self.lnr_dropout[i]
-                    ))
-                _prev_dim=self.lnr_dims[i]
+        # --- 2. Linear Part Initialization --- #
+        if lnr_dims is not None:
+            lnr_dims = lnr_dims if isinstance(lnr_dims, List) else [lnr_dims]
+            for i in range(len(lnr_dims)):
+                _prev_dim = self.conv_dims[-1] if i == 0 else lnr_dims[i - 1]
+                if lnr_dims[i] == -1:
+                    lnr_dims[i] = _prev_dim
 
-            self.linear = torch.nn.Sequential(*_tmp_lnr)
-            self.output_size = self.lnr_dims[-1]
-
+            self.linear = LinearPrenet(feat_dim=self.output_size,
+                                       lnr_dims=lnr_dims,
+                                       lnr_activation=lnr_activation,
+                                       lnr_dropout=lnr_dropout,
+                                       zero_centered=zero_centered)
+            self.output_size = self.linear.output_size
 
     def forward(self, feat: torch.Tensor, feat_len: torch.Tensor):
         """
@@ -224,9 +245,9 @@ class Conv1dPrenet(Module):
         # (batch, conv_dim, feat_maxlen) -> (batch, feat_maxlen, conv_dim)
         feat = feat.transpose(1, 2)
 
-        # forward the linear layers if have
+        # forward the linear layers
         if hasattr(self, 'linear'):
             # (batch, feat_maxlen, conv_dim) -> (batch, feat_maxlen, lnr_dim)
-            feat = self.linear(feat)
+            feat, feat_len = self.linear(feat, feat_len)
 
         return feat, feat_len

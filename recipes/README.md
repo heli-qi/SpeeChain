@@ -7,27 +7,38 @@ In the sub-folder of each task, each dataset has a second-level sub-folder.
 
 ## Table of Contents
 1. [**Available Models & Datasets**]()
+   1. [ASR (Automatic Speech Recognition)]()
+   2. [TTS (Text-To-Speech Synthesis)]()
+   3. [SPKREC (Speaker Recognition)]()
+   4. [Offline TTS-to-ASR Chain]()
+   4. [Offline ASR-to-TTS Chain]()
+2. [**Experimental File System**]()
 
 
 ## Available Models & Datasets
+We provide a specific README.md for each task in their folder. 
+Please press the hyperlinks below and jump to the README.md of your target task for more details.
 ### [Automatic Speech Recognition (ASR)](https://github.com/ahclab/SpeeChain/tree/main/recipes/asr)
 ```
 /asr
     /librispeech            # ASR Recipes for the LibriSpeech dataset
         /train-clean-100        # Labeled data: train-clean-100
-            /data_cfg               # Data loading configuration files that are shared by different models
-            /transformer            # Transformer-based ASR models
+            /data_cfg               # Data loading configuration files
+            /exp_cfg                # Experimental environment configuration files
+            /train_cfg              # Model construction and optimization configuration files
         /train-clean-460        # Labeled data: train-clean-460 (train-clean-100 + train-clean-360)
             /data_cfg
-            /transformer            # Transformer-based ASR models
+            /exp_cfg
+            /train_cfg
         /train-960              # Labeled data: train_960 (train-clean-460 + train-other-500)
             /data_cfg
-            /transformer            # Transformer-based ASR models
+            /exp_cfg
+            /train_cfg
 ```
 <table>
 	<tr>
 	    <th>Dataset (Test Sets)</th>
-	    <th>Model</th>
+	    <th>ASR Model</th>
 	    <th>Setting</th>  
 	    <th>WER w/o. LM</th>  
 	</tr>
@@ -53,24 +64,29 @@ In the sub-folder of each task, each dataset has a second-level sub-folder.
     /libritts               # TTS Recipes for the LibriTTS dataset
         /train-clean-100        # Labeled data: train-clean-100
             /data_cfg               # Data loading configuration files that are shared by different models
-            /transformer            # Transformer-based ASR models
+            /exp_cfg                # Experimental environment configuration files
+            /train_cfg              # Model construction and optimization configuration files
         /train-clean-460        # Labeled data: train-clean-460 (train-clean-100 + train-clean-360)
             /data_cfg
-            /transformer            # Transformer-based ASR models
+            /exp_cfg
+            /train_cfg
         /train-960              # Labeled data: train_960 (train-clean-460 + train-other-500)
             /data_cfg
-            /transformer            # Transformer-based ASR models
+            /exp_cfg
+            /train_cfg
 ```
 <table>
 	<tr>
 	    <th>Dataset (Test Sets)</th>
-	    <th>Model</th>
+	    <th>TTS Model</th>
+	    <th>SPK Model</th>
 	    <th>Setting</th>  
 	    <th>MCD</th>  
 	</tr>
 	<tr>
 	    <td rowspan="3">LibriTTS (test-clean / test-other)</td>
-	    <td rowspan="3">MultiSpeech</td>
+	    <td rowspan="3">Transformer-TTS</td>
+	    <td rowspan="3">One-hot Embedding</td>
 	    <td>train-clean-100</td>
 	    <td></td>
 	</tr>
@@ -80,6 +96,13 @@ In the sub-folder of each task, each dataset has a second-level sub-folder.
 	</tr>
 	<tr>
 	    <td>train-960</td>
+	    <td></td>
+	</tr>
+    <tr>
+	    <td>LJSpeech (test)</td>
+	    <td>Transformer-TTS</td>
+	    <td>N/A</td>
+	    <td>train</td>
 	    <td></td>
 	</tr>
 </table>
@@ -92,25 +115,30 @@ In the sub-folder of each task, each dataset has a second-level sub-folder.
     /libritts_librispeech   # TTS mode use LibriTTS and ASR model use LibriSpeech
         /train-clean-100-360    # Labeled data: train-clean-100; Unlabeled data: train-clean-360
             /data_cfg               # Data loading configuration files that are shared by different models
-            /transformer            # Transformer-based ASR models trained by the offline TTS→ASR chain
+            /exp_cfg                # Experimental environment configuration files
+            /train_cfg              # Model construction and optimization configuration files
         /train-100-860          # Labeled data: train-clean-100; Unlabeled data: train-clean-360 + train-other-500
             /data_cfg
-            /transformer            # Transformer-based ASR models trained by the offline TTS→ASR chain
+            /exp_cfg
+            /train_cfg
         /train-460-500          # Labeled data: train-clean-460; Unlabeled data: train-other-500
             /data_cfg
-            /transformer            # Transformer-based ASR models trained by the offline TTS→ASR chain
+            /exp_cfg
+            /train_cfg
 ```
 <table>
 	<tr>
 	    <th>Dataset (Test Sets)</th>
 	    <th>TTS Model</th>
+	    <th>SPK Model</th>
 	    <th>ASR Model</th>
 	    <th>Setting</th>  
 	    <th>WER w/o. LM</th>  
 	</tr>
 	<tr>
 	    <td rowspan="3">LibriTTS-LibriSpeech (test-clean / test-other)</td>
-	    <td rowspan="3">MultiSpeech</td>
+	    <td rowspan="3">Transformer-TTS</td>
+	    <td rowspan="3">One-hot Embedding</td>
 	    <td rowspan="3">Speech-Transformer</td>
 	    <td>train-clean-100-360</td>
 	    <td></td>
@@ -120,7 +148,7 @@ In the sub-folder of each task, each dataset has a second-level sub-folder.
 	    <td></td>
 	</tr>
 	<tr>
-	    <td>train-100-860s</td>
+	    <td>train-100-860</td>
 	    <td></td>
 	</tr>
 </table>
@@ -131,26 +159,31 @@ In the sub-folder of each task, each dataset has a second-level sub-folder.
     /librispeech_libritts   # ASR model use LibriSpeech and TTS model use LibriTTS
         /train-clean-100-360    # Labeled data: train-clean-100; Unlabeled data: train-clean-360
             /data_cfg               # Data loading configuration files that are shared by different models
-            /transformer            # Transformer-based TTS models trained by the offline ASR→TTS chain
+            /exp_cfg                # Experimental environment configuration files
+            /train_cfg              # Model construction and optimization configuration files
         /train-100-860          # Labeled data: train-clean-100; Unlabeled data: train-clean-360 + train-other-500
             /data_cfg
-            /transformer            # Transformer-based TTS models trained by the offline ASR→TTS chain
+            /exp_cfg
+            /train_cfg
         /train-460-500          # Labeled data: train-clean-460; Unlabeled data: train-other-500
             /data_cfg
-            /transformer            # Transformer-based TTS models trained by the offline ASR→TTS chain
+            /exp_cfg
+            /train_cfg
 ```
 <table>
 	<tr>
 	    <th>Dataset (Test Sets)</th>
 	    <th>ASR Model</th>
 	    <th>TTS Model</th>
+	    <th>SPK Model</th>
 	    <th>Setting</th>  
 	    <th>MCD</th>  
 	</tr>
 	<tr>
 	    <td rowspan="3">LibriSpeech-LibriTTS (test-clean / test-other)</td>
 	    <td rowspan="3">Speech-Transformer</td>
-	    <td rowspan="3">MultiSpeech</td>
+	    <td rowspan="3">Transformer-TTS</td>
+	    <td rowspan="3">One-hot Embedding</td>
 	    <td>train-clean-100-360</td>
 	    <td></td>
 	</tr>
@@ -164,98 +197,80 @@ In the sub-folder of each task, each dataset has a second-level sub-folder.
 	</tr>
 </table>
 
-## Experiment Results Structure
-The structure of the result files in an experiment folder is shown as below:
+## Experimental File System
+The file system of an experiment folder is shown as below:
 ```
 /data_cfg
+/train_cfg
+/exp_cfg
 /exp                # the 'exp' folder of each model
-    /exp_name           # the name of a specific experiment
-        /test_cfg_name      # the name of a testing configuration file
-            /test_model_name    # the name of the model you want to test the performance
-                /test_set_name      # the name of a test set
+    /{exp_name}         # the name of a specific experiment
+        /{test_cfg_name}    # the name of a testing configuration file
+            /{test_model_name}  # the name of the model you want to test the performance
+                /{test_set_name}    # the name of a test set
                     /figures                # the folder that contains all the distribution figures of each metric on the test set
+                        {test_metric_name}.png  # the histogram distribution figure of the {test_metric_name} values of all the testing instances
                         ...
                     test.log                # the log file that contains the testing process of a specific test set
                     overall_results.md      # the .md file that contains the model overall performance on the test set
-                    sample_reports.md       # the .md file that contains the detailed performance reports of each testing sample
-                    topn_(max/min)_xxx.md   # the .md file that contains the top-n bad cases selected by the metric 'xxx'
-                    idx2xxx                 # the files that contains individual metrics of each testing sample, a file corresponds to a metric 'xxx'
+                    instance_reports.md     # the .md file that contains the detailed performance reports of each testing instance
+                    topn_(max/min)_{xxx}.md # the .md file that contains the top-n bad cases selected by the metric 'xxx'
+                    idx2{xxx}               # the suffix-free .txt files that contain individual metrics of each testing instance, a file corresponds to a metric 'xxx'
                 ...                 # other test sets
             ...                 # other test models
         ...                 # other test configurations
         
         models/             # this sub-folder contains all the model files
-            N_xxx_average.mdl   # the average model obtained by the metric 'xxx' on 'N' best models
-            xxx_best.mdl        # the pointer to the best model obtained by the metric 'xxx'
-            xxx_best_2.mdl      # the pointer to the second best model obtained by the metric 'xxx'
+            N_{xxx}_average.pth # the average model obtained by the metric 'xxx' on 'N' best models
+            {xxx}_best.pth      # the file soft link to the best model obtained by the metric 'xxx'
+            {xxx}_best_2.pth    # the file soft link to the second best model obtained by the metric 'xxx'
             ...                
-            xxx_best_n.mdl      # the pointer to the n-th best model obtained by the metric 'xxx'  
-            epoch_X.mdl         # the actual model file of the X-th epoch
-            epoch_Y.mdl         # the actual model file of the Y-th epoch
+            {xxx}_best_n.pth    # the file soft link to the n-th best model obtained by the metric 'xxx'  
+            epoch_{X}.pth       # the actual model file of the X-th epoch
+            epoch_{Y}.pth       # the actual model file of the Y-th epoch
             ...          
 
-        figures/            # this sub-folder contains all the snapshotting figures made
+        figures/            # this sub-folder contains all the snapshotting figures. the .txt files in this folder contain the data used to plot summary.png which can be used to plot your own figures.
             train/              # the snapshotting figures made during training
-                ...
+                consumed_memory/    # the folder containing the GPU memory consumption records
+                     Rank0.txt                           # the numerical records of the memory consumption for the GPU rank.0 through epochs
+                     ...                                 # other GPUs if have
+                     RankN.txt                           # the numerical records of the memory consumption for the GPU rank.N through epochs
+                     summary.png                         # the curve graph of all the records above through epochs
+                consumed_time/      # the folder containing the time consumption records
+                     data_load_time.txt                  # the numerical records of the data loading time through epochs
+                     model_forward_time.txt              # the numerical records of the model forward time through epochs
+                     loss_backward_time_{optim_name}.txt # the numerical records of the loss backward time for the optimizer named {optim_name} through epochs
+                     optim_time_{optim_name}.txt         # the numerical records of the parameter optimization time for the optimizer named {optim_name} through epochs
+                     summary.png                         # the curve graph of all the records above through epochs
+                criteria/           # the folder containing the training criterion value records
+                     {train_criterion_name}              # the numerical records of the training criterion named {train_criterion_name} through epochs
+                     ...                                 # other training criteria if have
+                     summary.png                         # the curve graph of all the records above through epochs
+                optim_lr/           # the folder containing the learning rate records of each optimizer
+                     {optim_name}.txt                    # the numerical recores of the learning rates of the optimizer named {optim_name} through epochs
+                     ...                                 # other optimizers if have
+                     summary.png                         # the curve graph of all the records above through epochs
             valid/              # the snapshotting figures made during validation
-                ...
+                consumed_memory/    
+                     Rank0.txt                           
+                     ...
+                     RankN.txt                           
+                     summary.png                         
+                consumed_time/      
+                     data_load_time.txt                  
+                     model_forward_time.txt              
+                     summary.png                         
+                criteria/           # the folder containing the validation criterion value records
+                     {valid_criterion_name}              # the numerical records of the validation criterion named {valid_criterion_name} through epochs
+                     ...                                 # other validation criteria if have
+                     summary.png                         # the curve graph of all the records above through epochs
 
         tensorboard/        # this sub-folder contains the writer events for tensorboard visualization 
         checkpoint.pth      # the checkpoint of the training process so far, used for resuming the training process
-        data_cfg.yaml       # the data loading configuration for the experiment, used for resuming the training process
+        train_data_cfg.yaml # the data loading configuration for the training-validation part of the experiment, used for resuming the training process
+        test_data_cfg.yaml  # the data loading configuration for the testing part of the experiment, used for resuming the testing process
         exp_cfg.yaml        # the experiment environment configuration for the experiment, used for resuming the training process
         train_cfg.yaml      # the moder and optimizer configuration for the experiment, used for resuming the training process
         train.log           # the log file that contains the training process of the given training sets and validation sets
 ```
-
-## Result File Exhibition
-### train.log
-#### Environment Information
-![image](./readme_figures/train_log1.png)
-At the beginning of _train.log_, the GPU and iterator information are given as the figure shown above.
-
-#### Model Information
-![image](./readme_figures/train_log2.png)  
-Then, the detailed model information followed parameter statistics are given as the figure shown above.
-
-#### Epoch Information
-![image](./readme_figures/train_log3.png)   
-Finally, the mini-report of each epoch is given as the figure shown above. 
-The mini-reports are divided into two parts: training part and validation part, 
-each of which contains a summary of the overall information of the entire epoch. 
-In the training part, the step-level information will be shown in real time; 
-in the validation part, the evaluation result of the current epoch will be shown to users.
-
-### test.log
-![image](./readme_figures/test_log.png)
-In _test.log_, the number of overall testing samples and testing steps will be first given. 
-Then, the step-level testing midway reports are given in real time to keep users aware of how the testing is going. 
-In each mini-report, the expected remaining time is given to inform users of how long the testing will last. 
-The remaining time is calculated by the moving average of the recorded consuming time of the past steps.
-
-### overall_results.md
-
-#### overall performance
-![image](./readme_figures/overall_results1.png)  
-At the beginning of _overall_results.md_, the overall model performance on the entire testing set is given as the figure shown above. 
-The results are given in a list and each numerical metric corresponds to a row.
-
-#### (optional) group-wise performance
-![image](./readme_figures/overall_results2.png)
-![image](./readme_figures/overall_results3.png)  
-
-If _meta_info_ is given in the data loading configuration of the test set as the figure shown below, the group-wise model performance will be given as a table where each row is a group and each column is a numerical metric. 
-The group name is the same with the key names in your given _meta_info_.  
-
-![image](./readme_figures/overall_results4.png)
-
-### sample_reports.md
-![image](./readme_figures/sample_reports.png)  
-The detailed report of each testing sample will also be given as the figure shown above. 
-In this example of ASR model report, besides the numerical metrics, the alignment between hypothesis and reference will also be shown to users for the purpose of diagnosing.
-
-### topN_(max/min)_xxx.md
-![image](./readme_figures/topn.png)  
-Our toolkit also shows the top-n bad cases to users for better model diagnose. 
-The top-n bad cases can be selected by any numerical metric in either the ascending order (min) or the descending order (max). 
-The layout of _topN_(max/min)_xxx.md_ is exactly the same with _sample_reports.md_.

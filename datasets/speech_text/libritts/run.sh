@@ -2,11 +2,15 @@
 #  Affiliation: NAIST
 #  Date: 2022.11
 
+if [ -z "${SPEECHAIN_ROOT}" ];then
+  echo "Cannot find environmental variable SPEECHAIN_ROOT.
+  Please move to the root path of the toolkit and run envir_preparation.sh there!"
+  exit 1
+fi
+
 # --- Arguments --- #
-# toolkit root, need to be changed to your own place
-root=/ahc/work4/heli-qi/euterpe-heli-qi
 # the dataset root for speech-text datasets, don't need to be changed
-datatype_root=${root}/datasets/speech_text
+datatype_root=${SPEECHAIN_ROOT}/datasets/speech_text
 
 # general arguments, their values are shared across different datasets
 # execution-related arguments
