@@ -166,33 +166,33 @@ model:
   * _**frontend:**_ Dict  
     The configuration of the acoustic feature extraction frontend in the `TTSDecoder` member.  
     This argument must be given since our toolkit doesn't support time-domain TTS.  
-    For more details about how to give `frontend`, please refer to [speechain.module.encoder.tts.TTSDecoder]().
+    For more details about how to give `frontend`, please refer to [speechain.module.encoder.tts.TTSDecoder](https://github.com/ahclab/SpeeChain/blob/main/speechain/module/decoder/tts.py#L27).
   * _**enc_emb:**_ Dict  
     The configuration of the embedding layer in the `TTSEncoder` member.  
-    For more details about how to give `enc_emb`, please refer to [speechain.module.encoder.tts.TTSEncoder]().
+    For more details about how to give `enc_emb`, please refer to [speechain.module.encoder.tts.TTSEncoder](https://github.com/ahclab/SpeeChain/blob/main/speechain/module/encoder/tts.py#L20).
   * _**enc_prenet:**_ Dict  
     The configuration of the prenet in the `TTSEncoder` member.  
-    For more details about how to give `enc_prent`, please refer to [speechain.module.encoder.tts.TTSEncoder]().
+    For more details about how to give `enc_prent`, please refer to [speechain.module.encoder.tts.TTSEncoder](https://github.com/ahclab/SpeeChain/blob/main/speechain/module/encoder/tts.py#L20).
   * _**encoder:**_ Dict  
     The configuration of the encoder main body in the `TTSEncoder` member.  
-    For more details about how to give `encoder`, please refer to [speechain.module.encoder.tts.TTSEncoder]().
+    For more details about how to give `encoder`, please refer to [speechain.module.encoder.tts.TTSEncoder](https://github.com/ahclab/SpeeChain/blob/main/speechain/module/encoder/tts.py#L20).
   * _**spk_emb:**_ Dict  
     The configuration for the `SPKEmbedPrenet` in the `TTSDecoder` member. 
-    For more details about how to give `spk_emb`, please refer to [speechain.module.prenet.spk_embed.SpeakerEmbedPrenet]().
+    For more details about how to give `spk_emb`, please refer to [speechain.module.prenet.spk_embed.SpeakerEmbedPrenet](https://github.com/ahclab/SpeeChain/blob/main/speechain/module/prenet/spk_embed.py#L9).
   * _**dec_prenet:**_ Dict  
     The configuration of the prenet in the `TTSDecoder` member.  
-    For more details about how to give `dec_prenet`, please refer to [speechain.module.encoder.tts.TTSDecoder]().
+    For more details about how to give `dec_prenet`, please refer to [speechain.module.encoder.tts.TTSDecoder](https://github.com/ahclab/SpeeChain/blob/main/speechain/module/decoder/tts.py#L27).
   * _**decoder:**_ Dict  
     The configuration of the decoder main body in the `TTSDecoder` member.  
-    For more details about how to give `decoder`, please refer to [speechain.module.decoder.tts.TTSDecoder]().
+    For more details about how to give `decoder`, please refer to [speechain.module.decoder.tts.TTSDecoder](https://github.com/ahclab/SpeeChain/blob/main/speechain/module/decoder/tts.py#L27).
   * _**dec_postnet:**_ Dict  
     The configuration of the postnet in the `TTSDecoder` member.  
-    For more details about how to give `dec_postnet`, please refer to [speechain.module.encoder.tts.TTSDecoder]().
+    For more details about how to give `dec_postnet`, please refer to [speechain.module.encoder.tts.TTSDecoder](https://github.com/ahclab/SpeeChain/blob/main/speechain/module/decoder/tts.py#L27).
   * _**normalize:**_ Dict = None  
     The configuration of the normalization layer in the `TTSDecoder` member.  
     This argument can also be given as a bool value. 
     True means the default configuration and False means no normalization.  
-    For more details about how to give `normalize`, please refer to [speechain.module.norm.feat_norm.FeatureNormalization]().
+    For more details about how to give `normalize`, please refer to [speechain.module.norm.feat_norm.FeatureNormalization](https://github.com/ahclab/SpeeChain/blob/main/speechain/module/norm/feat_norm.py#L11).
   * _**vocoder:**_ Dict = None  
     The configuration of the vocoder member.
   
@@ -208,23 +208,23 @@ model:
 * **Arguments:**
   * _**feat_loss_type:**_ str = 'L2'  
     The type of acoustic feature prediction loss. Should be either 'L1', 'L2', and 'L1+L2'.  
-    For more details, please refer to [speechain.criterion.least_error.LeastError]().
+    For more details, please refer to [speechain.criterion.least_error.LeastError](https://github.com/ahclab/SpeeChain/blob/main/speechain/criterion/least_error.py#L16).
   * _**feat_loss_norm:**_ bool = True  
     Controls whether the sentence normalization is performed for feature loss calculation.  
-    For more details, please refer to [speechain.criterion.least_error.LeastError]().
+    For more details, please refer to [speechain.criterion.least_error.LeastError](https://github.com/ahclab/SpeeChain/blob/main/speechain/criterion/least_error.py#L16).
   * _**feat_update_range:**_ int or float = None  
     The updating range of the dimension of acoustic features for feature loss calculation.  
-    For more details, please refer to [speechain.criterion.least_error.LeastError]().
+    For more details, please refer to [speechain.criterion.least_error.LeastError](https://github.com/ahclab/SpeeChain/blob/main/speechain/criterion/least_error.py#L16).
   * _**stop_pos_weight:**_ float = 5.0  
     The weight putted on stop points for stop loss calculation.  
-    For more details, please refer to [speechain.criterion.bce_logits.BCELogits]().
+    For more details, please refer to [speechain.criterion.bce_logits.BCELogits](https://github.com/ahclab/SpeeChain/blob/main/speechain/criterion/bce_logits.py#L16).
   * _**stop_loss_norm:**_ bool = True  
     Controls whether the sentence normalization is performed for stop loss calculation.  
-    For more details, please refer to [speechain.criterion.bce_logits.BCELogits]().
+    For more details, please refer to [speechain.criterion.bce_logits.BCELogits](https://github.com/ahclab/SpeeChain/blob/main/speechain/criterion/bce_logits.py#L16).
   * _**f_beta:**_ int = 2  
     The value of beta for stop flag f-score calculation.  
     The larger beta is, the more f-score focuses on true positive stop flag prediction result.  
-    For more details, please refer to [speechain.criterion.fbeta_score.FBetaScore]().
+    For more details, please refer to [speechain.criterion.fbeta_score.FBetaScore](https://github.com/ahclab/SpeeChain/blob/main/speechain/criterion/fbeta_score.py#L12).
 
 👆[Back to the API list](https://github.com/ahclab/SpeeChain/tree/main/recipes/tts#api-document)
 
@@ -239,7 +239,7 @@ model:
   _Arguments from `self.evaluate()`:_  
   * _**infer_conf:**_ Dict  
     The inference configuration given from the `infer_cfg` in your `exp_cfg`.  
-    For more details, please refer to [speechain.infer_func.tts_decoding.auto_regression]().
+    For more details, please refer to [speechain.infer_func.tts_decoding.auto_regression](https://github.com/ahclab/SpeeChain/blob/main/speechain/infer_func/tts_decoding.py#L11).
   * _**text:**_ torch.Tensor  
     The text data to be inferred.
   * _**text_len:**_ torch.Tensor  

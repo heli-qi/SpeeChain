@@ -130,27 +130,27 @@ model:
   * _**frontend:**_ Dict  
     The configuration of the acoustic feature extraction frontend in the `ASREncoder` member.
     This argument must be given since our toolkit doesn't support time-domain ASR.  
-    For more details about how to give `frontend`, please refer to [speechain.module.encoder.asr.ASREncoder]().
+    For more details about how to give `frontend`, please refer to [speechain.module.encoder.asr.ASREncoder](https://github.com/ahclab/SpeeChain/blob/main/speechain/module/encoder/asr.py#L20).
   * _**enc_prenet:**_ Dict  
     The configuration of the prenet in the `ASREncoder` member.  
-    For more details about how to give `enc_prent`, please refer to [speechain.module.encoder.asr.ASREncoder]().
+    For more details about how to give `enc_prent`, please refer to [speechain.module.encoder.asr.ASREncoder](https://github.com/ahclab/SpeeChain/blob/main/speechain/module/encoder/asr.py#L20).
   * _**encoder:**_ Dict  
     The configuration of the encoder main body in the `ASREncoder` member.  
-    For more details about how to give `encoder`, please refer to [speechain.module.encoder.asr.ASREncoder]().
+    For more details about how to give `encoder`, please refer to [speechain.module.encoder.asr.ASREncoder](https://github.com/ahclab/SpeeChain/blob/main/speechain/module/encoder/asr.py#L20).
   * _**dec_emb:**_ Dict  
     The configuration of the embedding layer in the `ASRDecoder` member. 
-    For more details about how to give `dec_emb`, please refer to [speechain.module.decoder.asr.ASRDecoder]().
+    For more details about how to give `dec_emb`, please refer to [speechain.module.decoder.asr.ASRDecoder](https://github.com/ahclab/SpeeChain/blob/main/speechain/module/decoder/asr.py#L17).
   * _**decoder:**_ Dict  
     The configuration of the decoder main body in the `ASRDecoder` member.  
-    For more details about how to give `decoder`, please refer to [speechain.module.decoder.asr.ASRDecoder]().
+    For more details about how to give `decoder`, please refer to [speechain.module.decoder.asr.ASRDecoder](https://github.com/ahclab/SpeeChain/blob/main/speechain/module/decoder/asr.py#L17).
   * _**normalize:**_ Dict or bool = None  
     The configuration of the normalization layer in the `ASREncoder` member.  
     This argument can also be given as a bool value. True means the default configuration and False means no normalization.  
-    For more details about how to give `normalize`, please refer to [speechain.module.norm.feat_norm.FeatureNormalization]().
+    For more details about how to give `normalize`, please refer to [speechain.module.norm.feat_norm.FeatureNormalization](https://github.com/ahclab/SpeeChain/blob/main/speechain/module/norm/feat_norm.py#L11).
   * _**specaug:**_ Dict or bool = None  
     The configuration of the SpecAugment layer in the `ASREncoder` member.  
     This argument can also be given as a bool value. True means the default configuration and False means no SpecAugment.  
-    For more details about how to give `specaug`, please refer to [speechain.module.augment.specaug.SpecAugment]().
+    For more details about how to give `specaug`, please refer to [speechain.module.augment.specaug.SpecAugment](https://github.com/ahclab/SpeeChain/blob/main/speechain/module/augment/specaug.py#L8).
 
 👆[Back to the API list](https://github.com/ahclab/SpeeChain/tree/main/recipes/asr#api-document)
 
@@ -163,10 +163,10 @@ model:
 * **Arguments:**
   * _**is_normalized:**_ bool = False  
     Controls whether the sentence normalization is performed.  
-    For more details, please refer to [speechain.criterion.cross_entropy.CrossEntropy]()
+    For more details, please refer to [speechain.criterion.cross_entropy.CrossEntropy](https://github.com/ahclab/SpeeChain/blob/main/speechain/criterion/cross_entropy.py#L14)
   * _**label_smoothing:**_ float = 0.0  
     Controls the scale of label smoothing. 0 means no smoothing.  
-    For more details, please refer to [speechain.criterion.cross_entropy.CrossEntropy]()
+    For more details, please refer to [speechain.criterion.cross_entropy.CrossEntropy](https://github.com/ahclab/SpeeChain/blob/main/speechain/criterion/cross_entropy.py#L14)
 
 👆[Back to the API list](https://github.com/ahclab/SpeeChain/tree/main/recipes/asr#api-document)
 
@@ -181,7 +181,7 @@ model:
   _Arguments from `self.evaluate()`:_  
   * _**infer_conf:**_ Dict  
     The inference configuration given from the `infer_cfg` in your `exp_cfg`.  
-    For more details, please refer to [speechain.infer_func.beam_search.beam_searching]().
+    For more details, please refer to [speechain.infer_func.beam_search.beam_searching](https://github.com/ahclab/SpeeChain/blob/main/speechain/infer_func/beam_search.py#L106).
   * _**feat:**_ torch.Tensor  
     The speech data to be inferred.
   * _**feat_len:**_ torch.Tensor  
