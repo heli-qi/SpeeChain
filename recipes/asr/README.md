@@ -1,10 +1,12 @@
 # Automatic Speech Recognition (ASR)
 
+👆[Back to the recipe README.md](https://github.com/ahclab/SpeeChain/tree/main/recipes#recipes-folder-of-the-speechain-toolkit)
+
 ## Table of Contents
-1. [Model Structure]()
-2. [Configuration Format]()
-3. [Available Backbones]()
-4. [API Document]()
+1. [Model Structure](https://github.com/ahclab/SpeeChain/tree/main/recipes/asr#model-structure)
+2. [Configuration Format](https://github.com/ahclab/SpeeChain/tree/main/recipes/asr#configuration-format)
+3. [Available Backbones](https://github.com/ahclab/SpeeChain/tree/main/recipes/asr#available-backbones)
+4. [API Document](https://github.com/ahclab/SpeeChain/tree/main/recipes/asr#api-document)
 
 ## Model Structure
 ![image](model_fig.png)
@@ -22,6 +24,8 @@ The neural network structure of an `ASR` _Model_ object is made up of two _Modul
    3. `postnet` predicts the probability of the next tokens by the decoder hidden representations.
 
 The concrete implementation classes of the blocks with dashed edges can be freely selected among the available options in the _Dict_ members `{block_name}_class_dict` of `ASREncoder` and `ASRDecoder`.
+
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/recipes/asr#table-of-contents)
 
 ## Configuration Format
 ```
@@ -61,6 +65,8 @@ model:
         label_smoothing: (optional)
 ```
 
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/recipes/asr#table-of-contents)
+
 ## Available Backbones
 1. Speech-Transformer ([paper reference](https://ieeexplore.ieee.org/abstract/document/8462506))
     ```
@@ -85,12 +91,16 @@ model:
         conf:
             ...
     ```
-3. Paraformer ([paper reference](https://arxiv.org/pdf/2206.08317), coming soon~)
+2. Paraformer ([paper reference](https://arxiv.org/pdf/2206.08317), coming soon~)
+
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/recipes/asr#table-of-contents)
 
 ## API Document
-1. [speechain.model.asr.ASR.module_init]()
-2. [speechain.model.asr.ASR.criterion_init]()
-3. [speechain.model.asr.ASR.inference]()
+1. [speechain.model.asr.ASR.module_init](https://github.com/ahclab/SpeeChain/tree/main/recipes/asr#speechainmodelasrasrmodule_init)
+2. [speechain.model.asr.ASR.criterion_init](https://github.com/ahclab/SpeeChain/tree/main/recipes/asr#speechainmodelasrasrcriterion_init)
+3. [speechain.model.asr.ASR.inference](https://github.com/ahclab/SpeeChain/tree/main/recipes/asr#speechainmodelasrasrinference)
+
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/recipes/asr#table-of-contents)
 
 ### speechain.model.asr.ASR.module_init()
 * **Description:**  
@@ -141,7 +151,8 @@ model:
     The configuration of the SpecAugment layer in the `ASREncoder` member.  
     This argument can also be given as a bool value. True means the default configuration and False means no SpecAugment.  
     For more details about how to give `specaug`, please refer to [speechain.module.augment.specaug.SpecAugment]().
-  
+
+👆[Back to the API list](https://github.com/ahclab/SpeeChain/tree/main/recipes/asr#api-document)
 
 ### speechain.model.asr.ASR.criterion_init()
 * **Description:**  
@@ -156,7 +167,8 @@ model:
   * _**label_smoothing:**_ float = 0.0  
     Controls the scale of label smoothing. 0 means no smoothing.  
     For more details, please refer to [speechain.criterion.cross_entropy.CrossEntropy]()
-    
+
+👆[Back to the API list](https://github.com/ahclab/SpeeChain/tree/main/recipes/asr#api-document)
 
 ### speechain.model.asr.ASR.inference()
 * **Description:**  
@@ -191,3 +203,7 @@ model:
     Whether you use the teacher-forcing technique to generate the hypothesis transcript.
 * **Return:** Dict  
     A Dict containing all the decoding and evaluation results.
+
+👆[Back to the API list](https://github.com/ahclab/SpeeChain/tree/main/recipes/asr#api-document)
+
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/recipes/asr#table-of-contents)

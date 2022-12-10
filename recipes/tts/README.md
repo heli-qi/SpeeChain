@@ -1,10 +1,12 @@
 # Text-To-Speech Synthesis (TTS)
 
+👆[Back to the recipe README.md](https://github.com/ahclab/SpeeChain/tree/main/recipes#recipes-folder-of-the-speechain-toolkit)
+
 ## Table of Contents
-1. [Model Structure]()
-2. [Configuration Format]()
-3. [Available Backbones]()
-4. [API Document]()
+1. [Model Structure](https://github.com/ahclab/SpeeChain/tree/main/recipes/tts#model-structure)
+2. [Configuration Format](https://github.com/ahclab/SpeeChain/tree/main/recipes/tts#configuration-format)
+3. [Available Backbones](https://github.com/ahclab/SpeeChain/tree/main/recipes/tts#available-backbones)
+4. [API Document](https://github.com/ahclab/SpeeChain/tree/main/recipes/tts#api-document)
 
 ## Model Structure
 ![image](model_fig.png)
@@ -25,6 +27,8 @@ The neural network structure of an `TTS` _Model_ object is made up of an `TTSEnc
    8. `postnet` post-processes the predicted next-step acoustic features.
 
 The concrete implementation classes of the blocks with dashed edges can be freely selected among the available options in the _Dict_ members `{block_name}_class_dict` of `TTSEncoder` and `TTSDecoder`.
+
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/recipes/tts#table-of-contents)
 
 ## Configuration Format
 ```
@@ -81,6 +85,8 @@ model:
         f_beta: ...
 ```
 
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/recipes/tts#table-of-contents)
+
 ## Available Backbones
 1. Transformer-TTS ([paper reference](https://ojs.aaai.org/index.php/AAAI/article/view/4642/4520))
     ```
@@ -117,10 +123,12 @@ model:
     ```
 2. FastSpeech2 ([paper reference](https://arxiv.org/pdf/2006.04558), coming soon~)
 
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/recipes/tts#table-of-contents)
+
 ## API Document
-1. [speechain.model.tts.TTS.module_init]()
-2. [speechain.model.tts.TTS.criterion_init]()
-3. [speechain.model.tts.TTS.inference]()
+1. [speechain.model.tts.TTS.module_init](https://github.com/ahclab/SpeeChain/tree/main/recipes/tts#speechainmodelttsttsmodule_init)
+2. [speechain.model.tts.TTS.criterion_init](https://github.com/ahclab/SpeeChain/tree/main/recipes/tts#speechainmodelttsttscriterion_init)
+3. [speechain.model.tts.TTS.inference](https://github.com/ahclab/SpeeChain/tree/main/recipes/tts#speechainmodelttsttsinference)
 
 ### speechain.model.tts.TTS.module_init()
 * **Description:**  
@@ -188,7 +196,7 @@ model:
   * _**vocoder:**_ Dict = None  
     The configuration of the vocoder member.
   
-  
+👆[Back to the API list](https://github.com/ahclab/SpeeChain/tree/main/recipes/tts#api-document)
 
 ### speechain.model.tts.TTS.criterion_init()
 * **Description:**  
@@ -217,6 +225,8 @@ model:
     The value of beta for stop flag f-score calculation.  
     The larger beta is, the more f-score focuses on true positive stop flag prediction result.  
     For more details, please refer to [speechain.criterion.fbeta_score.FBetaScore]().
+
+👆[Back to the API list](https://github.com/ahclab/SpeeChain/tree/main/recipes/tts#api-document)
 
 ### speechain.model.tts.TTS.inference()
 * **Description:**  
@@ -262,3 +272,7 @@ model:
     Whether you use the teacher-forcing technique to generate the hypothesis utterance.
 * **Return:** Dict  
     A Dict containing all the decoding and evaluation results.
+
+👆[Back to the API list](https://github.com/ahclab/SpeeChain/tree/main/recipes/tts#api-document)
+
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/recipes/tts#table-of-contents)
