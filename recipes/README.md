@@ -41,20 +41,24 @@ Please press the hyperlinks below and jump to the README.md of your target task 
 	    <th>ASR Model</th>
 	    <th>Setting</th>  
 	    <th>WER w/o. LM</th>  
+	    <th>WER w. Transformer LM</th>  
 	</tr>
 	<tr>
 	    <td rowspan="3">LibriSpeech (test-clean / test-other)</td>
 	    <td rowspan="3">Speech-Transformer</td>
 	    <td>train-clean-100</td>
+	    <td>12.10% / 29.10%</td>
 	    <td></td>
 	</tr>
 	<tr>
 	    <td>train-clean-460</td>
-	    <td></td>
+	    <td>5.73% / 16.63%</td>
+        <td></td>
 	</tr>
 	<tr>
 	    <td>train-960</td>
-	    <td></td>
+	    <td>4.45% / 10.46%</td>
+        <td></td>
 	</tr>
 </table>
 
@@ -77,6 +81,10 @@ Please press the hyperlinks below and jump to the README.md of your target task 
             /data_cfg
             /exp_cfg
             /train_cfg
+    /ljspeech               # TTS Recipes for the LJSpeech dataset, LJSpeech doesn't have the official subset division.
+        /data_cfg
+        /exp_cfg
+        /train_cfg
 ```
 <table>
 	<tr>

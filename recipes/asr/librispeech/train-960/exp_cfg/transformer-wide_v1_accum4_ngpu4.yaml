@@ -1,0 +1,54 @@
+### Author: Heli Qi
+### Affiliation: NAIST
+### Date: 2022.09
+# This configuration take 4 × Geforce 1080 Ti GPUs with 11GB memory and 30 hours to finish the training.
+
+
+### --- Reference Values --- ###
+exp_root: recipes/asr/librispeech/train-960
+infer_root: config/infer/asr
+### ------------------------ ###
+
+
+# Group 1: Calculation and System Backend
+seed: 0
+num_workers: 1
+pin_memory: False
+non_blocking: False
+
+# Group 2: Gradient Calculation and Back-Propagation
+accum_grad: 4
+ft_factor: 1.0
+grad_clip: 5.0
+
+# Group 3: Multi-GPU Distribution
+ngpu: 4
+
+# Group 4: Model Training
+train: True
+best_model_selection: !tuple (valid, accuracy, max, 10)
+early_stopping_patience: 10
+last_model_number: !ref <early_stopping_patience>
+
+# Group 5: Real-time Model Visualization Snapshotting
+model_snapshot_number: 0
+model_snapshot_interval: 5
+
+# Group 6: Model Testing
+test: False
+test_model: 10_valid_accuracy_average
+# Before evaluating the trained model on test-clean and test-other, we need to find the best softmax temperature on dev-clean.
+# Here the searching range is all the odd number from 1.1 to 1.9, and we found 1.3 gives the best performance.
+infer_cfg:
+  shared_args:
+    beam_size: 16
+  exclu_args:
+#    - temperature: 1.1
+    - temperature: 1.3
+#    - temperature: 1.5
+#    - temperature: 1.7
+#    - temperature: 1.9
+
+# Group 7: Experiment .yaml Configuration File
+data_cfg: !ref <exp_root>/data_cfg/train_len12M.yaml
+train_cfg: !ref <exp_root>/train_cfg/transformer-wide_v1.yaml

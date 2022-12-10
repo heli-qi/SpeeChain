@@ -1,0 +1,49 @@
+### Author: Heli Qi
+### Affiliation: NAIST
+### Date: 2022.09
+# This is a template of data loading configuration on the train-clean-100 dataset of the LibriSpeech corpus
+# This configuration fits 2 × Geforce 1080 Ti GPUs with 11GB memory.
+# You can modify this configuration according to your computational resource, such as batch_len and ngpu.
+# However, you may not be able to reproduce exactly the same performance with different GPU setting.
+
+
+### --- Reference Values --- ###
+data_root: datasets/speech_text/librispeech/data/wav
+txt_format: normal
+train_dset: train-clean-100
+# Since we are using train-clean-100 for training, we suppose we only have 'clean' data in our hands.
+# So, we only use dev-clean as the validation set for a more realistic experiment.
+valid_dset: dev-clean
+
+
+### --- Training Iterator Configuration --- ###
+train:
+    type: block.BlockIterator
+    conf:
+        dataset_type: speech_text.SpeechTextDataset
+        dataset_conf:
+            main_data:
+                feat: !ref <data_root>/<train_dset>/idx2wav
+                text: !ref <data_root>/<train_dset>/idx2<txt_format>_text
+
+        data_len: !ref <data_root>/<train_dset>/idx2wav_len
+        shuffle: True
+        is_descending: True
+        batch_len: 1.2e7
+
+### --- Validation Iterator Configuration --- ###
+# Although block.BlockIterator can be used here, it may cause a sudden surge of consumed GPU memory.
+# By using abs.Iterator, each GPU process load just one data instance at each validation step which reduces the GPU burden.
+# However, abs.Iterator may consume more CPU during validation. Please be careful about it.
+valid:
+    type: abs.Iterator
+    conf:
+        dataset_type: speech_text.SpeechTextDataset
+        dataset_conf:
+            main_data:
+                feat: !ref <data_root>/<valid_dset>/idx2wav
+                text: !ref <data_root>/<valid_dset>/idx2<txt_format>_text
+
+        shuffle: False
+        data_len: !ref <data_root>/<valid_dset>/idx2wav_len
+

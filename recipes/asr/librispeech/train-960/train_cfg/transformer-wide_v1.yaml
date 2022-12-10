@@ -1,13 +1,17 @@
 ### Author: Heli Qi
 ### Affiliation: NAIST
 ### Date: 2022.09
+# This configuration is the 1st version of Transformer-narrow:
+# 1. Each Transformer block has 8 attention heads and 512 attention dimension
+# 2. The ASR model is trained without a CTC branch
+# 3. An additional LayerNorm layer is added into PositionalEncoding of TransformerEncoder and TransformerDecoder
+# 4. 5K BPE tokens are used as the vocabulary and label smoothness is set to 0.2 for calculating cross-entropy loss
 
 
 ### --- Reference Values --- ###
-# These values can be referred and reused by the representer '!ref' like the way below
-token_root: /ahc/work4/heli-qi/euterpe-heli-qi/datasets/speech_text/librispeech/data/subword/train-960/bpe5k
-data_root: /ahc/work4/heli-qi/euterpe-heli-qi/datasets/speech_text/librispeech/data/wav/train-960
+token_root: datasets/speech_text/librispeech/data/subword/train-960/bpe5k/normal
 d_model: 512
+num_heads: 8
 fdfwd_dim: 2048
 dropout: 0.1
 ### ------------------------ ###
@@ -19,11 +23,10 @@ model:
     customize_conf:
       token_type: subword
       token_vocab: !ref <token_root>/vocab
-      spk_list: !ref <data_root>/spk_list
 
   module_conf:
     frontend:
-      type: speech2mel
+      type: mel_fbank
       conf:
         preemphasis: 0.97
         hop_length: 0.010
@@ -33,7 +36,11 @@ model:
     normalize:
       norm_type: global
 
-    specaug: True
+    specaug:
+      freq_mask_width: 15
+      freq_mask_num: 4
+      time_mask_width: 20
+      time_mask_num: 4
 
     enc_prenet:
       type: conv2d
@@ -45,14 +52,16 @@ model:
         conv_stride: 2
         conv_batchnorm: true
         lnr_dims: !ref <d_model>
-        lnr_dropout: !ref <dropout>
 
     encoder:
       type: transformer
       conf:
         posenc_dropout: !ref <dropout>
+        posenc_scale: false
+        emb_layernorm: true
+        emb_scale: false
         d_model: !ref <d_model>
-        num_heads: 8
+        num_heads: !ref <num_heads>
         num_layers: 12
         att_dropout: !ref <dropout>
         fdfwd_dim: !ref <fdfwd_dim>
@@ -60,7 +69,7 @@ model:
         res_dropout: !ref <dropout>
         layernorm_first: true
 
-    dec_prenet:
+    dec_emb:
       type: embed
       conf:
         embedding_dim: !ref <d_model>
@@ -69,8 +78,11 @@ model:
       type: transformer
       conf:
         posenc_dropout: !ref <dropout>
+        posenc_scale: false
+        emb_layernorm: true
+        emb_scale: false
         d_model: !ref <d_model>
-        num_heads: 8
+        num_heads: !ref <num_heads>
         num_layers: 6
         att_dropout: !ref <dropout>
         fdfwd_dim: !ref <fdfwd_dim>
@@ -78,10 +90,8 @@ model:
         res_dropout: !ref <dropout>
         layernorm_first: true
 
-
   criterion_conf:
-    cross_entropy:
-      label_smoothing: 0.1
+    label_smoothing: 0.2
 
 
 optim_sches:
@@ -93,4 +103,4 @@ optim_sches:
         - 0.9
         - 0.98
       eps: 1.0e-9
-    warmup_steps: 12000
+    warmup_steps: 16000

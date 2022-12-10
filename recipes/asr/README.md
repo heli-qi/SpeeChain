@@ -7,6 +7,7 @@
 2. [Configuration Format](https://github.com/ahclab/SpeeChain/tree/main/recipes/asr#configuration-format)
 3. [Available Backbones](https://github.com/ahclab/SpeeChain/tree/main/recipes/asr#available-backbones)
 4. [API Document](https://github.com/ahclab/SpeeChain/tree/main/recipes/asr#api-document)
+5. [How to train an ASR model](https://github.com/ahclab/SpeeChain/tree/main/recipes/asr#how-to-train-an-asr-model)
 
 ## Model Structure
 ![image](model_fig.png)
@@ -207,3 +208,25 @@ model:
 👆[Back to the API list](https://github.com/ahclab/SpeeChain/tree/main/recipes/asr#api-document)
 
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/recipes/asr#table-of-contents)
+
+## How to train an ASR model
+Suppose that I want to train an ASR model by the configuration `${SPEECHAIN_ROOT}/recipes/asr/librispeech/train-clean-100/exp_cfg/transformer-narrow_v1_accum1_ngpu2.yaml`.
+1. Train the ASR model on your target training set
+   ```
+   cd ${SPEECHAIN_ROOT}/recipes/asr/librispeech/train-clean-100
+   bash run.sh --train true --exp_cfg transformer-narrow_v1_accum1_ngpu2
+   ```
+   **Note:** Please take a look at the comments in the configuration file to make sure that your computational equipments fit the configuration before training the model.
+2. Tune the inference hyperparameters on the corresponding validation set
+   ```
+   bash run.sh --test true --exp_cfg transformer-narrow_v1_accum1_ngpu2 --data_cfg validtune_clean
+   ```
+   **Note:** `--data_cfg` is used to change the data loading configuration from the original one for training in `exp_cfg` to the one for validation tuning.
+3. Evaluate the trained ASR model on the official test sets
+   ```
+   bash run.sh --test true --exp_cfg transformer-narrow_v1_accum1_ngpu2 --data_cfg test_clean+other
+   ```
+   **Note:** Please modify `infer_cfg` in `exp_cfg` to the optimal one you get after tuning on the validation set before execute this job.
+
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/recipes/asr#table-of-contents)
+

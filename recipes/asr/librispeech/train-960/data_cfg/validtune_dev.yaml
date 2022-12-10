@@ -1,0 +1,23 @@
+### --- Reference Values --- ###
+# These values can be referred and referred by the representer '!ref' to be part of the value contents
+data_root: datasets/speech_text/librispeech/data/wav
+# valid_set also acts as an anchor that can be referred as a key name
+valid_dset: &valid_dset dev
+
+### --- Testing Iterator Configuration --- ###
+# Note: there must be a blank between the anchor '*valid_dset' and the colon ':'
+test:
+    *valid_dset :
+        type: abs.Iterator
+        conf:
+            dataset_type: speech_text.SpeechTextDataset
+            dataset_conf:
+                main_data:
+                    feat: !ref <data_root>/<valid_dset>/idx2wav
+                    text: !ref <data_root>/<valid_dset>/idx2normal_text
+
+            shuffle: False
+            data_len: !ref <data_root>/<valid_dset>/idx2wav_len
+            group_info:
+                speaker: !ref <data_root>/<valid_dset>/idx2spk
+                gender: !ref <data_root>/<valid_dset>/idx2gen

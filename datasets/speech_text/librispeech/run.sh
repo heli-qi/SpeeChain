@@ -183,7 +183,7 @@ case "${dump_part}" in
     vocab_src_subsets="${subsets} train-clean-460 train-960"
 
     if [ ${token_type} != 'char' ] && [ -z ${vocab_size} ]; then
-        vocab_size=10000
+        vocab_size=5000
     fi
     ;;
   ?)
