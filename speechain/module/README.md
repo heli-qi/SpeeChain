@@ -76,11 +76,11 @@ _Non-overridable backbone functions:_
 1. [speechain.module.abs.Module.\_\_init__](https://github.com/ahclab/SpeeChain/tree/main/speechain/module#speechainmoduleabsmodule__init__self-input_size-distributed-module_conf)
 
 _Overridable interface functions:_  
-2. [speechain.module.abs.Module.module_init](https://github.com/ahclab/SpeeChain/tree/main/speechain/module#speechainmoduleabsmodulemodule_initself-module_conf)
-3. [speechain.module.abs.Module.forward](https://github.com/ahclab/SpeeChain/tree/main/speechain/module#speechainmoduleabsmoduleforwardself-kwargs)
-4. [speechain.module.abs.Module.recover](https://github.com/ahclab/SpeeChain/tree/main/speechain/module#speechainmoduleabsmodulerecoverself-kwargs)
-5. [speechain.module.abs.Module.reset_parameters](https://github.com/ahclab/SpeeChain/tree/main/speechain/module#speechainmoduleabsmodulereset_parametersself)
-6. [speechain.module.abs.Module.get_recordable_para](https://github.com/ahclab/SpeeChain/tree/main/speechain/module#speechainmoduleabsmoduleget_recordable_paraself)
+1. [speechain.module.abs.Module.module_init](https://github.com/ahclab/SpeeChain/tree/main/speechain/module#speechainmoduleabsmodulemodule_initself-module_conf)
+2. [speechain.module.abs.Module.forward](https://github.com/ahclab/SpeeChain/tree/main/speechain/module#speechainmoduleabsmoduleforwardself-kwargs)
+3. [speechain.module.abs.Module.recover](https://github.com/ahclab/SpeeChain/tree/main/speechain/module#speechainmoduleabsmodulerecoverself-kwargs)
+4. [speechain.module.abs.Module.reset_parameters](https://github.com/ahclab/SpeeChain/tree/main/speechain/module#speechainmoduleabsmodulereset_parametersself)
+5. [speechain.module.abs.Module.get_recordable_para](https://github.com/ahclab/SpeeChain/tree/main/speechain/module#speechainmoduleabsmoduleget_recordable_paraself)
 
 ### speechain.module.abs.Module.\_\_init__(self, input_size, distributed, **module_conf)
 * **Description:**  

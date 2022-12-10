@@ -18,7 +18,7 @@ class ASRDecoder(Module):
     """
 
     """
-    prenet_class_dict = dict(
+    embedding_class_dict = dict(
         embed=EmbedPrenet
     )
 
@@ -26,11 +26,11 @@ class ASRDecoder(Module):
         transformer=TransformerDecoder
     )
 
-    def module_init(self, prenet: Dict, decoder: Dict, vocab_size: int = None):
+    def module_init(self, embedding: Dict, decoder: Dict, vocab_size: int = None):
         """
 
         Args:
-            prenet:
+            embedding:
             decoder:
             vocab_size:
 
@@ -39,10 +39,10 @@ class ASRDecoder(Module):
         _prev_output_size = None
 
         # embedding layer of the E2E ASR decoder
-        prenet_class = self.prenet_class_dict[prenet['type']]
-        prenet['conf'] = dict() if 'conf' not in prenet.keys() else prenet['conf']
-        self.prenet = prenet_class(vocab_size=vocab_size, **prenet['conf'])
-        _prev_output_size = self.prenet.output_size
+        embedding_class = self.embedding_class_dict[embedding['type']]
+        embedding['conf'] = dict() if 'conf' not in embedding.keys() else embedding['conf']
+        self.embedding = embedding_class(vocab_size=vocab_size, **embedding['conf'])
+        _prev_output_size = self.embedding.output_size
 
         # main body of the E2E ASR decoder
         decoder_class = self.decoder_class_dict[decoder['type']]
@@ -70,7 +70,7 @@ class ASRDecoder(Module):
 
         """
         # Text Embedding
-        emb_text = self.prenet(text)
+        emb_text = self.embedding(text)
 
         # mask generation for the input text
         text_mask = make_mask_from_len(text_len)

@@ -10,7 +10,7 @@ import numpy as np
 from typing import List, Dict, Any
 from abc import ABC
 
-from speechain.utilbox.data_loading_util import read_idx2data_file_to_dict
+from speechain.utilbox.data_loading_util import read_idx2data_file_to_dict, parse_path_args
 
 
 class Dataset(torch.utils.data.Dataset, ABC):
@@ -198,7 +198,7 @@ class Dataset(torch.utils.data.Dataset, ABC):
         # for meta-required selection strategies
         else:
             # read the metadata information for data selection
-            meta_info = np.loadtxt(meta_info, dtype=str, delimiter=" ")
+            meta_info = np.loadtxt(parse_path_args(meta_info), dtype=str, delimiter=" ")
             # initialize the sorted indices and metadata values of the data instances
             meta_sorted_data = meta_info[:, 0][np.argsort(meta_info[:, 1].astype(float))]
             meta_sorted_value = np.sort(meta_info[:, 1].astype(float))

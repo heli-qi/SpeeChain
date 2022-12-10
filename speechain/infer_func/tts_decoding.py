@@ -18,8 +18,7 @@ def auto_regression(enc_text: torch.Tensor,
                     stop_threshold: float = 0.5,
                     maxlen_ratio: int or float = 10.0,
                     continual_steps: int = 0,
-                    use_before: bool = False,
-                    feat_only: bool = False):
+                    use_before: bool = False):
     """
 
     Args:
@@ -38,9 +37,6 @@ def auto_regression(enc_text: torch.Tensor,
             Reference: Sec 3.1 in 'Generating synthetic audio data for attention-based speech recognition systems'
                 https://arxiv.org/pdf/1912.09257
         use_before:
-        # --- Data Storage Controlling --- #
-        feat_only:
-        vocoder:
 
     """
     # --- Initialization Stage --- #
@@ -64,7 +60,7 @@ def auto_regression(enc_text: torch.Tensor,
     stop_points = torch.zeros(batch_size, dtype=torch.int, device=cuda_device)
     # keep looping until all the synthetic utterances in the batch meet their stop flags
     while stop_flags.sum() < batch_size:
-        curr_outputs = decode_one_step(
+        pred_stop, pred_feat_before, pred_feat_after, _, _, _, _, _ = decode_one_step(
             enc_text=enc_text, enc_text_mask=enc_text_mask,
             feat=hypo_feat, feat_len=hypo_feat_len,
             spk_feat=spk_feat, spk_ids=spk_ids, is_test=True
@@ -72,8 +68,7 @@ def auto_regression(enc_text: torch.Tensor,
 
         # attach the new synthetic frames to the end of synthetic frames obtained so far
         # (batch_size, curr_len, feat_dim) + (batch_size, 1, feat_dim) = (batch_size, curr_len + 1, feat_dim)
-        pred_feat = curr_outputs['pred_feat_after'][:, -1].unsqueeze(1) if not use_before else \
-            curr_outputs['pred_feat_before'][:, -1].unsqueeze(1)
+        pred_feat = pred_feat_before[:, -1].unsqueeze(1) if use_before else pred_feat_after[:, -1].unsqueeze(1)
         # attach the silence to the utterances that has already been finished
         pred_feat[stop_flags] = 0
         hypo_feat = torch.cat([hypo_feat, pred_feat], dim=1)
@@ -81,7 +76,7 @@ def auto_regression(enc_text: torch.Tensor,
 
         # update the stop flags for all the utterances
         curr_steps = hypo_feat.size(1)
-        pred_stop = curr_outputs['pred_stop'][:, -1].squeeze()
+        pred_stop = pred_stop[:, -1].squeeze()
         # update the stop points where the stop token is met at the first time only
         stop_points[(pred_stop > logits_threshold) & (stop_points == 0)] = curr_steps
         # there are two stop conditions:
@@ -103,4 +98,8 @@ def auto_regression(enc_text: torch.Tensor,
         )
         hypo_feat_len *= reduction_factor
 
-    return dict(hypo_feat=hypo_feat, hypo_feat_len=hypo_feat_len, hypo_len_ratio=hypo_feat_len / enc_text_len)
+    return dict(
+        hypo_feat=hypo_feat,
+        hypo_feat_len=hypo_feat_len,
+        hypo_len_ratio=hypo_feat_len / enc_text_len
+    )

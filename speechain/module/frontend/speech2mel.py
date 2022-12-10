@@ -185,6 +185,17 @@ class Speech2MelSpec(Module):
 
         return feat, feat_len
 
+    def get_sample_rate(self):
+        """
+        The uniform interface function used to get the sampling rate of the frontend module.
+        The function name should be the same with LinearSpec2MelSpec and Speech2LinearSpec.
+
+        Returns: int
+            The sampling rate of this acoustic feature extraction frontend.
+
+        """
+        return self.linear2mel.sr
+
     def __repr__(self):
         string = f"{self.__class__.__name__}(\n" + \
                  str(self.speech2linear) + '\n' + \

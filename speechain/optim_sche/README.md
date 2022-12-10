@@ -42,7 +42,7 @@ optim_sches:
       Your given query should be in the form of `class_name` to indicate your target subclass in `torch.optim`.  
       For example, `Adam` means the class `torch.optim.Adam`.
       2. **optim_conf** contains all the configuration used to initialize the built-in optimizer.  
-        For more details, please refer to the _PyTorch_ document of your target `torch.optim.Optimizer` subclass.
+        For more details, please refer to the [_PyTorch_ document](https://pytorch.org/docs/1.2.0/optim.html#algorithms) of your target `torch.optim.Optimizer` subclass.
       3. **optimscheduler general configuration** is shared by all _OptimScheduler_ subclasses. 
          1. optim_loss
          2. updated_modules

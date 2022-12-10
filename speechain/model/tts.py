@@ -19,7 +19,7 @@ from typing import Dict, Any, List
 from speechain.model.abs import Model
 from speechain.tokenizer.char import CharTokenizer
 from speechain.utilbox.train_util import make_mask_from_len, text2tensor_and_len, spk2tensor
-from speechain.utilbox.md_util import get_list_strings
+from speechain.utilbox.data_loading_util import parse_path_args
 
 from speechain.module.encoder.tts import TTSEncoder
 from speechain.module.decoder.tts import TTSDecoder
@@ -43,57 +43,81 @@ class TTS(Model):
                     token_vocab: str,
                     frontend: Dict,
                     enc_emb: Dict,
+                    enc_prenet: Dict,
                     encoder: Dict,
                     dec_prenet: Dict,
                     decoder: Dict,
-                    enc_prenet: Dict = None,
+                    dec_postnet: Dict,
                     normalize: Dict = None,
-                    dec_postnet: Dict = None,
                     vocoder: Dict = None,
                     spk_list: str = None,
                     spk_emb: Dict = None,
-                    sample_rate: int = 16000,
+                    sample_rate: int = 22050,
                     audio_format: str = 'wav',
                     reduction_factor: int = 1,
                     stop_threshold: float = 0.5):
         """
         Args:
             # --- module_conf arguments --- #
-            (mandatory) frontend:
-                The configuration of the acoustic feature extraction frontend.
+            frontend: Dict (mandatory)
+                The configuration of the acoustic feature extraction frontend in the `TTSDecoder` member.
                 This argument must be given since our toolkit doesn't support time-domain TTS.
-            (mandatory) enc_emb:
-                The configuration of the token embedding layer in the encoder module.
+                For more details about how to give `frontend`, please refer to speechain.module.encoder.tts.TTSDecoder.
+            normalize: Dict
+                The configuration of the normalization layer in the `TTSDecoder` member.
+                This argument can also be given as a bool value.
+                True means the default configuration and False means no normalization.
+                For more details about how to give `normalize`, please refer to
+                    speechain.module.norm.feat_norm.FeatureNormalization.
+            enc_emb: Dict (mandatory)
+                The configuration of the embedding layer in the `TTSEncoder` member.
                 The encoder prenet embeds the input token id into token embeddings before feeding them into
                 the encoder.
-            (optional) enc_prenet:
-                The configuration of the prenet in the encoder module.
+                For more details about how to give `enc_emb`, please refer to speechain.module.encoder.tts.TTSEncoder.
+            enc_prenet: Dict (mandatory)
+                The configuration of the prenet in the `TTSEncoder` member.
                 The encoder prenet embeds the input token embeddings into high-level embeddings before feeding them into
                 the encoder.
-            (mandatory) encoder:
-                The configuration of the encoder module.
+                For more details about how to give `enc_prent`, please refer to speechain.module.encoder.tts.TTSEncoder.
+            encoder: Dict (mandatory)
+                The configuration of the encoder main body in the `TTSEncoder` member.
                 The encoder embeds the input embeddings into the encoder representations at each time steps of the
                 input acoustic features.
+                For more details about how to give `encoder`, please refer to speechain.module.encoder.tts.TTSEncoder.
+            spk_emb: Dict = None (conditionally mandatory)
+                The configuration for the `SPKEmbedPrenet` in the `TTSDecoder` member.
+                For more details about how to give `spk_emb`, please refer to
+                    speechain.module.prenet.spk_embed.SpeakerEmbedPrenet.
+            dec_prenet: Dict (mandatory)
+                The configuration of the prenet in the `TTSDecoder` member.
+                For more details about how to give `dec_prenet`, please refer to speechain.module.encoder.tts.TTSDecoder.
+            decoder: Dict (mandatory)
+                The configuration of the decoder main body in the `TTSDecoder` member.
+                For more details about how to give `decoder`, please refer to speechain.module.decoder.tts.TTSDecoder.
+            dec_postnet: Dict (mandatory)
+                The configuration of the postnet in the `TTSDecoder` member.
+                For more details about how to give `dec_postnet`, please refer to speechain.module.encoder.tts.TTSDecoder.
+            vocoder: Dict (optional)
+                The configuration of the vocoder member.
             # --- customize_conf arguments --- #
-            (mandatory) token_type:
+            token_type: (mandatory)
                 The type of the built-in tokenizer.
-            (mandatory) token_vocab:
-                The absolute path of the vocabulary for the built-in tokenizer.
-            (conditionally mandatory) spk_list:
-                The absolute path of the speaker list that contains all the speaker ids.
+                Currently, we support 'char' for `CharTokenizer` and 'phn' for `PhonemeTokenizer`.
+            token_vocab: (mandatory)
+                The path of the vocabulary list `vocab` for initializing the built-in tokenizer.
+            spk_list: str = None (conditionally mandatory)
+                The path of the speaker list that contains all the speaker ids in your training set.
                 If you would like to train a close-set multi-speaker TTS, you need to give a spk_list.
-            (conditionally mandatory) spk_emb:
-            (optional) sample_rate:
+            sample_rate: int = 22050 (optional)
                 The sampling rate of the target speech.
                 Currently it's used for acoustic feature extraction frontend initialization and tensorboard register of
                 the input speech during model visualization.
                 In the future, this argument will also be used to dynamically downsample the input speech during training.
-            (optional) audio_format:
-                The file format of the input speech.
-                It's only used for tensorboard register of the input speech during model visualization.
-            (optional) reduction_factor:
+            audio_format: str = 'wav' (optional)
+                This argument is only used for input speech recording during model visualization.
+            reduction_factor: int = 1 (mandatory)
                 The factor that controls how much the length of output speech feature is reduced.
-            (optional) stop_threshold:
+            stop_threshold: float = 0.5 (mandatory)
                 The threshold that controls whether the speech synthesis stops or not.
         """
         # --- 1. Model-Customized Part Initialization --- #
@@ -107,7 +131,7 @@ class TTS(Model):
 
         # initialize the speaker list if given
         if spk_list is not None:
-            spk_list = np.loadtxt(spk_list, dtype=str)
+            spk_list = np.loadtxt(parse_path_args(spk_list), dtype=str)
             # when the input file is idx2spk, only retain the column of speaker ids
             if len(spk_list.shape) == 2:
                 assert spk_list.shape[1] == 2
@@ -120,7 +144,7 @@ class TTS(Model):
             # 3. get the corresponding indices (start from 1 since 0 is reserved for unknown speakers)
             self.idx2spk = dict(zip(range(1, len(spk_list) + 1), spk_list))
             # 4. exchange the positions of indices and speaker ids
-            self.spk2idx = dict(map(reversed, zip(range(1, len(spk_list) + 1), spk_list)))
+            self.spk2idx = dict(map(reversed, self.idx2spk.items()))
 
         # initialize the sampling rate, mainly used for visualizing the input audio during training
         self.sample_rate = sample_rate
@@ -129,6 +153,7 @@ class TTS(Model):
         self.stop_threshold = stop_threshold
 
         # --- 2. Module Part Construction --- #
+        # --- 2.1. Encoder construction --- #
         # the vocabulary size is given by the built-in tokenizer instead of the input configuration
         if 'vocab_size' in enc_emb['conf'].keys():
             if enc_emb['conf']['vocab_size'] != self.tokenizer.vocab_size:
@@ -143,7 +168,7 @@ class TTS(Model):
             encoder=encoder
         )
 
-        # Decoder construction
+        # --- 2.2. Decoder construction --- #
         # check the sampling rate of the decoder frontend
         if 'sr' not in frontend['conf'].keys():
             frontend['conf']['sr'] = self.sample_rate
@@ -157,24 +182,22 @@ class TTS(Model):
         if spk_emb is not None:
             # multi-speaker embedding mode
             spk_emb_mode = 'open' if spk_list is None else 'close'
-            if 'spk_emb_mode' in spk_emb.keys():
-                assert spk_emb['spk_emb_mode'] == spk_emb_mode, \
-                    "Your input spk_emb_mode is different from the one generated by codes. " \
-                    "It's probably because you give spk_list in the open-set mode or " \
-                    "forget to give spk_list in the close-set mode."
-            else:
-                spk_emb['spk_emb_mode'] = spk_emb_mode
+            if 'spk_emb_mode' in spk_emb.keys() and spk_emb['spk_emb_mode'] != spk_emb_mode:
+                warnings.warn("Your input spk_emb_mode is different from the one generated by codes. "
+                              "It's probably because you want to train an open-set multi-speaker TTS but "
+                              "mistakenly give spk_list, or you want to train a close-set multi-speaker TTS but "
+                              "forget to give spk_list. "
+                              f"Currently, the spk_emb_mode is set to {spk_emb_mode}.")
+            # the one automatically generated by the model has the higher priority
+            spk_emb['spk_emb_mode'] = spk_emb_mode
 
             # speaker number for the close-set multi-speaker TTS
             if spk_emb['spk_emb_mode'] == 'close':
-                if 'spk_num' in spk_emb.keys():
-                    # all seen speakers plus an unknown speaker
-                    assert spk_emb['spk_num'] == len(self.spk2idx) + 1, \
-                        "Your input spk_emb_mode is different from the one generated by codes. " \
-                        "It's probably because you give spk_list in the open-set mode or " \
-                        "forget to give spk_list in the close-set mode."
-                else:
-                    spk_emb['spk_num'] = len(self.spk2idx) + 1
+                if 'spk_num' in spk_emb.keys() and spk_emb['spk_num'] != len(self.spk2idx) + 1:
+                    warnings.warn("Your input spk_num is different from the number of speakers in your given spk_list. "
+                                  f"Currently, the spk_num is set to {len(self.spk2idx) + 1}.")
+                # all seen speakers plus an unknown speaker
+                spk_emb['spk_num'] = len(self.spk2idx) + 1
 
         self.decoder = TTSDecoder(
             spk_emb=spk_emb,
@@ -186,6 +209,8 @@ class TTS(Model):
             distributed=self.distributed,
             reduction_factor=self.reduction_factor,
         )
+
+        # --- 2.3. Vocoder construction --- #
         if vocoder is None:
             self.vocoder = self.decoder.spec_to_wav
         else:
@@ -206,22 +231,34 @@ class TTS(Model):
                        feat_update_range: int or float = None,
                        stop_pos_weight: float = 5.0,
                        stop_loss_norm: bool = True,
-                       f_beta: int = 2.0):
+                       f_beta: int = 2):
         """
+        This function initializes all the necessary _Criterion_ members:
+            1. `speechain.criterion.least_error.LeastError` for acoustic feature prediction loss calculation.
+            2. `speechain.criterion.bce_logits.BCELogits` for stop flag prediction loss calculation.
+            3. `speechain.criterion.accuracy.Accuracy` for teacher-forcing stop flag prediction accuracy calculation.
+            4. `speechain.criterion.fbeta_score.FBetaScore` for teacher-forcing stop flag prediction f-score calculation.
 
         Args:
             feat_loss_type: str = 'L2'
-
+                The type of acoustic feature prediction loss. Should be either 'L1', 'L2', and 'L1+L2'.
+                For more details, please refer to speechain.criterion.least_error.LeastError.
             feat_loss_norm: bool = True
-
+                Controls whether the sentence normalization is performed for feature loss calculation.
+                For more details, please refer to speechain.criterion.least_error.LeastError.
             feat_update_range: int or float = None
-
+                The updating range of the dimension of acoustic features for feature loss calculation.
+                For more details, please refer to speechain.criterion.least_error.LeastError.
             stop_pos_weight: float = 5.0
-
+                The weight putted on stop points for stop loss calculation.
+                For more details, please refer to speechain.criterion.bce_logits.BCELogits.
             stop_loss_norm: bool = True
-
-            f_beta: int = 2.0
-
+                Controls whether the sentence normalization is performed for stop loss calculation.
+                For more details, please refer to speechain.criterion.bce_logits.BCELogits.
+            f_beta: int = 2
+                The value of beta for stop flag f-score calculation.
+                The larger beta is, the more f-score focuses on true positive stop flag prediction result.
+                For more details, please refer to speechain.criterion.fbeta_score.FBetaScore.
 
         """
         # --- Criterion Part Initialization --- #
@@ -429,8 +466,8 @@ class TTS(Model):
                        feat_loss_before=feat_loss_before.clone().detach(),
                        feat_loss_after=feat_loss_after.clone().detach(),
                        stop_loss=stop_loss.clone().detach(),
-                       stop_accuracy=stop_accuracy.detach(),
-                       stop_fbeta=stop_fbeta.detach())
+                       stop_accuracy=stop_accuracy.detach())
+        metrics[f"stop_f{self.stop_fbeta.beta}"] = stop_fbeta.detach()
 
         if self.training:
             return losses, metrics
@@ -615,64 +652,76 @@ class TTS(Model):
                   spk_ids: torch.Tensor = None,
                   spk_feat: torch.Tensor = None,
                   aver_spk: bool = False,
-                  feat_only: bool = False,
                   return_att: bool = False,
+                  feat_only: bool = False,
                   decode_only: bool = False,
                   use_dropout: bool = False,
-                  vocode_only: bool = False,
-                  teacher_forcing: bool = False,
-                  **meta_info) -> Dict[str, Any]:
+                  use_before: bool = False,
+                  teacher_forcing: bool = False) -> Dict[str, Any]:
         """
 
         Args:
             # --- Testing data arguments --- #
-            (mandatory) feat: (batch_size, feat_maxlen, feat_dim)
-                Ground-truth (waveforms or acoustic features)
+            feat: (batch_size, feat_maxlen, feat_dim)
+                The ground-truth utterance for the input text
                 Used for teacher-forcing decoding and objective evaluation
-            (mandatory) feat_len: (batch_size,)
-                The length of the ground-truth
-            (mandatory) text: (batch_size, text_maxlen)
-                The input text to be decoded
-            (mandatory) text_len: (batch_size,)
-                The length of the input text
-            (optional) spk_ids: (batch_size,)
-            (optional) spk_feat: (batch_size,)
-            (optional) meta_info: Dict[str, List[str]]
+            feat_len: (batch_size,)
+                The length of `feat`.
+            text: (batch_size, text_maxlen)
+                The text data to be inferred.
+            text_len: (batch_size,)
+                The length of `text`.
+            spk_ids: (batch_size,)
+                The ID of the reference speaker.
+            spk_feat: (batch_size,)
+                The speaker embedding of the reference speaker.
             # --- General inference arguments --- #
-            (optional) aver_spk:
-            (optional) return_att:
-            (optional) feat_only:
-            (optional) decode_only:
-            (optional) use_dropout:
-            (optional) vocode_only:
-            (optional) teacher_forcing:
+            aver_spk: bool = False
+                Whether you use the average speaker as the reference speaker.
+                The speaker embedding of the average speaker is a zero vector.
+            return_att: bool = False
+                Whether the attention matrix of the input speech is returned.
+            feat_only: bool = False
+                Whether only decode the text into acoustic features without vocoding.
+            decode_only: bool = False
+                Whether skip the evaluation step and do the decoding step only.
+            use_dropout: bool = False
+                Whether turn on the dropout layers in the prenet of the TTS decoder when decoding.
+            teacher_forcing: bool = False
+                Whether turn on the dropout layers in the prenet of the TTS decoder when decoding.
             # --- TTS decoding arguments --- #
-            (mandatory) infer_conf:
+            infer_conf:
+                The inference configuration given from the `infer_cfg` in your `exp_cfg`.
+                For more details, please refer to speechain.infer_func.tts_decoding.auto_regression.
 
         """
-        # --- Hyperparameter & Model Preparation Stage --- #
+        assert text is not None and text_len is not None
+
+        # --- 0. Hyperparameter & Model Preparation Stage --- #
         # in-place replace infer_conf with its copy to protect the original information
         infer_conf = copy.deepcopy(infer_conf)
-        # The following arguments should not be passed to auto_regression()
+        # The following argumentsin infer_conf has the higher priority and will not be passed to auto_regression()
         if 'decode_only' in infer_conf.keys():
             decode_only = infer_conf.pop('decode_only')
-        if 'vocode_only' in infer_conf.keys():
-            vocode_only = infer_conf.pop('vocode_only')
         if 'teacher_forcing' in infer_conf.keys():
             teacher_forcing = infer_conf.pop('teacher_forcing')
         if 'use_dropout' in infer_conf.keys():
             use_dropout = infer_conf.pop('use_dropout')
         if 'aver_spk' in infer_conf.keys():
             aver_spk = infer_conf.pop('aver_spk')
-        # 'feat_only' and 'stop_threshold' are kept as the arguments of auto_regression()
-        # feat_only in infer_conf has the higher priority than the default values
         if 'feat_only' in infer_conf.keys():
-            feat_only = infer_conf['feat_only']
-        else:
-            infer_conf['feat_only'] = feat_only
+            feat_only = infer_conf.pop('feat_only')
+
+        # 'stop_threshold', and 'use_before' are kept as the arguments of auto_regression()
         # stop_threshold in infer_conf has the higher priority than the built-in one of the model
         if 'stop_threshold' not in infer_conf.keys():
             infer_conf['stop_threshold'] = self.stop_threshold
+        # feat_only in infer_conf has the higher priority than the default values
+        if 'use_before' in infer_conf.keys():
+            use_before = infer_conf['use_before']
+        else:
+            infer_conf['use_before'] = use_before
+
         hypo_feat, hypo_feat_len, hypo_len_ratio, hypo_wav, hypo_wav_len, hypo_wav_len_ratio, hypo_att = \
             None, None, None, None, None, None, None
 
@@ -685,90 +734,79 @@ class TTS(Model):
             spk_feat = torch.zeros((text.size(0), self.decoder.spk_emb.spk_emb_dim), device=text.device)
             spk_ids = None
 
-        # initialize the output dictionary
+        # --- 1. Acoustic Feature Generation Stage --- #
         outputs = dict()
-        # Generate the acoustic features from the given text and then do the vocoding operation
-        if not vocode_only:
-            # --- The 1st Pass: TTS Auto-Regressive Decoding --- #
-            if not teacher_forcing:
-                # copy the input data in advance for data safety
-                model_input = copy.deepcopy(
-                    dict(text=text, text_len=text_len)
-                )
+        # --- 1.1. The 1st Pass: TTS Auto-Regressive Decoding --- #
+        if not teacher_forcing:
+            # copy the input data in advance for data safety
+            model_input = copy.deepcopy(dict(text=text, text_len=text_len))
 
-                # Encoding input text
-                enc_outputs = self.encoder(**model_input)
+            # Encoding input text
+            enc_text, enc_text_mask, _, _ = self.encoder(**model_input)
 
-                # Generate the synthetic acoustic features auto-regressively
-                infer_results = auto_regression(enc_text=enc_outputs['enc_feat'],
-                                                enc_text_mask=enc_outputs['enc_feat_mask'],
-                                                spk_ids=spk_ids,
-                                                spk_feat=spk_feat,
-                                                reduction_factor=self.reduction_factor,
-                                                feat_dim=self.decoder.output_size,
-                                                decode_one_step=self.decoder,
-                                                **infer_conf)
-                hypo_feat = infer_results['hypo_feat']
-                hypo_feat_len = infer_results['hypo_feat_len']
-                hypo_len_ratio = infer_results['hypo_len_ratio']
-                outputs.update(feat_token_len_ratio=dict(format='txt', content=to_cpu(hypo_len_ratio)))
+            # Generate the synthetic acoustic features auto-regressively
+            infer_results = auto_regression(enc_text=enc_text,
+                                            enc_text_mask=enc_text_mask,
+                                            spk_ids=spk_ids,
+                                            spk_feat=spk_feat,
+                                            reduction_factor=self.reduction_factor,
+                                            feat_dim=self.decoder.output_size,
+                                            decode_one_step=self.decoder,
+                                            **infer_conf)
+            hypo_feat = infer_results['hypo_feat']
+            hypo_feat_len = infer_results['hypo_feat_len']
+            hypo_len_ratio = infer_results['hypo_len_ratio']
+            outputs.update(feat_token_len_ratio=dict(format='txt', content=to_cpu(hypo_len_ratio)))
 
-            # --- The 2nd Pass: TTS Teacher-Forcing Decoding --- #
-            if teacher_forcing or return_att:
-                infer_results = self.model_forward(feat=feat if teacher_forcing else hypo_feat,
-                                                   feat_len=feat_len if teacher_forcing else hypo_feat_len,
-                                                   text=text, text_len=text_len,
-                                                   spk_feat=spk_feat, spk_ids=spk_ids,
-                                                   return_att=return_att)
+        # --- 1.2. The 2nd Pass: TTS Teacher-Forcing Decoding --- #
+        if teacher_forcing or return_att:
+            infer_results = self.module_forward(feat=feat if teacher_forcing else hypo_feat,
+                                                feat_len=feat_len if teacher_forcing else hypo_feat_len,
+                                                text=text, text_len=text_len,
+                                                spk_feat=spk_feat, spk_ids=spk_ids,
+                                                return_att=return_att)
+            # return the attention matrices
+            if return_att:
+                hypo_att = infer_results['att']
 
-                # return the attention matrices
-                if return_att:
-                    hypo_att = infer_results['att']
+            # update the hypothesis feature-related data in the teacher forcing mode
+            if teacher_forcing:
+                hypo_feat = infer_results['pred_feat_before' if use_before else 'pred_feat_after']
+                hypo_feat_len = feat_len
+                hypo_len_ratio = hypo_feat_len / text_len
+                outputs.update(self.criterion_forward(**infer_results))
 
-                # update the hypothesis text-related data in the teacher forcing mode
-                if teacher_forcing:
-                    outputs['feat'] = infer_results['pred_feat']
-                    hypo_len = feat_len
-                    hypo_bern = infer_results['pred_bern']
+        # --- 1.3. The 3rd Pass: denormalize the acoustic feature if needed --- #
+        if hasattr(self.decoder, 'normalize'):
+            hypo_feat = self.decoder.normalize.recover(hypo_feat, group_ids=spk_ids)
 
-                    metrics = self.metrics_calculation(hypo_feat, hypo_bern, feat, feat_len)
-
-                    _, declen, featdim = hypo_feat.size()
-
-            # The 3rd Pass: denormalize the acoustic feature if needed
-            if hasattr(self.decoder, 'normalize'):
-                hypo_feat = self.decoder.normalize.recover(hypo_feat, group_ids=spk_ids)
-
-        # Skip the generation of acoustic features and directly do the vocoding operation for the given features
-        else:
-            hypo_feat, hypo_feat_len = feat, feat_len
-
-        # --- Post-processing for the Generated Acoustic Features --- #
+        # --- 2. Post-processing for the Generated Acoustic Features --- #
         # recover the waveform from the acoustic feature by the vocoder
         if not feat_only:
             assert self.vocoder is not None, \
                 "Please specify a vocoder if you want to recover the waveform from the acoustic features."
             hypo_wav, hypo_wav_len = self.vocoder(feat=hypo_feat, feat_len=hypo_feat_len)
             hypo_wav = [hypo_wav[i][:hypo_wav_len[i]] for i in range(len(hypo_wav))]
-            outputs.update(
-                wav=dict(format=self.audio_format, sample_rate=self.sample_rate, content=to_cpu(hypo_wav, tgt='numpy')),
+            outputs = dict(
+                # the sampling rate of the generated waveforms is obtained from the frontend of the decoder
+                wav=dict(format=self.audio_format, sample_rate=self.decoder.frontend.get_sample_rate(),
+                         content=to_cpu(hypo_wav, tgt='numpy')),
                 wav_len=dict(format='txt', content=to_cpu(hypo_wav_len))
             )
 
-        # no features are returned in the vocoding-only mode
-        if not vocode_only:
-            # remove the redundant silence parts at the end of the synthetic frames
-            hypo_feat = [hypo_feat[i][:hypo_feat_len[i]] for i in range(len(hypo_feat))]
-            outputs.update(
-                feat=dict(format='npz', content=to_cpu(hypo_feat, tgt='numpy')),
-                feat_len=dict(format='txt', content=to_cpu(hypo_feat_len))
-            )
+        # remove the redundant silence parts at the end of the synthetic frames
+        hypo_feat = [hypo_feat[i][:hypo_feat_len[i]] for i in range(len(hypo_feat))]
+        outputs.update(
+            feat=dict(format='npy', content=to_cpu(hypo_feat, tgt='numpy')),
+            feat_len=dict(format='txt', content=to_cpu(hypo_feat_len))
+        )
 
         # record the speaker ID used as the reference
         if spk_ids is not None:
             assert hasattr(self, 'idx2spk')
             outputs.update(
-                ref_spk=dict(format='txt', content=[self.idx2spk[s_id.item()] if s_id != 0 else 0 for s_id in spk_ids])
+                ref_spk=dict(format='txt',
+                             content=[self.idx2spk[s_id.item()] if s_id != 0 else 0 for s_id in spk_ids])
             )
 
         # add the attention matrix into the output Dict, only used for model visualization during training
@@ -778,7 +816,7 @@ class TTS(Model):
                 hypo_att=hypo_att
             )
 
-        # --- Supervised Metrics Calculation (Ground-Truth is involved here) --- #
+        # --- 3. Supervised Metrics Calculation (Ground-Truth is involved here) --- #
         # hypo_wav_len_ratio is a supervised metrics calculated by the decoded waveforms
         if not decode_only:
             # For the acoustic feature ground-truth, since the transformation from feature length to waveform length
@@ -786,94 +824,24 @@ class TTS(Model):
             hypo_wav_len_ratio = hypo_feat_len / feat_len if feat.size(-1) != 1 else hypo_wav_len / feat_len
             outputs.update(wav_len_ratio=dict(format='txt', content=to_cpu(hypo_wav_len_ratio)))
 
-        # --- Final Report Generation Stage --- #
-        # No report will be printed in the vocoding-only scenario
-        if not vocode_only:
-            # produce the sample report by a .md file
-            sample_reports = []
-            for i in range(len(hypo_feat)):
-                # initialize the current report string by the unsupervised metrics
-                _curr_report = '\n\n' + get_list_strings(
-                    {
-                        'Feature-Token Length Ratio': f"{hypo_len_ratio[i]:.2f}"
-                    }
-                )
+        # --- 4. Final Report Generation Stage --- #
+        # produce the sample report by a .md file
+        instance_report_dict = dict()
+        for i in range(len(hypo_feat)):
+            # add the feat2token len_ratio into instance_reports.md
+            if 'Hypothesis Confidence' not in instance_report_dict.keys():
+                instance_report_dict['Feature-Token Length Ratio'] = []
+            instance_report_dict['Feature-Token Length Ratio'].append(f"{hypo_len_ratio[i]:.2f}")
 
-                # udpate the supervised metrics into the current sample report
-                if not decode_only:
-                    _curr_report += get_list_strings(
-                        {
-                            'Hypo-Real Waveform Length Ratio': f"{hypo_wav_len_ratio[i]:.2%} "
-                                                               f"({'-' if hypo_wav_len_ratio[i] < 1 else '+'}"
-                                                               f"{abs(hypo_wav_len_ratio[i] - 1):.2%})"
-                        }
-                    )
+            # udpate the supervised metrics into the current sample report
+            if not decode_only:
+                if 'Hypo-Real Waveform Length Ratio' not in instance_report_dict.keys():
+                    instance_report_dict['Hypo-Real Waveform Length Ratio'] = []
+                instance_report_dict['Hypo-Real Waveform Length Ratio'].append(
+                    f"{hypo_wav_len_ratio[i]:.2%} "
+                    f"({'-' if hypo_wav_len_ratio[i] < 1 else '+'}{abs(hypo_wav_len_ratio[i] - 1):.2%})")
 
-                # update the current report with a line break at the end
-                sample_reports.append(_curr_report + '\n')
-
-            # For both decoding-only mode or normal evaluation mode, sample_reports.md will be given
-            outputs['sample_reports.md'] = dict(format='txt', content=sample_reports)
-
+        # register the instance reports for generating instance_reports.md
+        self.register_instance_reports(md_list_dict=instance_report_dict)
         return outputs
 
-
-class ReferenceSpeakerTTS(TTS):
-    """
-
-    """
-
-    def inference(self,
-                  infer_conf: Dict,
-                  **test_batch) -> Dict[str, Any]:
-        """
-
-        Args:
-            infer_conf:
-            **test_batch:
-
-        Returns:
-
-        """
-        ref_flag = sum([isinstance(value, Dict) for value in test_batch.values()]) == len(test_batch)
-        # no sub-Dict means one normal supervised dataloader, go through the inference function of TTS
-        if not ref_flag:
-            return super(ReferenceSpeakerTTS, self).inference(
-                infer_conf=infer_conf, **test_batch
-            )
-        # sub-Dict means that the reference speaker information is given for TTS inference
-        else:
-            assert len(test_batch) in [1, 2]
-            src, ref = None, None
-            for value in test_batch.values():
-                if 'text' in value.keys() and 'text_len' in value.keys():
-                    src = value
-                else:
-                    ref = value
-            assert src is not None
-
-            # the reference speaker loader is given
-            if ref is not None:
-                assert ('spk_ids' in ref.keys()) or ('spk_feat' in ref.keys())
-                if 'spk_ids' in ref.keys():
-                    assert ref['spk_ids'].size(0) in [1, src['text'].size(0)]
-                    if ref['spk_ids'].size(0) < src['text'].size(0):
-                        ref['spk_ids'] = ref['spk_ids'].expand(src['text'].size(0))
-                else:
-                    assert ref['spk_feat'].size(0) in [1, src['text'].size(0)]
-                    if ref['spk_feat'].size(0) < src['text'].size(0):
-                        ref['spk_feat'] = ref['spk_feat'].expand(src['text'].size(0), -1)
-
-                return super(ReferenceSpeakerTTS, self).inference(
-                    infer_conf=infer_conf,
-                    feat=src['feat'] if 'feat' in src.keys() else None,
-                    feat_len=src['feat_len'] if 'feat_len' in src.keys() else None,
-                    text=src['text'], text_len=src['text_len'],
-                    spk_ids=ref['spk_ids'] if 'spk_ids' in ref.keys() else None,
-                    spk_feat=ref['spk_feat'] if 'spk_feat' in ref.keys() else None,
-                )
-            # no reference speaker loader is given
-            else:
-                return super(ReferenceSpeakerTTS, self).inference(
-                    infer_conf=infer_conf, **src
-                )

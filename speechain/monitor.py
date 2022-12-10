@@ -1037,7 +1037,7 @@ class TestMonitor(Monitor):
                         if isinstance(feat, torch.Tensor):
                             feat = to_cpu(feat, tgt='numpy')
                         feat = feat.astype(np.float32)
-                        np.save(os.path.join(folder_path, f'{index}.npz'), feat)
+                        np.save(os.path.join(folder_path, f'{index}.npy'), feat)
                 # save the waveforms as .wav files, sampling rate needs to be given in the result Dict as 'sample_rate'
                 elif result['format'].lower() == 'wav':
                     for index, wav in zip(test_index, result['content']):

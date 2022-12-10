@@ -82,7 +82,7 @@ class Runner(object):
             "--config",
             type=str,
             # default=None,
-            default="recipes/tts/ljspeech/exp_cfg/factor4_transformer_default-loss_accum1.yaml",
+            default="recipes/tts/libritts/train-clean-100/exp_cfg/normal_factor1_transformer_accum1_ngpu4.yaml",
             help="The path of the all-in-one experiment configuration file. You can write all the arguments in this "
                  "all-in-one file instead of giving them to `runner.py` by command lines."
         )
@@ -691,7 +691,7 @@ class Runner(object):
                 else:
                     model.load_state_dict(
                         torch.load(
-                            os.path.join(args.train_result_path, "models", "latest.mdl"), map_location=model.device)
+                            os.path.join(args.train_result_path, "models", "latest.pth"), map_location=model.device)
                     )
 
                 # loading the monitor

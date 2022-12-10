@@ -206,6 +206,17 @@ class LinearSpec2MelSpec(Module):
         # clamp the spectrogram for numerical stability
         return torch.clamp(feat, min=1e-10)
 
+    def get_sample_rate(self):
+        """
+        The uniform interface function used to get the sampling rate of the frontend module.
+        The function name should be the same with Speech2MelSpec and Speech2LinearSpec.
+
+        Returns: int
+            The sampling rate of this acoustic feature extraction frontend.
+
+        """
+        return self.sr
+
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(\n" \
                f"stft_dim={self.stft_dim}, " \

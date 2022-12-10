@@ -14,7 +14,7 @@ class FBetaScore(Criterion):
 
     """
 
-    def criterion_init(self, beta: float = 1.0):
+    def criterion_init(self, beta: int = 1):
         """
 
         Args:

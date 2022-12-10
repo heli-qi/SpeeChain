@@ -30,6 +30,23 @@ class ASR(Model):
     """
     Encoder-Decoder Automatic Speech Recognition (Enc-Dec ASR) implementation.
 
+    The neural network structure of an `ASR` _Model_ object is made up of two _Module_ members: an `ASREncoder`
+    _Module_ object and an `ASRDecoder` _Module_ object.
+
+    1. `ASREncoder` is made up of:
+        1. `frontend` converts the  raw waveforms into acoustic features on-the-fly.
+        2. `normalize` normalizes the extracted acoustic features to normal distribution for faster convergence.
+        3. `specaug` randomly warps and masks the normalized acoustic features.
+        4. `prenet` preprocesses the augmented acoustic features before passing them to the encoder.
+        5. `encoder` extracts the encoder hidden representations of the preprocessed acoustic features and passes them
+            to `ASRDecoder`.
+
+    2. `ASRDecoder` is made up of:
+        1. `embedding` embeds each tokens in the input sentence into token embedding vectors.
+        2. `decoder` extracts the decoder hidden representations based on the token embedding vectors and encoder
+            hidden representations.
+        3. `postnet` predicts the probability of the next tokens by the decoder hidden representations.
+
     """
 
     def module_init(self,
@@ -38,57 +55,71 @@ class ASR(Model):
                     frontend: Dict,
                     enc_prenet: Dict,
                     encoder: Dict,
-                    dec_prenet: Dict,
+                    dec_emb: Dict,
                     decoder: Dict,
                     normalize: Dict or bool = None,
                     specaug: Dict or bool = None,
                     sample_rate: int = 16000,
                     audio_format: str = 'wav'):
         """
+        This initialization function contains three steps:
+        1. `Tokenizer` initialization.
+        2. `ASREncoder` initialization.
+        3. `ASRDecoder` initialization.
+
+        The input arguments of this function are two-fold:
+        1. the ones from `customize_conf` of `model` in `train_cfg`
+        2. the ones from `module_conf` of `model` in `train_cfg`
 
         Args:
             # --- module_conf arguments --- #
-            (mandatory) frontend:
-                The configuration of the acoustic feature extraction frontend.
+            frontend: (mandatory)
+                The configuration of the acoustic feature extraction frontend in the `ASREncoder` member.
                 This argument must be given since our toolkit doesn't support time-domain ASR.
-            (optional) normalize:
-                The configuration of the feature normalization module.
-                This argument can be given in either a Dict or a bool value.
-                In the case of the bool value, True means the default configuration and False means no normalization.
-                If this argument is not given, there will be also no normalization.
-            (optional) specaug:
-                The configuration of the SpecAugment module.
-                This argument can be given in either a Dict or a bool value.
-                In the case of the bool value, True means the default configuration and False means no SpecAugment.
-                If this argument is not given, there will be also no SpecAugment.
-            (mandatory) enc_prenet:
-                The configuration of the prenet in the encoder module.
+                For more details about how to give `frontend`, please refer to speechain.module.encoder.asr.ASREncoder.
+            normalize: (optional)
+                The configuration of the normalization layer in the `ASREncoder` member.
+                This argument can also be given as a bool value.
+                True means the default configuration and False means no normalization.
+                For more details about how to give `normalize`, please refer to
+                    speechain.module.norm.feat_norm.FeatureNormalization.
+            specaug: (optional)
+                The configuration of the SpecAugment layer in the `ASREncoder` member.
+                This argument can also be given as a bool value.
+                True means the default configuration and False means no SpecAugment.
+                For more details about how to give `specaug`, please refer to
+                    speechain.module.augment.specaug.SpecAugment.
+            enc_prenet: (mandatory)
+                The configuration of the prenet in the `ASREncoder` member.
                 The encoder prenet embeds the input acoustic features into hidden embeddings before feeding them into
                 the encoder.
-            (mandatory) encoder:
-                The configuration of the encoder module.
+                For more details about how to give `enc_prent`, please refer to speechain.module.encoder.asr.ASREncoder.
+            encoder: (mandatory)
+                The configuration of the encoder main body in the `ASREncoder` member.
                 The encoder embeds the hidden embeddings into the encoder representations at each time steps of the
                 input acoustic features.
-            (mandatory) dec_prenet:
-                The configuration of the prenet in the decoder module.
+                For more details about how to give `encoder`, please refer to speechain.module.encoder.asr.ASREncoder.
+            dec_emb: (mandatory)
+                The configuration of the embedding layer in the `ASRDecoder` member.
                 The decoder prenet embeds the input token ids into hidden embeddings before feeding them into
                 the decoder.
-            (mandatory) decoder:
-                The configuration of the decoder module.
+                For more details about how to give `dec_emb`, please refer to speechain.module.encoder.asr.ASREncoder.
+            decoder: (mandatory)
+                The configuration of the decoder main body in the `ASRDecoder` member.
                 The decoder predicts the probability of the next token at each time steps based on the token embeddings.
+                For more details about how to give `decoder`, please refer to speechain.module.decoder.asr.ASRDecoder.
             # --- customize_conf arguments --- #
-            (mandatory) token_type:
+            token_type: (mandatory)
                 The type of the built-in tokenizer.
-            (mandatory) token_vocab:
-                The absolute path of the vocabulary for the built-in tokenizer.
-            (optional) sample_rate:
+            token_vocab: (mandatory)
+                The path of the vocabulary for initializing the built-in tokenizer.
+            sample_rate: int = 16000 (optional)
                 The sampling rate of the input speech.
                 Currently, it's used for acoustic feature extraction frontend initialization and tensorboard register of
-                the input speech during model visualization.
+                the input speech for model visualization.
                 In the future, this argument will also be used to on-the-fly downsample the input speech.
-            (optional) audio_format:
-                The file format of the input speech.
-                It's only used for tensorboard register of the input speech during model visualization.
+            audio_format: (optional)
+                This argument is only used for input speech recording during model visualization.
 
         """
 
@@ -129,26 +160,32 @@ class ASR(Model):
 
         # --- 2.2. Decoder construction --- #
         # the vocabulary size is given by the built-in tokenizer instead of the input configuration
-        if 'vocab_size' in dec_prenet['conf'].keys():
-            if dec_prenet['conf']['vocab_size'] != self.tokenizer.vocab_size:
+        if 'vocab_size' in dec_emb['conf'].keys():
+            if dec_emb['conf']['vocab_size'] != self.tokenizer.vocab_size:
                 warnings.warn(f"Your input vocabulary size is different from the one obtained from the built-in "
                               f"tokenizer ({self.tokenizer.vocab_size}). The latter one will be used to initialize the "
                               f"decoder for correctness.")
-            dec_prenet['conf'].pop('vocab_size')
+            dec_emb['conf'].pop('vocab_size')
         self.decoder = ASRDecoder(
             vocab_size=self.tokenizer.vocab_size,
-            prenet=dec_prenet,
+            embedding=dec_emb,
             decoder=decoder
         )
 
     def criterion_init(self, is_normalized: bool = False, label_smoothing: float = 0.0):
         """
+        This function initializes all the necessary _Criterion_ members:
+            1. `speechain.criterion.cross_entropy.CrossEntropy` for training loss calculation.
+            2. `speechain.criterion.accuracy.Accuracy` for teacher-forcing validation accuracy calculation.
+            3. `speechain.criterion.error_rate.ErrorRate` for evaluation CER & WER calculation.
 
         Args:
-            is_normalized:
-            label_smoothing:
-
-        Returns:
+            is_normalized: bool = False
+                Controls whether the sentence normalization is performed.
+                For more details, please refer to speechain.criterion.cross_entropy.CrossEntropy
+            label_smoothing: float = 0.0
+                Controls the scale of label smoothing. 0 means no smoothing.
+                For more details, please refer to speechain.criterion.cross_entropy.CrossEntropy
 
         """
         # training loss
@@ -487,20 +524,40 @@ class ASR(Model):
                   decode_only: bool = False,
                   teacher_forcing: bool = False) -> Dict[str, Any]:
         """
+        The inference function for ASR models. There are two steps in this function:
+            1. Decode the input speech into hypothesis transcript
+            2. Evaluate the hypothesis transcript by the ground-truth
+
+        This function can be called for model evaluation, on-the-fly model visualization, and even pseudo transcript
+        generation during training.
 
         Args:
             # --- Testing data arguments --- #
-            feat:
-            feat_len:
-            text:
-            text_len:
-            domain:
+            feat: torch.Tensor
+                The speech data to be inferred.
+            feat_len: torch.Tensor
+                The length of `feat`.
+            text: torch.Tensor
+                The ground-truth transcript for the input speech
+            text_len: torch.Tensor
+                The length of `text`.
             # --- Explicit inference arguments --- #
-            return_att:
-            decode_only:
-            teacher_forcing:
+            domain: str = None
+                This argument indicates which domain the input speech belongs to.
+                It's used to indicate the `ASREncoder` member how to encode the input speech.
+            return_att: bool = False
+                Whether the attention matrix of the input speech is returned.
+            decode_only: bool = False
+                Whether skip the evaluation step and do the decoding step only.
+            teacher_forcing: bool = False
+                Whether you use the teacher-forcing technique to generate the hypothesis transcript.
             # --- Implicit inference arguments given by infer_cfg from runner.py --- #
-            infer_conf:
+            infer_conf: Dict
+                The inference configuration given from the `infer_cfg` in your `exp_cfg`.
+            For more details, please refer to speechain.infer_func.beam_search.beam_searching.
+
+        Returns: Dict
+            A Dict containing all the decoding and evaluation results.
 
         """
         assert feat is not None and feat_len is not None
@@ -517,9 +574,7 @@ class ASR(Model):
         # --- 1. The 1st Pass: ASR Decoding by Beam Searching --- #
         if not teacher_forcing:
             # copy the input data in advance for data safety
-            model_input = copy.deepcopy(
-                dict(feat=feat, feat_len=feat_len)
-            )
+            model_input = copy.deepcopy(dict(feat=feat, feat_len=feat_len))
 
             # Encoding input speech
             enc_feat, enc_feat_mask, _, _ = self.encoder(domain=domain, **model_input)
@@ -539,10 +594,10 @@ class ASR(Model):
 
         # --- 2. The 2nd Pass: ASR Decoding by Teacher Forcing --- #
         if teacher_forcing or return_att:
-            infer_results = self.model_forward(feat=feat, feat_len=feat_len,
-                                               text=text if teacher_forcing else hypo_text,
-                                               text_len=text_len if teacher_forcing else hypo_text_len,
-                                               return_att=return_att)
+            infer_results = self.module_forward(feat=feat, feat_len=feat_len,
+                                                text=text if teacher_forcing else hypo_text,
+                                                text_len=text_len if teacher_forcing else hypo_text_len,
+                                                return_att=return_att)
             # return the attention matrices
             if return_att:
                 hypo_att = infer_results['att']
@@ -550,12 +605,12 @@ class ASR(Model):
             # update the hypothesis text-related data in the teacher forcing mode
             if teacher_forcing:
                 # the last token is meant to be eos which should not appear in the hypothesis text
-                infer_results['logits'] = torch.log_softmax(infer_results['logits'][:, :-1] / infer_conf['temperature'],
-                                                            dim=-1)
+                infer_results['logits'] = torch.log_softmax(
+                    infer_results['logits'][:, :-1] / infer_conf['temperature'], dim=-1)
                 hypo_text_confid, hypo_text = torch.max(infer_results['logits'], dim=-1)
                 # the original text contains both sos at the beginning and eos at the end
                 hypo_text_len = text_len - 2
-                hypo_len_ratio = torch.ones_like(hypo_text_len)
+                hypo_len_ratio = hypo_text_len / feat_len
                 hypo_text_confid = torch.sum(hypo_text_confid, dim=-1) / (hypo_text_len ** infer_conf['length_penalty'])
 
         # turn the data all the unsupervised metrics into the cpu version (List)

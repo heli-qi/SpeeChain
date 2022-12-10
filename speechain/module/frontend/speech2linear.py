@@ -88,6 +88,7 @@ class Speech2LinearSpec(Module):
         self.win_length = win_length
         self.hop_length = hop_length
         self.n_fft = n_fft
+        self.sr = sr
 
         # preemphasis filter initialization
         self.preemphasis = preemphasis
@@ -282,6 +283,17 @@ class Speech2LinearSpec(Module):
             wav[i][wav_len[i]:] = 0
 
         return wav, wav_len
+
+    def get_sample_rate(self):
+        """
+        The uniform interface function used to get the sampling rate of the frontend module.
+        The function name should be the same with LinearSpec2MelSpec and Speech2MelSpec.
+
+        Returns: int
+            The sampling rate of this acoustic feature extraction frontend.
+
+        """
+        return self.sr
 
     def __repr__(self) -> str:
         string = f"{self.__class__.__name__}(\n" \
