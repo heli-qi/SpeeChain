@@ -90,7 +90,8 @@ In SpeeChain, our framework provides a convenient way to convert your entered st
          - 'k'
    ```
 2. For the _Dict_ variables, the key and its value should be split by a colon. 
-   The value should be surrounded by a pair of braces if it's a sub-_Dict_.  
+   The value should be surrounded by a pair of braces if it's a sub-_Dict_. 
+   The structure can be nested to initialize sub-_Dict_ in the return _Dict_ variable.  
     For example, the string `a:{b:12.3,c:{d:123,e:{g:xyz}}},g:xyz` will be parsed to
     ```
     a:
