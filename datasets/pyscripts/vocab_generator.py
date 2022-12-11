@@ -3,16 +3,15 @@
     Affiliation: NAIST
     Date: 2022.07
 """
-import argparse
-
-import numpy as np
 import os
-import sentencepiece as spm
 import shutil
+import argparse
+import numpy as np
+import sentencepiece as spm
 
 from typing import List
-from collections import Counter
 from functools import partial
+from collections import Counter
 
 from speechain.utilbox.type_util import str2bool
 from speechain.utilbox.dump_util import get_readable_number
@@ -36,7 +35,8 @@ def parse():
     group.add_argument('--tgt_subsets', type=str, required=True,
                        help="The target subsets that you want to calculate the sentence length by the tokenizer.")
     parser.add_argument('--ncpu', type=int, default=8,
-                        help="The number of threads you want to use to collect the statistical information of the dataset.")
+                        help="The number of processes you want to use to collect the statistical information of the "
+                             "dataset.")
 
     group = parser.add_argument_group("Specific arguments used by the subword token type")
     group.add_argument('--subword_package', type=str, default="sp",

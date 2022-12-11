@@ -7,12 +7,11 @@
     Affiliation: NAIST
     Date: 2022.07
 """
-from typing import List
-
-import argparse
 import os
+import argparse
 import numpy as np
 
+from typing import List
 from multiprocessing import Pool
 from speechain.utilbox.data_loading_util import read_data_by_path
 
@@ -26,7 +25,7 @@ def parse():
                         help="The number of waveform instances packaged in a chunk when calculating lengths by "
                              "multiple processes. (default: 1000)")
     parser.add_argument('--ncpu', type=int, default=8,
-                        help="The number of threads you want to use to extract the feature lengths.")
+                        help="The number of processes you want to use to extract the feature lengths.")
     return parser.parse_args()
 
 

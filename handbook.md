@@ -52,14 +52,63 @@ Current available datasets: (click the hyperlinks below and jump to the **README
 
 
 ### How to prepare configuration files
-#### Concise Configuration Format
-In order to avoid messy and redundant configuration file layout, SpeeChain provides the following services to simplify the configuration setting: 
-* In-toolkit path assignment. The file path can be given by their relative location under `{SPEECHAIN_ROOT}` created by the bash script `envir_preparation.sh`. 
-  For example, `speechain/runn.py` corresponds to `{SPEECHAIN_ROOT}/speechain/runner.py`.  
-  If you want to specify a place outside the toolkit, you can start the file path by a slash '/' to notify the framework of an absolute path, e.g., `/abc/def/speechain/runner.py`.
-* Additional !-suffixed _.yaml_ representers:
+
+In order to avoid messy and unreadable configuration setting in the terminal, SpeeChain provides the following services to simplify the configuration setting.
+
+#### Relative Path inside the Toolkit
+The path arguments can be given as the relative location under the toolkit root, i.e., `${SPEECHAIN_ROOT}`. 
+The toolkit root `${SPEECHAIN_ROOT}` is created by the bash script `envir_preparation.sh`.  
+For example, `speechain/runn.py` will be parsed to to `${SPEECHAIN_ROOT}/speechain/runner.py`. 
+If you would like to specify a place outside the toolkit root, you can directly give its absolute path with a slash `/` at the beginning to notify the framework of an absolute path, e.g., `/.../.../speechain/runner.py`.
+
+#### Convertable Arguments in the Terminal
+Conventionally, it's hard for us to assign the values of _List_ and _Dict_ arguments in the terminal. 
+In SpeeChain, our framework provides a convenient way to convert your entered strings in the specified format into the corresponding _List_ or _Dict_ variables.
+
+1. For the _List_ variables, your entered string should be surrounded by a pair of square brackets and each element inside the brackets should be split by a comma.
+   The structure can be nested to initialize sub-_List_ in the return _List_ variable.  
+   For example, the string `[a,[1,2,[1.1,2.2,3.3],[h,i,j,k]],c,[d,e,[f,g,[h,i,j,k]]]]` will be parsed to
+   ```
+   - 'a'
+   - - 1
+     - 2
+     - - 1.1
+       - 2.2
+       - 3.3
+     - - 'h'
+       - 'i'
+       - 'j'
+       - 'k'
+   - 'c'
+   - - 'd'
+     - 'e'
+     - - 'f'
+       - 'g'
+       - - 'h'
+         - 'i'
+         - 'j'
+         - 'k'
+   ```
+2. For the _Dict_ variables, the key and its value should be split by a colon. 
+   The value should be surrounded by a pair of braces if it's a sub-_Dict_.  
+    For example, the string `a:{b:12.3,c:{d:123,e:{g:xyz}}},g:xyz` will be parsed to
+    ```
+    a:
+        b: 12.3
+        c:
+            d: 123
+            e:
+                g:xyz
+    g: xyz
+    ```
+
+#### Concise Configuration File
+As the number of arguments increases, it would be hard for us to given all the arguments one by one in the terminal. 
+As a frequently-used file format for configuration, _.yaml_ has been popular in many well-known toolkits. 
+
+In SpeeChain, we wrap the conventional _.yaml_ file and provides some advanced !-suffixed _.yaml_ representers to further simplify its layout and improve the readability:
   1. **!str** allows you to cast a numerical value into a string by replacing `key_name: 10` with `key_name: !str 10`. 
-     In this scenario, the variable `key_name` will be a string whose value is '10'.
+     In this scenario, the value of `key_name` will be a string '10' instead of an integer 10.
   2. **!list** allows you to compress the configuration of a list into one line from  
       ```
       key_name: 
@@ -120,8 +169,8 @@ In order to avoid messy and redundant configuration file layout, SpeeChain provi
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#table-of-contents)
 
 
-#### Hierarchical Configuration
-The configuration in this toolkit is divided into the following 4 parts to improve their reusability:
+#### Hierarchical Configuration File
+The configuration files in this toolkit are divided into the following 4 parts to improve their reusability:
 1. **Data loading and batching configuration** `data_cfg`:  
     `data_cfg` defines how the SpeeChain framework fetches the raw data from the disk and organizes them into individual batches for model training or testing. 
     These configuration files can be shared by different models in the folder of each dataset setting, i.e., `SPEECHAIN_ROOT/recipes/{dataset_name}/{setting_name}/data_cfg`.  

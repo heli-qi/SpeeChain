@@ -28,7 +28,7 @@ from speechain.optim_sche.abs import OptimScheduler
 
 from speechain.utilbox.log_util import logger_stdout_file, model_summary
 from speechain.utilbox.import_util import import_class, get_idle_port, parse_path_args
-from speechain.utilbox.type_util import str2bool
+from speechain.utilbox.type_util import str2bool, str2list, str2dict
 from speechain.utilbox.yaml_util import load_yaml
 
 
@@ -338,7 +338,7 @@ class Runner(object):
         )
         group.add_argument(
             '--best_model_selection',
-            type=List,
+            type=str2list,
             default=None,
             help="The ways of selecting the best models. This argument should be given as a list of quad-tuples, i.e., "
                  "('metric_group', 'metric_name', 'metric_mode', 'model_number'). "
@@ -379,6 +379,7 @@ class Runner(object):
         group = parser.add_argument_group("Group 5: Real-time Model Visualization Snapshotting")
         group.add_argument(
             '--monitor_snapshot_conf',
+            type=str2dict,
             default=dict(),
             help="The configuration given to `matploblib.plot()` in `{SPEECHAIN_ROOT/speechain/snapshooter.py}` to "
                  "plot curve figures for real-time model visualization during model training. "
@@ -431,7 +432,7 @@ class Runner(object):
         )
         group.add_argument(
             '--bad_cases_selection',
-            type=List,
+            type=str2list,
             default=None,
             help="The selection methods of the top-N bad cases during model testing. "
                  "This argument should be given as a list of tri-tuples "

@@ -226,7 +226,7 @@ Suppose that I want to train an ASR model by the configuration `${SPEECHAIN_ROOT
    ```
    bash run.sh --test true --exp_cfg transformer-narrow_v1_accum1_ngpu2 --data_cfg test_clean+other
    ```
-   **Note:** Please modify `infer_cfg` in `exp_cfg` to the optimal one you get after tuning on the validation set before execute this job.
+   **Note:** Please modify `infer_cfg` in `exp_cfg` to the optimal one you get after tuning on the validation set before executing this job.
 
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/recipes/asr#table-of-contents)
 

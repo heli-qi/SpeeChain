@@ -1,25 +1,28 @@
 """
-    Author: Sashi Novitasari
-    Affiliation: NAIST
-    Date: 2022.04
-
     Author: Heli Qi
     Affiliation: NAIST
     Date: 2022.09
 """
 import re
 
-# regex collection #
-
-"""
-regex_key_val function to extract pair key and value from following format 
-<key><space><value>
-UTT_1 FEAT_PATH_1
-"""
-# regex_key_val = re.compile('(^[^\s]+) (.+)$', re.MULTILINE)
-regex_key_val = re.compile(r"^(^[^\s]+)\s(.*)$", re.MULTILINE)
-regex_key = re.compile(r'^([^\s]+)$', re.MULTILINE)
-
-# return all the sub-strings not including '<' and '>' that are surrounded by a pair of angle brackets
-# e.g. <exp_root> √ <exp<root> × <exp>root> ×
+# return all the smallest sub-strings surrounded by a pair of angle brackets '<>'
+# e.g.
+# <exp_root> -> <exp_root>
+# <exp<root> -> <root>
+# <exp>root> -> <exp>
 regex_angle_bracket = re.compile(r"<[^<>]*>")
+
+# return all the smallest sub-string surrounded by a pair of square brackets '[]'
+# e.g.
+# a,b,c,[d,e,[f,g,[h,i,j,k]]] -> [h,i,j,k]
+# d,e,[f,g,[h,i,j,k]] -> [h,i,j,k]
+# f,g,[h,i,j,k] -> [h,i,j,k]
+regex_square_bracket = re.compile(r"\[[^\[\]]*\]")
+
+
+# return all the smallest sub-string surrounded by a pair of braces '{}'
+# e.g.
+# a,b,c,{d,e,{f,g,{h,i,j,k}}} -> {h,i,j,k}
+# d,e,{f,g,{h,i,j,k}} -> {h,i,j,k}
+# f,g,{h,i,j,k} -> {h,i,j,k}
+regex_brace = re.compile(r"{[^{}]*}")

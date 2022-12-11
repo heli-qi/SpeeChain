@@ -7,6 +7,7 @@
 2. [Configuration Format](https://github.com/ahclab/SpeeChain/tree/main/recipes/tts#configuration-format)
 3. [Available Backbones](https://github.com/ahclab/SpeeChain/tree/main/recipes/tts#available-backbones)
 4. [API Document](https://github.com/ahclab/SpeeChain/tree/main/recipes/tts#api-document)
+5. [How to train an TTS model](https://github.com/ahclab/SpeeChain/tree/main/recipes/tts#how-to-train-an-tts-model)
 
 ## Model Structure
 ![image](model_fig.png)
@@ -276,3 +277,5 @@ model:
 👆[Back to the API list](https://github.com/ahclab/SpeeChain/tree/main/recipes/tts#api-document)
 
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/recipes/tts#table-of-contents)
+
+## How to train an TTS model
