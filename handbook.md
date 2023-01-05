@@ -40,12 +40,12 @@ SpeeChain follows the all-in-one dumping style by a bash script named `data_dump
 We provide several dumping templates named `run.sh` under the second-level sub-folder of each dataset in `/datasets`. 
 The dumping procedure is slightly different for each data type, so please refer to the **README.md** in the sub-folder of each data type before starting the dumping pipeline.
 
-Current available datasets: (click the hyperlinks below and jump to the **README.md** of the corresponding data type)
-* [Speech-Text](https://github.com/ahclab/SpeeChain/tree/main/datasets/speech_text#speech-text-datasets)
-  1. LJSpeech
-  2. LibriSpeech
-  3. LibriTTS
+Current available datasets:
+1. LJSpeech
+2. LibriSpeech
+3. LibriTTS
 
+👉[Go to the README.md of datasets](https://github.com/ahclab/SpeeChain/tree/main/datasets#datasets)  
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#table-of-contents)
 
 
