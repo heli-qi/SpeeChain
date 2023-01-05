@@ -101,5 +101,5 @@ def auto_regression(enc_text: torch.Tensor,
     return dict(
         hypo_feat=hypo_feat,
         hypo_feat_len=hypo_feat_len,
-        hypo_len_ratio=hypo_feat_len / enc_text_len
+        feat_token_len_ratio=hypo_feat_len / enc_text_len
     )

@@ -101,15 +101,18 @@ def asr_text_process(input_text: str, txt_format: str) -> str:
     """
     The function that processes the text strings for ASR datasets to the specified text format.
     Currently, available text formats:
-        normal (LibriSpeech style):
+        normal:
+            Letter: capital and lowercase
+            Punctuation: single quotes, commas, periods, hyphens, parentheses, question and exclamation marks
+        lowercase:
+            Letter: lowercase
+            Punctuation: single quotes, commas, periods, hyphens, parentheses, question and exclamation marks
+        plain:
+            Letter: lowercase
+            Punctuation: single quotes, commas, periods, hyphens
+        librispeech:
             Letter: lowercase
             Punctuation: single quotes
-        capital: Not implemented yet
-            Letter: capital and lowercase
-            Punctuation: single quotes
-        punctuated: Not implemented yet
-            Letter: capital and lowercase
-            Punctuation: single quotes, commas, periods, hyphens
 
     Args:
         input_text: str
@@ -121,16 +124,19 @@ def asr_text_process(input_text: str, txt_format: str) -> str:
         Processed sentence string by your specified text format.
 
     """
-    if txt_format == 'normal':
+    if txt_format == 'librispeech':
         # turn all the capital letters into their lower cases for better readability
         input_text = input_text.lower()
         # remove all the punctuation symbols other than single quotes
         return ''.join([char for char in input_text if char.isalpha() or char in ["\'", ' ']])
 
-    if txt_format == 'capital':
+    if txt_format == 'plain':
         raise NotImplementedError
 
-    elif txt_format == 'punctuated':
+    elif txt_format == 'lowercase':
+        raise NotImplementedError
+
+    elif txt_format == 'normal':
         raise NotImplementedError
 
     else:

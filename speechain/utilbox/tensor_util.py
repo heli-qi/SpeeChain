@@ -15,7 +15,9 @@ def to_native(x, tgt: str):
 
     if isinstance(x, torch.Tensor):
         if len(x.shape) == 0:
-            x = x.item()
+            x = [x.item()]
+            if tgt == 'numpy':
+                x = np.array(x)
         else:
             if tgt == 'list':
                 assert hasattr(x, 'tolist')

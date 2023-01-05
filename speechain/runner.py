@@ -11,7 +11,6 @@ from contextlib import contextmanager
 
 from packaging.version import parse as V
 
-import GPUtil
 import torch
 import numpy as np
 import random
@@ -20,6 +19,7 @@ import torch.multiprocessing as mp
 import torch.distributed as dist
 from torch.cuda.amp import autocast
 from typing import Dict, Any, List
+from collections import OrderedDict
 
 from speechain.monitor import Monitor, TrainValidMonitor, TestMonitor
 from speechain.iterator.abs import Iterator
@@ -27,7 +27,7 @@ from speechain.model.abs import Model
 from speechain.optim_sche.abs import OptimScheduler
 
 from speechain.utilbox.log_util import logger_stdout_file, model_summary
-from speechain.utilbox.import_util import import_class, get_idle_port, parse_path_args
+from speechain.utilbox.import_util import import_class, get_idle_port, parse_path_args, get_idle_gpu
 from speechain.utilbox.type_util import str2bool, str2list, str2dict
 from speechain.utilbox.yaml_util import load_yaml
 
@@ -82,7 +82,7 @@ class Runner(object):
             "--config",
             type=str,
             # default=None,
-            default="recipes/tts/libritts/train-clean-100/exp_cfg/normal_factor1_transformer_accum1_ngpu4.yaml",
+            default="recipes/tts/libritts/train-clean-100/exp_cfg/debug.yaml",
             help="The path of the all-in-one experiment configuration file. You can write all the arguments in this "
                  "all-in-one file instead of giving them to `runner.py` by command lines."
         )
@@ -431,6 +431,13 @@ class Runner(object):
                  "strings of their names in a List. (default: None)"
         )
         group.add_argument(
+            '--test_model_mapping',
+            type=str2dict,
+            default=None,
+            help="The mapping between the model to be tested and the model constructed by 'train_cfg'. "
+                 "This argument is used to deal with the name mismatch between the model parameters. (default: None)"
+        )
+        group.add_argument(
             '--bad_cases_selection',
             type=str2list,
             default=None,
@@ -445,14 +452,14 @@ class Runner(object):
         group = parser.add_argument_group("Group 7: Experiment .yaml Configuration File")
         group.add_argument(
             '--data_cfg',
-            type=str,
+            type=str2dict,
             default=None,
             help="The path of the configuration file for data loading and batching. "
                  "This argument is required for both model training and testing."
         )
         group.add_argument(
             '--train_cfg',
-            type=str,
+            type=str2dict,
             default=None,
             help="The path of the configuration file for model construction and parameter optimization. "
                  "This argument is required for both model training (both 'model' and 'optim_sche' need to be given) "
@@ -460,7 +467,7 @@ class Runner(object):
         )
         group.add_argument(
             '--infer_cfg',
-            type=str,
+            type=str2dict,
             default=None,
             help="The configuration file for model inference during model testing. "
                  "This argument is required for model testing."
@@ -531,11 +538,15 @@ class Runner(object):
 
         # get the target groups of the current experiment
         if args.train:
+            assert 'train' in data_cfg.keys() and 'valid' in data_cfg.keys(), \
+                "If args.train is set to True, please give 'train' and 'valid' as first-level keys of data_cfg."
             dset_keys = ['train', 'valid']
         elif args.test:
+            assert 'test' in data_cfg.keys(), \
+                "If args.test is set to True, please give 'test' as first-level keys of data_cfg."
             dset_keys = ['test']
         else:
-            raise RuntimeError
+            raise RuntimeError("Please set either args.train or args.test to True!")
 
         # recursively initialize all the iterators in the Dict
         mode = 'train' if args.train else 'test'
@@ -771,6 +782,7 @@ class Runner(object):
     @classmethod
     def train(cls,
               args: argparse.Namespace,
+              data_cfg: Dict,
               iterators: Dict[str, Dict[str, Iterator]] or Dict[str, Iterator],
               model: Model,
               optim_sches: Dict[str, OptimScheduler] or OptimScheduler,
@@ -781,6 +793,8 @@ class Runner(object):
         Args:
             args: argparse.Namespace
                 The input arguments.
+            data_cfg: Dict
+                The data loading configuration. Used to initialize the iterator for model visualization.
             iterators: Dict
                 The dictionary that contains all the iterators for training and validation.
             model: Model
@@ -797,7 +811,7 @@ class Runner(object):
                 logging information.
 
         """
-        assert args.start_epoch <= args.num_epochs, "The starting epoch is larger than args.num_epochs!"
+        assert args.start_epoch <= args.num_epochs, "Your given start_epoch is larger than your given num_epochs!"
 
         # --- checking the data lengths of all training iterators --- #
         # multiple dataloaders scenario
@@ -811,7 +825,7 @@ class Runner(object):
         elif isinstance(iterators['train'], Iterator):
             min_train_batch_num = len(iterators['train'])
         else:
-            raise RuntimeError
+            raise RuntimeError("Please don't nest data_cfg['train'] more than twice!")
 
         # --- checking the data lengths of all validation iterators --- #
         # multiple dataloaders scenario
@@ -825,19 +839,55 @@ class Runner(object):
         elif isinstance(iterators['valid'], Iterator):
             min_valid_batch_num = len(iterators['valid'])
         else:
-            raise RuntimeError
+            raise RuntimeError("Please don't nest data_cfg['valid'] more than twice!")
 
         # synchronize the batch numbers across all the distributed processes
         if args.distributed:
+            _world_size = torch.distributed.get_world_size()
             # make sure that all processes have the same number of training steps
-            _batch_num_list = [torch.LongTensor([0]).cuda(model.device)
-                               for _ in range(torch.distributed.get_world_size())]
-            torch.distributed.all_gather(_batch_num_list, torch.LongTensor([min_train_batch_num]).cuda(model.device))
-            min_train_batch_num = min([batch_num.item() for batch_num in _batch_num_list])
+            # # all_gather() API
+            # _batch_num_list = [torch.LongTensor([0]).cuda(model.device)
+            #                    for _ in range(torch.distributed.get_world_size())]
+            # torch.distributed.all_gather(_batch_num_list, torch.LongTensor([min_train_batch_num]).cuda(model.device))
+            # min_train_batch_num = min([batch_num.item() for batch_num in _batch_num_list])
+
+            # all_gather_into_tensor() API
+            _all_batch_num = torch.LongTensor([0 for _ in range(_world_size)]).cuda(model.device)
+            torch.distributed.all_gather_into_tensor(
+                _all_batch_num, torch.LongTensor([min_train_batch_num]).cuda(model.device))
+            min_train_batch_num = _all_batch_num.min().item()
 
             # make sure that all processes have the same number of validation steps
-            torch.distributed.all_gather(_batch_num_list, torch.LongTensor([min_valid_batch_num]).cuda(model.device))
-            min_valid_batch_num = min([batch_num.item() for batch_num in _batch_num_list])
+            # # all_gather() API
+            # _batch_num_list = [torch.LongTensor([0]).cuda(model.device)
+            #                    for _ in range(torch.distributed.get_world_size())]
+            # torch.distributed.all_gather(_batch_num_list, torch.LongTensor([min_valid_batch_num]).cuda(model.device))
+            # min_valid_batch_num = min([batch_num.item() for batch_num in _batch_num_list])
+
+            # all_gather_into_tensor() API
+            _all_batch_num = torch.LongTensor([0 for _ in range(_world_size)]).cuda(model.device)
+            torch.distributed.all_gather_into_tensor(
+                _all_batch_num, torch.LongTensor([min_valid_batch_num]).cuda(model.device))
+            min_valid_batch_num = _all_batch_num.min().item()
+
+        # --- Initialize the iterator for model visualization --- #
+        if args.visual_snapshot_number > 0:
+            if not args.distributed or args.rank == 0:
+                _valid_keys = list(data_cfg['valid'].keys())
+                if len(_valid_keys) == 2 and ('type' in _valid_keys and 'conf' in _valid_keys):
+                    _valid_conf = data_cfg['valid']['conf']
+                else:
+                    logger.info("There are multiple sub-Dict in your given data_cfg['valid']. "
+                                f"The one named {_valid_keys[0]} is used to initialize the visualization iterator.")
+                    _valid_conf = data_cfg['valid']['conf'][_valid_keys[0]]
+                visual_iterator = Iterator(dataset_type=_valid_conf['dataset_type'],
+                                           dataset_conf=_valid_conf['dataset_conf'],
+                                           batches_per_epoch=args.visual_snapshot_number,
+                                           shuffle=False, ngpu=1, distributed=False)
+            else:
+                visual_iterator = None
+        else:
+            visual_iterator = None
 
         # loop each epoch until the end
         for epoch in range(args.start_epoch, args.num_epochs + 1):
@@ -888,13 +938,15 @@ class Runner(object):
                 monitor.finish_train_epoch()
 
             # --- Validation Stage --- #
-            if epoch % args.valid_per_epochs == 0:
-                # start the validation part of the current epoch
-                if monitor is not None:
-                    monitor.start_valid_epoch(epoch)
+            # start the validation part of the current epoch
+            if monitor is not None:
+                monitor.start_valid_epoch(epoch)
+
+            valid_flag = epoch % args.valid_per_epochs == 0
+            if valid_flag:
                 # initialize all the validation dataloaders
                 data_loaders = cls.dict_transform(iterators['valid'], lambda x: iter(x.build_loader(epoch)))
-                valid_indices = cls.dict_transform(iterators['valid'], lambda x: x.get_batch_indices())
+                # valid_indices = cls.dict_transform(iterators['valid'], lambda x: x.get_batch_indices())
 
                 # make sure that no gradient appears during validation
                 model.eval()
@@ -904,7 +956,7 @@ class Runner(object):
                         # --- data loading part --- #
                         with cls.measure_time(None if monitor is None else monitor.valid_monitor)("data_load_time"):
                             valid_batch = cls.dict_transform(src_dict=data_loaders, transform_func=next)
-                            first_sample = cls.pickup_first_sample(valid_batch)
+                            # first_sample = cls.pickup_first_sample(valid_batch)
 
                         # forward the batch to get the validation criteria
                         valid_metrics = None
@@ -917,38 +969,47 @@ class Runner(object):
                             )("model_forward_time"):
                                 valid_metrics = model(batch_data=valid_batch)
 
-                                # evaluate the model at the current validation step and visualize the results
-                                if epoch % args.visual_snapshot_interval == 0 and step < args.visual_snapshot_number:
-                                    # make sure that all processes go through the validation phase smoothly
-                                    if monitor is not None:
-                                        # obtain the index of the choosen sample for visualization
-                                        sample_index = cls.dict_transform(src_dict=valid_indices,
-                                                                          transform_func=lambda x: x[step][0])
-                                        # feed the choosen sample to the model
-                                        monitor.valid_model_snapshot(epoch=epoch, sample_index=sample_index,
-                                                                     used_sample=first_sample)
-
                         # no step log for the validation step
                         if monitor is not None:
                             monitor.valid_step(valid_metrics=valid_metrics)
 
-                # early-stopping checking for single-GPU
-                if not args.distributed and monitor.finish_valid_epoch():
-                    break
+            # --- Visualization Stage --- #
+            if args.visual_snapshot_number > 0 and epoch % args.visual_snapshot_interval == 0:
+                # make sure that all processes go through the validation phase smoothly
+                if visual_iterator is not None:
+                    visual_dataloader = visual_iterator.build_loader()
+                    visual_indices = visual_iterator.get_batch_indices()
 
-                # early-stopping checking for multi-GPU
+                    # make sure that no gradient appears during validation
+                    model.eval()
+                    with torch.no_grad():
+                        for step, visual_sample in enumerate(visual_dataloader):
+                            # feed the current sample to the model
+                            monitor.valid_model_snapshot(epoch=epoch,
+                                                         sample_index=visual_indices[step][0],
+                                                         used_sample=visual_sample)
+                # synchronize all the GPU processes at the end of the visualization stage
                 if args.distributed:
-                    stop_flag = torch.BoolTensor([False]).cuda(model.device)
-                    flag_list = None
+                    torch.distributed.barrier()
 
-                    if args.rank == 0:
-                        if monitor.finish_valid_epoch():
-                            stop_flag = torch.BoolTensor([True]).cuda(model.device)
-                        flag_list = [stop_flag for _ in range(torch.distributed.get_world_size())]
+            # early-stopping checking for single-GPU
+            if not args.distributed and \
+                    monitor.finish_valid_epoch(valid_flag=valid_flag, valid_per_epochs=args.valid_per_epochs):
+                break
 
-                    torch.distributed.scatter(stop_flag, flag_list)
-                    if stop_flag.item():
-                        break
+            # early-stopping checking for multi-GPU
+            if args.distributed:
+                stop_flag = torch.BoolTensor([False]).cuda(model.device)
+                flag_list = None
+
+                if args.rank == 0:
+                    if monitor.finish_valid_epoch(valid_flag=valid_flag, valid_per_epochs=args.valid_per_epochs):
+                        stop_flag = torch.BoolTensor([True]).cuda(model.device)
+                    flag_list = [stop_flag for _ in range(torch.distributed.get_world_size())]
+
+                torch.distributed.scatter(stop_flag, flag_list)
+                if stop_flag.item():
+                    break
 
             # store the checkpoint of the current epoch for resuming later
             if not args.distributed or args.rank == 0:
@@ -966,7 +1027,7 @@ class Runner(object):
         if not args.distributed or args.rank == 0:
             monitor.wait_empty_queues()
 
-        # synchronize all the processes at the end
+        # synchronize all the GPU processes at the end
         if args.distributed:
             torch.distributed.barrier()
 
@@ -1026,7 +1087,7 @@ class Runner(object):
                                    "'shared_args' and 'exclu_args' must be or not be in the key list at the same time!")
 
         elif args.infer_cfg is None:
-            infer_cfg_dict = dict(default=dict())
+            infer_cfg_dict = dict(default_inference=dict())
 
         else:
             raise TypeError("infer_cfg must be given in the form of a string, a List, or a Dict!")
@@ -1040,18 +1101,21 @@ class Runner(object):
 
             # load the existing testing configuration for resuming
             infer_cfg_path = os.path.join(test_result_path, "infer_cfg.yaml")
-            if args.resume:
+            if args.resume and os.path.exists(infer_cfg_path):
                 infer_cfg = load_yaml(open(infer_cfg_path))
 
             # save the testing configuration file to infer_cfg_path
             if not args.distributed or args.rank == 0:
-                with open(infer_cfg_path, 'w', encoding="utf-8") as f:
-                    yaml.dump(infer_cfg, f, sort_keys=False)
+                if len(infer_cfg) > 0:
+                    with open(infer_cfg_path, 'w', encoding="utf-8") as f:
+                        yaml.dump(infer_cfg, f, sort_keys=False)
 
             # unlike training and validation, the testing iterators are looped one by one
             for name, iterator in iterators['test'].items():
+                # replace the slash with a percent symbol
+                name = name.replace('/', '%')
                 # add the identity symbol to the path for multi-GPU testing
-                test_dset_path = os.path.join(test_result_path, test_model, name + f'.{args.rank}')
+                test_dset_path = os.path.join(test_result_path, test_model, name, f'.{args.rank}')
                 logger = logger_stdout_file(test_dset_path, file_name='test')
 
                 # initialize top-n bad case presentation
@@ -1180,20 +1244,33 @@ class Runner(object):
         # turn the message into ASCII codes and gather the codes length
         _iter_asc = torch.LongTensor([ord(char) for char in str(iterator)])
         _iter_asc_len = torch.LongTensor([_iter_asc.size(0)]).cuda(device)
-        _iter_asc_lens = [torch.LongTensor([0]).cuda(device) for _ in range(torch.distributed.get_world_size())]
-        torch.distributed.all_gather(_iter_asc_lens, _iter_asc_len)
+
+        # # all_gather() API
+        # _iter_asc_lens = [torch.LongTensor([0]).cuda(device) for _ in range(torch.distributed.get_world_size())]
+        # torch.distributed.all_gather(_iter_asc_lens, _iter_asc_len)
+        # _iter_asc_lens = torch.LongTensor(_iter_asc_lens)
+
+        # # all_gather_into_tensor() API
+        _iter_asc_lens = torch.LongTensor([0 for _ in range(torch.distributed.get_world_size())]).cuda(device)
+        torch.distributed.all_gather_into_tensor(_iter_asc_lens, _iter_asc_len)
 
         # padding the ASCII codes to the same length and gather them
-        _iter_asc_lens = torch.LongTensor(_iter_asc_lens)
         if _iter_asc_len < _iter_asc_lens.max():
             _iter_asc = torch.cat((_iter_asc,
                                    torch.zeros(_iter_asc_lens.max().item() - _iter_asc_len.item(),
                                                dtype=torch.int64)))
-        _iter_ascs = [torch.zeros(_iter_asc_lens.max().item(), dtype=torch.int64).cuda(device)
-                      for _ in range(torch.distributed.get_world_size())]
-        torch.distributed.all_gather(_iter_ascs, _iter_asc.cuda(device))
 
-        return _iter_ascs, _iter_asc_lens
+        # # all_gather() API
+        # _iter_ascs = [torch.zeros(_iter_asc_lens.max().item(), dtype=torch.int64).cuda(device)
+        #               for _ in range(torch.distributed.get_world_size())]
+        # torch.distributed.all_gather(_iter_ascs, _iter_asc.cuda(device))
+        # return _iter_ascs, _iter_asc_lens
+
+        # # all_gather_into_tensor() API
+        _iter_ascs = torch.zeros((torch.distributed.get_world_size(), _iter_asc_lens.max().item()),
+                                 dtype=torch.int64, device=device)
+        torch.distributed.all_gather_into_tensor(_iter_ascs, _iter_asc.cuda(device))
+        return [_iter_asc for _iter_asc in _iter_ascs], _iter_asc_lens
 
     @classmethod
     def main_worker(cls, gpu: int, args: argparse.Namespace):
@@ -1269,7 +1346,7 @@ class Runner(object):
             # loading the existing data and train configurations
             # But the input data configuration has higher priority than the existing one
             if args.data_cfg is not None:
-                data_cfg = load_yaml(open(args.data_cfg))
+                data_cfg = load_yaml(open(args.data_cfg)) if isinstance(args.data_cfg, str) else args.data_cfg
             else:
                 data_cfg = load_yaml(open(os.path.join(args.train_result_path,
                                                        f"{'train' if args.train else 'test'}_data_cfg.yaml")))
@@ -1279,7 +1356,7 @@ class Runner(object):
         else:
             assert args.data_cfg is not None and args.train_cfg is not None, \
                 "Please specify a data configuration file and a train configuration file!"
-            data_cfg = load_yaml(open(args.data_cfg))
+            data_cfg = load_yaml(open(args.data_cfg)) if isinstance(args.data_cfg, str) else args.data_cfg
             train_cfg = load_yaml(open(args.train_cfg))
 
         # --- 5. Data Iterator Initialization --- #
@@ -1360,7 +1437,7 @@ class Runner(object):
                 logger.info(f"The {name} OptimScheduler: {optim_sche}")
 
             # start the training process
-            cls.train(args=args, iterators=iterators, model=model,
+            cls.train(args=args, data_cfg=data_cfg, iterators=iterators, model=model,
                       optim_sches=optim_sches, logger=logger, monitor=monitor)
 
         # --- 7.2. Model Testing Branch --- #
@@ -1380,10 +1457,26 @@ class Runner(object):
                 elif os.path.exists(os.path.join(_models_path, f'{model_name}.pth')):
                     model_path = os.path.join(_models_path, f'{model_name}.pth')
                 else:
-                    raise RuntimeError
+                    raise RuntimeError(f"{os.path.join(_models_path, '%s.pth' % model_name)} is not found!")
 
                 # load the target model parameters
-                model.load_state_dict( torch.load(model_path, map_location=model.device), strict=False)
+                _test_model = torch.load(model_path, map_location=model.device)
+                if args.test_model_mapping is None:
+                    model.load_state_dict(_test_model)
+                else:
+                    assert isinstance(args.test_model_mapping, dict) and len(args.test_model_mapping) >= 1, \
+                        f"test_model_mapping must be given as a dict and cannot be empty! "
+
+                    _src_modules = OrderedDict()
+                    for src, tgt in args.test_model_mapping.items():
+                        # . at the tails is for making the name unique
+                        src, tgt = src + '.', tgt + '.'
+                        for name, para in _test_model.items():
+                            # change the parameter name if needed
+                            if name.startswith(src):
+                                name = name.replace(src, tgt)
+                            _src_modules[name] = para
+                    model.load_state_dict(_src_modules)
 
                 # start the testing process
                 cls.test(args=args, test_model=model_name, iterators=iterators, model=model)
@@ -1432,7 +1525,7 @@ class Runner(object):
 
         # if both 'CUDA_VISIBLE_DEVICES' and args.gpus are not given, automatically select available GPUs
         else:
-            args.gpus = sorted(GPUtil.getGPUs(), key=lambda g: g.memoryUtil)[:args.ngpu]
+            args.gpus = get_idle_gpu(args.ngpu)
             # make sure that GPU no.0 is the first GPU if it is selected
             args.gpus = ','.join(sorted([str(gpu.id) for gpu in args.gpus]))
             os.environ['CUDA_VISIBLE_DEVICES'] = args.gpus
@@ -1552,7 +1645,7 @@ class Runner(object):
             args.train_result_path = parse_path_args(args.train_result_path)
         if args.test_result_path is not None:
             args.test_result_path = parse_path_args(args.test_result_path)
-        if args.data_cfg is not None:
+        if args.data_cfg is not None and not isinstance(args.data_cfg, Dict):
             args.data_cfg = parse_path_args(args.data_cfg)
         if args.train_cfg is not None:
             args.train_cfg = parse_path_args(args.train_cfg)

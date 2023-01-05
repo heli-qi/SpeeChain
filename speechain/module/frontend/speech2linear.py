@@ -17,8 +17,8 @@ class Speech2LinearSpec(Module):
     """
 
     def module_init(self,
-                    hop_length: int,
-                    win_length: int,
+                    hop_length: int or float,
+                    win_length: int or float,
                     sr: int = 16000,
                     n_fft: int = None,
                     preemphasis: float = None,
@@ -147,7 +147,7 @@ class Speech2LinearSpec(Module):
                                f"If the speech is given in 3D vectors, the last dimension must be 1. "
                                f"But got speech.shape={speech.shape}.")
 
-        # --- Waveform Pre-Emphasis --- #
+        # --- 1. Waveform Pre-Emphasis --- #
         # apply preemphasis if specified
         if self.preemphasis is not None:
             _previous_speech = F.pad(speech.transpose(1, 2), (1, 0))
@@ -157,7 +157,7 @@ class Speech2LinearSpec(Module):
                 if speech_len[i] < speech.size(1):
                     speech[i][speech_len[i]:] = 0.0
 
-        # --- Waveform Pre-Normalization --- #
+        # --- 2. Waveform Pre-Normalization --- #
         # normalization for audio signals before STFT
         if self.pre_stft_norm is not None:
             if self.pre_stft_norm == 'mean_std':
@@ -168,7 +168,7 @@ class Speech2LinearSpec(Module):
             else:
                 raise ValueError
 
-        # --- STFT Processing --- #
+        # --- 3. STFT Processing --- #
         # initialize the window function lazily at the first training step
         # borrowed from https://github.com/espnet/espnet/blob/80e042099655822d6543c256910ae655a1a056fd/espnet2/layers/stft.py#L83
         if isinstance(self.stft_config['window'], str):
@@ -187,7 +187,7 @@ class Speech2LinearSpec(Module):
         # get the energy spectrogram
         linear_spec = stft_feat.real ** 2 + stft_feat.imag ** 2
 
-        # --- STFT Post-Processing --- #
+        # --- 4. STFT Post-Processing --- #
         # mask all the silence parts of the linear spectrograms to zeros
         for i in range(feat_len.size(0)):
             if feat_len[i] < linear_spec.size(1):
@@ -241,7 +241,7 @@ class Speech2LinearSpec(Module):
                 window_fn=getattr(torch, f"{self.stft_config['window']}_window"),
                 power=1 if self.mag_spec else 2
             )
-            self.griffin_lim.window = self.griffin_lim.window.cuda(feat.device)
+            self.griffin_lim.window = self.griffin_lim.window.to(feat.device)
         wav = self.griffin_lim(feat.transpose(-2, -1))
         wav_len = (feat_len - 1) * self.hop_length
         assert wav_len.max() == wav.size(1), \
@@ -285,14 +285,6 @@ class Speech2LinearSpec(Module):
         return wav, wav_len
 
     def get_sample_rate(self):
-        """
-        The uniform interface function used to get the sampling rate of the frontend module.
-        The function name should be the same with LinearSpec2MelSpec and Speech2MelSpec.
-
-        Returns: int
-            The sampling rate of this acoustic feature extraction frontend.
-
-        """
         return self.sr
 
     def __repr__(self) -> str:

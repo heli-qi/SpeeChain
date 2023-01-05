@@ -218,22 +218,3 @@ class TTSDecoder(Module):
             "If you want to apply dropout during TTS inference, your TTS model should have a decoder prenet."
         self.prenet.train()
 
-    def spec_to_wav(self, feat: torch.Tensor, feat_len: torch.Tensor):
-        """
-
-        Args:
-            feat:
-            feat_len:
-            spk_ids:
-
-        Returns:
-
-        """
-        # frontend recovery (mel-to-linear transformation + GL algorithm)
-        if hasattr(self, 'frontend'):
-            wav, wav_len = self.frontend.recover(feat, feat_len)
-        else:
-            raise RuntimeError
-
-        # return both the un-normalized features and waveforms
-        return wav, wav_len

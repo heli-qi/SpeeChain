@@ -83,6 +83,7 @@ class ASREncoder(Module):
         encoder_class = self.encoder_class_dict[encoder['type']]
         encoder['conf'] = dict() if 'conf' not in encoder.keys() else encoder['conf']
         self.encoder = encoder_class(input_size=_prev_output_size, **encoder['conf'])
+        self.output_size = self.encoder.output_size
 
     def forward(self, feat: torch.Tensor, feat_len: torch.Tensor, epoch: int = None, domain: str = None):
         """

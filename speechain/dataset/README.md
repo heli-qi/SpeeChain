@@ -52,8 +52,8 @@ dataset_conf:
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/speechain/dataset#table-of-contents)
 
 ## API Document
-1. [**speechain.dataset.abs.Dataset**](https://github.com/ahclab/SpeeChain/tree/main/speechain/dataset#speechaindatasetabsdataset)  
-   _Non-overridable backbone functions:_
+[**speechain.dataset.abs.Dataset**](https://github.com/ahclab/SpeeChain/tree/main/speechain/dataset#speechaindatasetabsdataset)  
+1. _Non-overridable backbone functions:_
    1. [\_\_init__](https://github.com/ahclab/SpeeChain/tree/main/speechain/dataset#__init__self-main_data-data_selection-dataset_conf)
    2. [\_\_getitem__](https://github.com/ahclab/SpeeChain/tree/main/speechain/dataset#__getitem__self-index)
    3. [data_selection](https://github.com/ahclab/SpeeChain/tree/main/speechain/dataset#data_selectionself-selection_mode-selection_num-meta_info)
@@ -61,13 +61,10 @@ dataset_conf:
    5. [remove_data_by_index](https://github.com/ahclab/SpeeChain/tree/main/speechain/dataset#remove_data_by_indexself)
    6. [collate_fn](https://github.com/ahclab/SpeeChain/tree/main/speechain/dataset#collate_fnself-batch)  
    
-   _Overridable interface functions:_  
+2. _Overridable interface functions:_  
    1. [dataset_init_fn](https://github.com/ahclab/SpeeChain/tree/main/speechain/dataset#dataset_init_fnself-dataset_conf)
    2. [extract_main_data_fn](https://github.com/ahclab/SpeeChain/tree/main/speechain/dataset#extract_main_data_fnbatch_dict-main_data)
    3. [collate_main_data_fn](https://github.com/ahclab/SpeeChain/tree/main/speechain/dataset#collate_main_data_fnself-batch_dict)
-3. [**speechain.dataset.speech_text.SpeechTextDataset**](https://github.com/ahclab/SpeeChain/tree/main/speechain/dataset#speechaindatasetspeech_textspeechtextdataset)
-   1. [extract_main_data_fn](https://github.com/ahclab/SpeeChain/tree/main/speechain/dataset#extract_main_data_fnself-main_data)
-   2. [collate_main_data_fn](https://github.com/ahclab/SpeeChain/tree/main/speechain/dataset#collate_main_data_fnself-batch_dict-1)
 
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/speechain/dataset#table-of-contents)
 
@@ -238,49 +235,6 @@ If you want to make your own _Dataset_ implementation, please follow the instruc
 * **Return:** Dict[str, torch.Tensor or List]  
   The dictionary containing the collated batch of data instances.
     
-👆[Back to the API list](https://github.com/ahclab/SpeeChain/tree/main/speechain/dataset#api-document)
-
-### speechain.dataset.speech_text.SpeechTextDataset
-This Dataset subclass is mainly used by ASR and TTS models.   
-In this subclass, each data instance is made up of an utterance and a sentence as well as the speaker information (speaker ID + speaker embedding feature).
-
-#### extract_main_data_fn(self, main_data)
-* **Description:**  
-    This hook function loads speech-text data instances from the disk. 
-    If the speech is in the form of raw waveforms, the last dimension will be expanded to 1 for compatibility with acoustic features like log-mel spectrogram and MFCC. 
-* **Arguments:**
-  * _**main_data:**_ Dict[str, str]  
-    The keys of the input `main_data` dictionary should be one of the following:
-    1. `feat`: speech features, can be either raw waveforms or acoustic features like log-mel or MFCC.
-    2. `text`: transcript text, in the form of raw string. The tokenization will be done in the ASR and TTS models.
-    3. `spk_ids`: speaker ID, in the form of raw string. The speaker discretization will be done in the ASR and TTS models.
-    4. `spk_feat`: speaker embedding features.
-    
-    `spk_ids` and `spk_feat` are designed for multi-speaker TTS model and are not mandatory to be included in `main_data`; 
-    `feat` and `text` are mandatory to be included for ASR and TTS training.  
-    However, during model testing, we can choose to only include one of `feat` and `text` here to reduce the CPU burden.
-* **Return:** Dict[str, Any]  
-    `feat` and `spk_feat` are in the form of two-dimensional `torch.Tensor`;  
-    `text` and `spk_ids` are in the form of raw strings whose discretization is done in the _Model_ object.
-
-👆[Back to the API list](https://github.com/ahclab/SpeeChain/tree/main/speechain/dataset#api-document)
-
-#### collate_main_data_fn(self, batch_dict)
-* **Description:**  
-  The utterances used for training ASR and TTS models may have different lengths, so we need to do the padding operations to make them equal in length.  
-  The loaded speech feature vectors will be arranged into a single matrix with 0 padding at the end of short vectors. 
-  Text data remains unprocessed strings and the tokenization will be done later in the model.
-* **Arguments:**
-  * _**batch_dict:**_ Dict[str, List]  
-    The keys of the input `batch_dict` dictionary should be one of the following:
-    1. `feat`: a _List_ of two-dimensional `torch.Tensor` with different lengths.
-    2. `text`: a _List_ of text strings.
-    3. `spk_ids`: a _List_ of speaker ID strings.
-    4. `spk_feat`: a _List_ of two-dimensional `torch.Tensor` with equal lengths.
-* **Return:** Dict[str, torch.Tensor or List]  
-    `feat` and `spk_feat` are in the form of three-dimensional `torch.Tensor`;   
-    `text` and `spk_ids` are in the form of _List_ of raw strings whose discretization is done in the _Model_ object.
-
 👆[Back to the API list](https://github.com/ahclab/SpeeChain/tree/main/speechain/dataset#api-document)
 
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/speechain/dataset#table-of-contents)

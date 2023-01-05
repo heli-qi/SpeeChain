@@ -1,0 +1,34 @@
+### Author: Heli Qi
+### Affiliation: NAIST
+### Date: 2022.12
+# This configuration is used to tune the inference configuration arguments on dev-clean.
+# The testing is better to be done by abs.Iterator (one data instance at each testing step) for the accurate results.
+# block.BlockIterator can also be used to perform the batch-level evaluation, but the result is slightly different from the one obtained by abs.Iterator.
+
+
+### --- Reference Values --- ###
+dataset: librispeech
+valid_dset: &valid_dset dev
+txt_format: normal
+token_num: full_tokens
+wav_format: wav
+
+data_root: datasets/<dataset>/data/<wav_format>
+
+### --- Validation Iterator Configuration --- ###
+# Note: there must be a blank between the anchor '*valid_dset' and the colon ':'
+test:
+    *valid_dset :
+        type: abs.Iterator
+        conf:
+            dataset_type: speech_text.SpeechTextDataset
+            dataset_conf:
+                main_data:
+                    feat: !ref <data_root>/<valid_dset>/idx2wav
+                    text: !ref <data_root>/<valid_dset>/idx2<txt_format>_text
+
+            shuffle: False
+            data_len: !ref <data_root>/<valid_dset>/idx2wav_len
+            group_info:
+                speaker: !ref <data_root>/<valid_dset>/idx2spk
+                gender: !ref <data_root>/<valid_dset>/idx2gen

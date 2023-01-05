@@ -11,6 +11,7 @@ class DeltaFeature(Module):
     """
 
     """
+
     def module_init(self,
                     delta_order: int = 1,
                     delta_N: int = 2):
@@ -43,7 +44,6 @@ class DeltaFeature(Module):
             _delta_filters._buffers[name] = _delta_filters._parameters.pop(name)
         self.delta_filters = _delta_filters
 
-
     def forward(self, feat: torch.Tensor, feat_len: torch.Tensor):
         """
 
@@ -69,7 +69,6 @@ class DeltaFeature(Module):
         feat = torch.cat(feat_stack, dim=-1)
 
         return feat, feat_len
-
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(\n" \

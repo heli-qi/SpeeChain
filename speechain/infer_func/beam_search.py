@@ -9,6 +9,8 @@
 """
 import torch
 
+from speechain.infer_func.ctc_decoding import CTCPrefixScorer
+
 eps = 1e-10
 
 
@@ -115,6 +117,8 @@ def beam_searching(enc_feat: torch.Tensor,
                    temperature: float = 1.0,
                    eos_filtering: bool = False,
                    eos_threshold: float = 1.5,
+                   ctc_weight: float = 0.0,
+                   ctc_decode_fn = None,
                    sent_per_beam: int = 1):
     """
     Batch version of beam searching to enable parallel computation. The basic idea is reshaping batch_size sentences
@@ -151,10 +155,11 @@ def beam_searching(enc_feat: torch.Tensor,
             length_penalty is the penalty on the hypothesis length.
             The larger the value is, the longer hypothesis you will get.
         temperature: float
-            The temperature coefficient used for calculating the log-softmax probability. The higher temperature is (>1),
-            the more even token probability distribution you will get. Vice versa for the lower temperature (<1).
-            Usually, raising the temperature up helps ASR in better decoding. The temperature value needs to be tuned on
-            your validation sets. The common practice is to start from 1.5 and search other values in (1.0, 2.0].
+            The temperature coefficient used for calculating the log-softmax probability for the ASR decoder. The
+            higher temperature is (>1), the more even token probability distribution you will get. Vice versa for the
+            lower temperature (<1). Usually, raising the temperature up helps ASR in better decoding. The temperature
+            value needs to be tuned on your validation sets. The common practice is to start from 1.5 and search other
+            values in (1.0, 2.0).
         eos_filtering: bool
             Controls whether the eos filtering is performed.
             If True, the algorithm will only emit an eos when the eos probability is larger than some times the
@@ -168,14 +173,25 @@ def beam_searching(enc_feat: torch.Tensor,
             maximum probability of the other tokens when deciding whether to emit an eos. The larger this threshold is (>1),
             the easier the hypothesis emits an eos. Vice versa for the smaller temperature (<1).
             The default value 1.5 comes from the reference paper above.
+        ctc_weight: float = 0.0
+            The weight putted on the CTC scores at each decoding step.
+        ctc_decode_fn: = None
+            The CTC forward function for decoding the encoder hidden features.
         sent_per_beam: int
             The number of sentences in each beam that are returned in this function.
             sent_per_beam > 1 is mainly used for data augmentation (under development).
 
     """
-    # para init
+    # --- 0. Arguments Checking --- #
+    if sent_per_beam > 1:
+        raise NotImplementedError("Currently, sent_per_beam > 1 is not supported....")
+    if ctc_weight > 0:
+        raise NotImplementedError("Currently, ctc-attention joint decoding is not supported....")
+    assert 0 <= ctc_weight < 1, f"ctc_weight should be a float number in [0, 1), but got ctc_weight={ctc_weight}!"
+
+    # --- 1. Reference Initialization --- #
     batch_size = enc_feat.size(0)
-    enc_feat_len = enc_feat_mask.sum(dim=-1).squeeze()
+    enc_feat_len = enc_feat_mask.squeeze(dim=1).sum(dim=-1)
 
     # hypo_maxlen is uniformly calculated for all the sentences by the longest utterance
     # Since the utterances in a batch usually have the similar lengths, it won't be a big problem for text decoding
@@ -185,7 +201,7 @@ def beam_searching(enc_feat: torch.Tensor,
     if sos_eos is None:
         sos_eos = vocab_size - 1
 
-    # --- Input Data Reshaping --- #
+    # --- 2. Encoder Feature Reshaping --- #
     # (batch_size, feat_maxlen, edim) -> (batch_size, 1, feat_maxlen , edim)
     enc_feat = enc_feat.unsqueeze(1).contiguous()
     # (batch_size, 1, feat_maxlen , edim) -> (batch_size, beam_size, feat_maxlen, edim)
@@ -200,7 +216,18 @@ def beam_searching(enc_feat: torch.Tensor,
     # (batch_size, beam_size, 1, feat_maxlen) -> (batch_size × beam_size, 1, feat_maxlen)
     enc_feat_mask = enc_feat_mask.view(-1, enc_feat_mask.size(2), enc_feat_mask.size(3)).contiguous()
 
-    # --- Registers Initialization --- #
+    # --- 3. CTC Initialization --- #
+    if ctc_weight > 0:
+        assert ctc_decode_fn is not None
+        ctc_scorer = CTCPrefixScorer(ctc_logits=ctc_decode_fn(enc_feat), enc_feat_len=enc_feat_len,
+                                     batch_size=batch_size, beam_size=beam_size,
+                                     blank_index=padding_idx, eos_index=sos_eos)
+        ctc_memory = None
+    else:
+        ctc_scorer = None
+        ctc_memory = None
+
+    # --- 4. Registers Initialization --- #
     # build a hypothesis container for each sentence in the batch
     generated_hyps = [BeamHypotheses(beam_size, hypo_maxlen, length_penalty) for _ in range(batch_size)]
     # Done flags for all sentences in the batch
@@ -211,8 +238,9 @@ def beam_searching(enc_feat: torch.Tensor,
     hypo_text = torch.full((batch_size * beam_size, 1), sos_eos, dtype=torch.long, device=cuda_device)
     hypo_text_len = torch.ones((batch_size * beam_size,), dtype=torch.long, device=cuda_device)
 
-    # --- Beam Searching Algorithm --- #
+    # --- 5. Beam Searching Algorithm --- #
     while hypo_text_len.max() < hypo_maxlen:
+        # --- 5.1. Attention-based Decoder Forward --- #
         # (batch_size × beam_size, curr_len) -> (batch_size × beam_size, curr_len, vocab_size)
         curr_outputs = decode_one_step(enc_feat=enc_feat, enc_feat_mask=enc_feat_mask,
                                        text=hypo_text, text_len=hypo_text_len)[0].detach()
@@ -220,6 +248,15 @@ def beam_searching(enc_feat: torch.Tensor,
         # (batch_size × beam_size, curr_len, vocab_size) -> (batch_size × beam_size, vocab_size)
         curr_outputs = curr_outputs[:, -1, :]
         next_token_scores = torch.log_softmax(curr_outputs / temperature, dim=-1)
+
+        # --- 5.2. CTC Scorer Forward --- #
+        if ctc_weight > 0:
+            if hypo_text.size(1) > 1:
+                ctc_prefix = hypo_text[:, 1:]
+            else:
+                ctc_prefix = torch.empty(hypo_text.size(0), 0, device=cuda_device)
+            ctc_scores, ctc_memory = ctc_scorer.forward_step(ctc_prefix, ctc_memory)
+            next_token_scores = (1 - ctc_weight) * next_token_scores + ctc_weight * ctc_scores
 
         # Calculate the score of the obtained token sequences so far
         next_scores = next_token_scores + beam_scores.unsqueeze(-1).expand_as(next_token_scores)
@@ -370,6 +407,6 @@ def beam_searching(enc_feat: torch.Tensor,
     return dict(
         hypo_text=hypo_text,
         hypo_text_len=hypo_text_len,
-        hypo_len_ratio=hypo_text_len / enc_feat_len,
+        feat_token_len_ratio=enc_feat_len / hypo_text_len,
         hypo_text_confid=torch.Tensor(hypo_text_confid)
     )

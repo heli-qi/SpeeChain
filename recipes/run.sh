@@ -20,9 +20,10 @@ function print_help_message {
     [--data_cfg DATA_CFG] \\                                # The name of your specified configuration file in ${SPEECHAIN_ROOT}/recipes/{task}/{dataset}/{subset}/data_cfg (default: none)
     [--train_cfg TRAIN_CFG] \\                              # The name of your specified configuration file in ${SPEECHAIN_ROOT}/recipes/{task}/{dataset}/{subset}/train_cfg (default: none)
     [--infer_cfg INFER_CFG] \\                              # The name of your specified configuration file in ${SPEECHAIN_ROOT}/config/{task}/ (default: none)
-    [--ngpu NGPU] \\                                        # The value of ngpu given to runner.py (default: 1)
-    [--gpus GPUS] \\                                        # The value of gpus given to runner.py (default: none)
-    [--num_workers NUM_WORKERS] \\                          # The value of num_workers given to runner.py (default: 1)
+    [--ngpu NGPU] \\                                        # The value of 'ngpu' given to runner.py (default: none)
+    [--gpus GPUS] \\                                        # The value of 'gpus' given to runner.py (default: none)
+    [--num_workers NUM_WORKERS] \\                          # The value of 'num_workers' given to runner.py (default: none)
+    [--accum_grad ACCUM_GRAD] \\                            # The value of 'accum_grad' given to runner.py (default: none)
     --task TASK \\                                          # The name of the task folder you want to run in ${SPEECHAIN_ROOT}/recipes/
     --dataset DATASET \\                                    # The name of the dataset folder you want to run in ${SPEECHAIN_ROOT}/recipes/{task}
     [--subset SUBSET] \\                                    # The name of the subset folder you want to run in ${SPEECHAIN_ROOT}/recipes/{task}/{subset} (default: none)
@@ -76,6 +77,7 @@ infer_cfg=
 ngpu=
 gpus=
 num_workers=
+accum_grad=
 
 
 ### get args from the command line ###
@@ -151,6 +153,10 @@ while getopts ":h-:" optchar; do
           val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
           num_workers=${val}
           ;;
+        accum_grad)
+          val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
+          accum_grad=${val}
+          ;;
         help)
           print_help_message
           ;;
@@ -222,6 +228,10 @@ fi
 if [ -n "${num_workers}" ];then
   args="${args} --num_workers ${num_workers}"
 fi
+#
+if [ -n "${accum_grad}" ];then
+  args="${args} --accum_grad ${accum_grad}"
+fi
 
 #
 if ${dry_run};then
@@ -234,15 +244,39 @@ fi
 
 #
 if [ -n "${exp_cfg}" ];then
-  args="${args} --config ${subset_root}/exp_cfg/${exp_cfg}.yaml"
+  # attach .yaml suffix if needed
+  if [[ "${exp_cfg}" != *".yaml" ]];then
+    exp_cfg="${exp_cfg}.yaml"
+  fi
+  # convert the relative path in ${subset_root}/exp_cfg if no slash inside
+  if ! grep -q '/' <<< "${exp_cfg}";then
+    exp_cfg="${subset_root}/exp_cfg/${exp_cfg}"
+  fi
+  args="${args} --config ${exp_cfg}"
 fi
 #
 if [ -n "${data_cfg}" ];then
-  args="${args} --data_cfg ${subset_root}/data_cfg/${data_cfg}.yaml"
+  # attach .yaml suffix if needed
+  if [[ "${data_cfg}" != *".yaml" ]];then
+    data_cfg="${data_cfg}.yaml"
+  fi
+  # convert the relative path in ${subset_root}/data_cfg if no slash inside
+  if ! grep -q '/' <<< "${data_cfg}";then
+    data_cfg="${subset_root}/data_cfg/${data_cfg}"
+  fi
+  args="${args} --data_cfg ${data_cfg}"
 fi
 #
 if [ -n "${train_cfg}" ];then
-  args="${args} --train_cfg ${subset_root}/train_cfg/${train_cfg}.yaml"
+  # attach .yaml suffix if needed
+  if [[ "${train_cfg}" != *".yaml" ]];then
+    train_cfg="${train_cfg}.yaml"
+  fi
+  # convert the relative path in ${subset_root}/train_cfg if no slash inside
+  if ! grep -q '/' <<< "${train_cfg}";then
+    train_cfg="${subset_root}/train_cfg/${train_cfg}"
+  fi
+  args="${args} --train_cfg ${train_cfg}"
 fi
 
 #
@@ -268,7 +302,25 @@ if ${test};then
   args="${args} --test True"
   #
   if [ -n "${infer_cfg}" ];then
-    args="${args} --infer_cfg ${infer_root}/${infer_cfg}.yaml"
+    # do sth when infer_cfg is the name of a configuration file
+    if ! grep -q ':' <<< "${infer_cfg}";then
+      # attach .yaml suffix if needed
+      if [[ "${infer_cfg}" != *".yaml" ]];then
+        infer_cfg="${infer_cfg}.yaml"
+      fi
+      # convert the relative path in ${infer_root}/${task} if no slash inside
+      if ! grep -q '/' <<< "${infer_cfg}";then
+        if [ ${task} == 'offline_tts2asr' ];then
+          folder='asr'
+        elif [ ${task} == 'offline_asr2tts' ]; then
+          folder='asr'
+        else
+          folder=${task}
+        fi
+        infer_cfg="${infer_root}/${folder}/${infer_cfg}"
+      fi
+    fi
+    args="${args} --infer_cfg ${infer_cfg}"
   fi
   #
   if [ -n "${test_result_path}" ];then
@@ -277,7 +329,6 @@ if ${test};then
 else
   args="${args} --test False"
 fi
-
 
 
 # --- 3. Execute the Job --- #

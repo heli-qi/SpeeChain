@@ -7,10 +7,18 @@
 
 
 ### --- Reference Values --- ###
-data_root: datasets/speech_text/librispeech/data/wav
+dataset: librispeech
 valid_dset: &valid_dset dev-clean
 
-### --- Testing Iterator Configuration --- ###
+txt_format: librispeech
+token_num: full_tokens
+wav_format: wav
+
+data_root: !ref datasets/<dataset>/data/<wav_format>
+### ------------------------ ###
+
+
+### --- Validation Iterator Configuration --- ###
 # Note: there must be a blank between the anchor '*valid_dset' and the colon ':'
 test:
     *valid_dset :
@@ -20,7 +28,7 @@ test:
             dataset_conf:
                 main_data:
                     feat: !ref <data_root>/<valid_dset>/idx2wav
-                    text: !ref <data_root>/<valid_dset>/idx2normal_text
+                    text: !ref <data_root>/<valid_dset>/idx2<txt_format>_text
 
             shuffle: False
             data_len: !ref <data_root>/<valid_dset>/idx2wav_len

@@ -12,10 +12,9 @@ You can start the journey of SpeeChain by your current position.
    4. [How to interpret the files generated in the _exp_ folder](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#how-to-interpret-the-files-generated-in-the-exp-folder)
 2. [**For those who want to use SpeeChain for research**](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#for-those-who-want-to-use-speechain-for-research)
    1. [SpeeChain file system](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#speechain-file-system)
-   2. [SpeeChain architecture workflow](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#speechain-architecture-workflow)
-   3. [How to customize my own data loading and batching strategy](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#how-to-customize-my-own-data-loading-and-batching-strategy)
-   4. [How to customize my own model](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#how-to-customize-my-own-model)
-   5. [How to customize my own learning rate scheduling strategy](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#how-to-customize-my-own-learning-rate-scheduling-strategy)
+   2. [How to customize my own data loading and batching strategy](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#how-to-customize-my-own-data-loading-and-batching-strategy)
+   3. [How to customize my own model](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#how-to-customize-my-own-model)
+   4. [How to customize my own learning rate scheduling strategy](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#how-to-customize-my-own-learning-rate-scheduling-strategy)
 3. [**For those who want to contribute to SpeeChain**](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#for-those-who-want-to-contribute-to-speechain)
    1. [Contribution specifications](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#contribution-specifications)
 
@@ -46,20 +45,23 @@ Current available datasets: (click the hyperlinks below and jump to the **README
   1. LJSpeech
   2. LibriSpeech
   3. LibriTTS
-* Speech-Speaker
 
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#table-of-contents)
 
 
 ### How to prepare configuration files
-
 In order to avoid messy and unreadable configuration setting in the terminal, SpeeChain provides the following services to simplify the configuration setting.
 
-#### Relative Path inside the Toolkit
-The path arguments can be given as the relative location under the toolkit root, i.e., `${SPEECHAIN_ROOT}`. 
-The toolkit root `${SPEECHAIN_ROOT}` is created by the bash script `envir_preparation.sh`.  
-For example, `speechain/runn.py` will be parsed to to `${SPEECHAIN_ROOT}/speechain/runner.py`. 
-If you would like to specify a place outside the toolkit root, you can directly give its absolute path with a slash `/` at the beginning to notify the framework of an absolute path, e.g., `/.../.../speechain/runner.py`.
+#### Flexible Path Parsing Services
+In SpeeChain, the path arguments can be given in 3 ways:
+1. **Absolute Path:** You can indicate an absolute path by beginning the path with a slash '/', e.g., `/x/xx/xxx/speechain/runner.py`.
+2. **General Relative Path:** If your input path begins with `.` or `..`, it will be converted to the corresponding absolute path in our framework.  
+    **Note:** The relative path will be parsed by the directory where you execute the script rather than the directory where the executable script is placed!
+3. **In-toolkit Relative Path:**  
+    The path arguments can be given as the relative location under the toolkit root, i.e., `${SPEECHAIN_ROOT}`. 
+    The toolkit root `${SPEECHAIN_ROOT}` is created by the bash script `envir_preparation.sh`.  
+    For example, `speechain/runn.py` will be parsed to to `${SPEECHAIN_ROOT}/speechain/runner.py`. 
+    If you would like to specify a place outside the toolkit root, you can directly give its absolute path with a slash `/` at the beginning to notify the framework of an absolute path, e.g., `/x/xx/xxx/speechain/runner.py`.
 
 #### Convertable Arguments in the Terminal
 Conventionally, it's hard for us to assign the values of _List_ and _Dict_ arguments in the terminal. 
@@ -92,7 +94,7 @@ In SpeeChain, our framework provides a convenient way to convert your entered st
 2. For the _Dict_ variables, the key and its value should be split by a colon. 
    The value should be surrounded by a pair of braces if it's a sub-_Dict_. 
    The structure can be nested to initialize sub-_Dict_ in the return _Dict_ variable.  
-    For example, the string `a:{b:12.3,c:{d:123,e:{g:xyz}}},g:xyz` will be parsed to
+   For example, the string `a:{b:12.3,c:{d:123,e:{g:xyz}}},g:xyz` will be parsed to
     ```
     a:
         b: 12.3
@@ -102,6 +104,13 @@ In SpeeChain, our framework provides a convenient way to convert your entered st
                 g:xyz
     g: xyz
     ```
+   Moreover, the _List_ string can also be nested into the _Dict_ string like `a:[1,2,3]` will be parsed as
+   ```
+   a:
+   - 1
+   - 2
+   - 3
+   ```
 
 #### Concise Configuration File
 As the number of arguments increases, it would be hard for us to given all the arguments one by one in the terminal. 
@@ -347,6 +356,9 @@ The configuration files in this toolkit are divided into the following 4 parts t
     The names of the model you want to evaluate during model testing. 
     If not given, `{train_result_path}/model/{test_model}.pth` will be used to initialize the parameters of the _Model_ object.  
     If you want to evaluate multiple models in one job, please give the strings of their names in a List.
+    * _**test_model_mapping:**_ Dict = None  
+    The mapping between the model to be tested and the model constructed by `train_cfg`. 
+    This argument is used to deal with the name mismatch between the model parameters.
     * _**bad_cases_selection:**_ List = None  
     The selection methods of the top-N bad cases during model testing. 
     This argument should be given as a list of tri-tuples (`selection_metric`, `selection_mode`, `case_number`).  
@@ -518,7 +530,6 @@ Folder architecture is shown below:
         /ljspeech           # Processing scripts for the LJSpeech dataset
             /...
         /data_dumping.sh    # all-in-one speech-text dataset dumping script
-    /speech_spk         # Datasets that are made up of speech and speaker data
 ```
 For more details, please refer to the README.md of each type of dataset in [${SPEECHAIN_ROOT}/datasets/](https://github.com/ahclab/SpeeChain/tree/main/datasets).
 
@@ -536,6 +547,10 @@ Folder architecture is shown below:
     /asr                    # Recipes for the ASR task
         /librispeech            # Recipes for ASR models on the LibriSpeech dataset
             ...                     # different ASR settings for LibriSpeech
+        /libritts               # Recipes for ASR models on the LibriTTS dataset
+            ...                     # different ASR settings for LibriTTS
+        /libritts+librispeech   # Recipes for ASR models on the 16khz-downsampled LibriTTS and LibriSpeech datasets
+            ...                     # different ASR settings for 16khz-downsampled LibriTTS and LibriSpeech
     /tts                    # Recipes for the TTS task
         /libritts               # Recipes for TTS models on the LibriTTS dataset
             ...                     # different TTS settings for LibriTTS
@@ -543,9 +558,9 @@ Folder architecture is shown below:
             ...
     /offline_tts2asr        # Recipes for the offline TTS-to-ASR chain
         /libritts_librispeech   # Recipes for TTS trained on LibriTTS and ASR trained on LibriSpeech
-            ...                     # different TTS-TO-ASR settings for LibriSpeech and LibriTTS
+            ...                     # different TTS-to-ASR settings for LibriSpeech and LibriTTS
     /offline_asr2tts        # Recipes for the offline ASR-to-TTS chain
-        /libritts   # Recipes for ASR and TTS trained on LibriTTS 
+        /libritts                # Recipes for ASR and TTS trained on LibriTTS 
             ...                     # different ASR-to-TTS settings for LibriTTS
 ```
 For more details, please refer to [${SPEECHAIN_ROOT}/recipes/README.md](https://github.com/ahclab/SpeeChain/tree/main/recipes#recipes-folder-of-the-speechain-toolkit).
@@ -593,25 +608,29 @@ For more details about `/speechain/module`, please refer to [${SPEECHAIN_ROOT}/s
 For more details about `/speechain/optim_sche`, please refer to [${SPEECHAIN_ROOT}/speechain/optim_sche/README.md](https://github.com/ahclab/SpeeChain/tree/main/speechain/optim_sche#optimscheduler).  
 For more details about `/speechain/tokenizer`, please refer to [${SPEECHAIN_ROOT}/speechain/tokenizer/README.md](https://github.com/ahclab/SpeeChain/tree/main/speechain/tokenizer#tokenizer).
 
-
-👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#table-of-contents)
-
-### SpeeChain architecture workflow
-
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#table-of-contents)
 
 
 ### How to customize my own data loading and batching strategy
+For how to customize your own data loading strategy, please refer to the [API document](https://github.com/ahclab/SpeeChain/tree/main/speechain/dataset#api-document) of `/speechain/dataset`.  
+
+For how to customize your own data batching, please refer to the [API document](https://github.com/ahclab/SpeeChain/tree/main/speechain/iterator#api-document) of `/speechain/iterator`.  
 
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#table-of-contents)
 
 
 ### How to customize my own model
+For how to customize your own model, please refer to the [API document](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#api-document) of `/speechain/model`.
+
+If the existing _Module_ implementations in `/speechain/module`, you can refer to the [API document](https://github.com/ahclab/SpeeChain/tree/main/speechain/module#api-document) of `/speechain/module` for the instructions about how to customize your own modules.
+
+For the model involving text tokenization like ASR and TTS, if the existing _Tokenizer_ implementations cannot satisfy your needs, you can refer to the [API document](https://github.com/ahclab/SpeeChain/tree/main/speechain/tokenizer#api-document) of `/speechain/tokenizer` for the instructions about how to customize your own tokenizers.
 
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#table-of-contents)
 
 
 ### How to customize my own learning rate scheduling strategy
+For how to customize your own optimization strategy, please refer to the [API document](https://github.com/ahclab/SpeeChain/tree/main/speechain/optim_sche#api-document) of `/speechain/optim_sche`.
 
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#table-of-contents)
 
@@ -657,10 +676,7 @@ We have some specifications for you to standardize your contribution:
     
         For example, `SpeechTextDataset` means a dataset class that returns speech-text paired data during training. 
         `Conv2dPrenet` means a prenet module that is made up of Conv2d layers.
-    * For variable names, we recommend that the name length is better to be no more than 20 characters and the name contains no more than 3 underlines *inside* it. 
-    Otherwise, it will be very hard for us to understand the meanings of your variables.
-    
-        If the names are longer than 20 characters, please make some abbreviations. For the abbreviations, we recommend the following 2 frequently-used strategies:
+    * For long variable names, please make some abbreviations. For the abbreviations, we recommend the following 2 frequently-used strategies:
         * **Tail-Truncating**: delete the letters from the tail and only retain the part before the second vowel. 
         For example, '*convolution*' -> '*conv*', '*previous*' -> '*prev*'.
         * **Vowel-Omitting**: directly delete all vowels and some trivial consonants behind each vowel. 
@@ -669,178 +685,4 @@ We have some specifications for you to standardize your contribution:
     For example, '*_tmp_feat_dim*' means the temporary variable used to register the intermediate value of the feature dimension. 
 
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#table-of-contents)
-
-
-
-
-
-
-
-
-
-
-
-[//]: # (## Toolkit Architecture)
-
-[//]: # (Our toolkit is consisted of the following 5 parts: )
-
-[//]: # (1. Data preparation part)
-
-[//]: # (2. User interaction part &#40;green&#41; )
-
-[//]: # (3. Data loading part &#40;blue&#41;)
-
-[//]: # (4. Model calculation part &#40;red&#41;)
-
-[//]: # (5. Parameter optimization part &#40;brown&#41;.)
-
-[//]: # ()
-[//]: # (### [Data Preparation Part]&#40;https://github.com/ahclab/SpeeChain/tree/main/datasets&#41;)
-
-[//]: # (We follow the ESPNET-style data preparation pipeline and provide all-in-one _.sh_ script. )
-
-[//]: # (This script separates the entire data preparation pipeline into several individual steps, each of which is done by a specific .sh or .py file. )
-
-[//]: # (The all-in-one _.sh_ script acts as intermediary that glues those processing scripts together. )
-
-[//]: # (Users can easily customize their own data preparation pipeline by designing their own processing scripts for either an existing dataset or a new dataset.)
-
-[//]: # ()
-[//]: # (### User Interaction Part)
-
-[//]: # (This part interacts with both the user and disk. The architectures of this part are different in train-valid and test branches as shown in the figures below.  )
-
-[//]: # (**Train-valid branch:**)
-
-[//]: # (![image]&#40;user_interaction_arch_train.png&#41;)
-
-[//]: # (**Test branch:**)
-
-[//]: # (![image]&#40;user_interaction_arch_test.png&#41;)
-
-[//]: # ()
-[//]: # (There are three members in this part: _Runner_, _Monitor_, and _Snapshooter_:)
-
-[//]: # (* **Runner** is the entry of this toolkit where the experiment pipeline starts. )
-
-[//]: # (It receives all the necessary experiment configurations from the user and distributes these configurations to the other parts of this toolkit like a hub. )
-
-[//]: # (In each step, the runner receives the model calculation results from the model calculation part and passes the results to the monitors for recording.)
-
-[//]: # ()
-[//]: # (* **Monitor** is the processor of the model calculation results received from the runner. )
-
-[//]: # (The raw results are converted into human-readable logs and disk-savable data files. )
-
-[//]: # (_ValidMonitor_ also encapsulates the logic of monitoring the training process, such as best model recording, early-stopping checking, and so on. )
-
-[//]: # (Also, a monitor keeps the connection with a _Snapshooter_ and constantly packages snapshotting materials for it to capture the intermediate information.)
-
-[//]: # ()
-[//]: # (* **Snapshooter** possesses a queue and constantly receives snapshotting materials by dequeuing the queue elements. )
-
-[//]: # (For the program efficiency, it doesn't run in the main process of model training but a new process. )
-
-[//]: # (It communicates with _Monitor_ by _multiprocessing.Queue_ and _multiprocessing.Event_.)
-
-[//]: # ()
-[//]: # (👆[Back to the table of contents]&#40;https://github.com/ahclab/SpeeChain/blob/main/handbook.md#table-of-contents&#41;)
-
-[//]: # ()
-[//]: # (### [Data Loading Part]&#40;https://github.com/ahclab/SpeeChain/tree/main/speechain/iterator#data-loading-part&#41;)
-
-[//]: # (This part plays the role of extracting the raw data on the disk and providing the model with trainable batches. )
-
-[//]: # (The architecture of the data loading part of this toolkit is shown in the figure below.)
-
-[//]: # (![image]&#40;data_loading_arch.png&#41;)
-
-[//]: # ()
-[//]: # (There are two members in this part: _Iterator_, _Dataset_:)
-
-[//]: # (* **Iterator** is the hub of this part. )
-
-[//]: # (It possesses a built-in _Dataset_ and batch views that decide its accessible samples. )
-
-[//]: # (In each epoch, it produces a _Dataloader_ that provides the built-in _Dataset_ with the sample indices to be extracted from the disk. )
-
-[//]: # (After receiving the preprocessed vectors of all the data samples, the _Dataloader_ packages them into a trainable batch.)
-
-[//]: # ()
-[//]: # (* **Dataset** is the frontend that accesses the data files on the disk. )
-
-[//]: # (It stores the necessary information of the data samples of the specified dataset &#40;e.g. physical addresses for the waveform files, strings for the text files&#41;. )
-
-[//]: # (After receiving the sample index from the _Dataloader_, it loads the chosen data sample from the disk and preprocesses it into a machine-friendly vector. )
-
-[//]: # ()
-[//]: # (👆[Back to the table of contents]&#40;https://github.com/ahclab/SpeeChain/blob/main/handbook.md#table-of-contents&#41;)
-
-[//]: # ()
-[//]: # (### [Model Calculation Part]&#40;https://github.com/ahclab/SpeeChain/tree/main/speechain/model#model-calculation-part&#41;)
-
-[//]: # (This part receives the batch from the data loading part and outputs the training losses or evaluation metrics. )
-
-[//]: # (The architecture of the model calculation part of this toolkit is shown in the figure below.)
-
-[//]: # (![image]&#40;model_calculation_arch.png&#41;)
-
-[//]: # ()
-[//]: # (There are three members in this part: _Model_, _Module_, _Criterion_:)
-
-[//]: # (* **Model** is the wrapper of all the model-related operations. )
-
-[//]: # (It encapsulates the general model services such as model construction, pretrained parameter loading, parameter freezing, and so on. )
-
-[//]: # (It possesses several built-in _Module_ members and several built-in _Criterion_ members.)
-
-[//]: # (After receiving the batches from the data loading part, users can choose to do some _Model_ preprocessing to fit the model's customized requirements. )
-
-[//]: # (Then, the processed batches will be forwarded through multiple _Module_ members to obtain the model outputs. )
-
-[//]: # (Finally, the model outputs will go through different branches for different usage.)
-
-[//]: # ()
-[//]: # (* **Module** is the unit of model forward. )
-
-[//]: # (The job of model forward is actually done by a series of module sub-forward. )
-
-[//]: # (It inherits `torch.nn.Module` and allows users to override its initialization and forward interfaces for customization usage.)
-
-[//]: # ()
-[//]: # (* **Criterion** does the job of converting the model output into a scalar. )
-
-[//]: # (There are two kinds of criteria: _Train Criterion_ as the loss functions for model training and _Valid Criterion_ as the validation metrics used for model validation. )
-
-[//]: # (The criterion and module are independent of each other, which allows any combinations of criteria in a single model.)
-
-[//]: # (Users can create their customized criteria by overriding its initialization and forward interfaces.)
-
-[//]: # ()
-[//]: # (👆[Back to the table of contents]&#40;https://github.com/ahclab/SpeeChain/blob/main/handbook.md#table-of-contents&#41;)
-
-[//]: # ()
-[//]: # (### [Parameter Optimization Part]&#40;https://github.com/ahclab/SpeeChain/tree/main/speechain/optim_sche#parameter-optimization-part&#41;)
-
-[//]: # (This part does the job of updating the model parameters by the received losses. )
-
-[//]: # (The architecture of the parameter optimization part of this toolkit is shown in the figure below.)
-
-[//]: # (![image]&#40;parameter_optimization_arch.png&#41;)
-
-[//]: # ()
-[//]: # ()
-[//]: # (Unlike the traditional scheme of two separate objects &#40;optimizer and scheduler&#41;, )
-
-[//]: # (parameter optimization and learning rate scheduling are simultaneously done by _OptimScheduler_ in this toolkit.)
-
-[//]: # ()
-[//]: # (* **OptimScheduler** is the hub of this part which encapsulates the logic of scheduling learning rates. )
-
-[//]: # (It possesses a built-in `torch.optim.Optimizer` member and provides the learning rate for the optimizer member in each training step. )
-
-[//]: # (Users can override its interfaces to customize their personal strategies of scheduling the learning rates during training.)
-
-[//]: # ()
-[//]: # (👆[Back to the table of contents]&#40;https://github.com/ahclab/SpeeChain/blob/main/handbook.md#table-of-contents&#41;)
 

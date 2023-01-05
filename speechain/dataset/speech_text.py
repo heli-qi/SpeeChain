@@ -6,11 +6,12 @@
 
 import numpy as np
 import torch
+import random
 
 from typing import Dict, Any, List
 
 from speechain.dataset.abs import Dataset
-from speechain.utilbox.data_loading_util import read_data_by_path
+from speechain.utilbox.data_loading_util import read_data_by_path, load_idx2data_file
 
 
 class SpeechTextDataset(Dataset):
@@ -74,9 +75,8 @@ class SpeechTextDataset(Dataset):
             elif key == 'spk_feat':
                 batch_dict[key] = torch.stack(batch_dict[key])
 
-            # text and speaker ID data remains List[str] which will be processed by the model later
-            elif key not in ['text', 'spk_ids']:
-                raise RuntimeError(f"Unknown data name {key}.")
+            # --- 3. Raw String Part --- #
+            # for the string data like 'text' and 'spk_ids', they will be processed in the model later
 
         return batch_dict
 
@@ -131,10 +131,65 @@ class SpeechTextDataset(Dataset):
                 main_data[key] = read_data_by_path(main_data[key], return_tensor=True)
 
             else:
-                raise RuntimeError(f"Unknown data name {key}. For {self.__class__}, the key name must be one of "
+                raise RuntimeError(f"Unknown data name {key}! "
+                                   f"For {self.__class__.__name__}, the key in 'main_data' must be one of "
                                    "'feat' (for paths of raw waveforms or acoustic features), "
                                    "'text' (for transcript text data), "
                                    "'spk_ids' (for speaker IDs), "
                                    "'spk_feat' (for speaker embedding features).")
+
+        return main_data
+
+
+class RandomSpkFeatDataset(SpeechTextDataset):
+    """
+    This Dataset subclass inherits SpeechTextDataset and is mainly used for multi-speaker TTS evaluation.
+    Random speaker embedding feature will be picked up as the reference for TTS synthesis.
+
+    `collate_main_data_fn` of the parent class will be reused to collate a batch of data instances.
+
+    """
+    def dataset_init_fn(self, spk_feat: List[str] or str):
+        """
+
+        Args:
+            spk_feat: List[str] or str
+                The address of the idx2spk_feat that contains the speaker embedding feature files you want to use.
+
+        """
+        # str -> List[str]
+        self.spk_feat_dict = spk_feat if isinstance(spk_feat, List) else [spk_feat]
+
+        # data file reading, List[str] -> List[Dict[str, str]]
+        self.spk_feat_dict = [load_idx2data_file(_data_path) for _data_path in self.spk_feat_dict]
+        # data Dict combination, List[Dict[str, str]] -> Dict[str, str]
+        self.spk_feat_dict = {key: value for _data_dict in self.spk_feat_dict for key, value in _data_dict.items()}
+        # sort the key-value items in the dict by their key names
+        self.spk_feat_dict = dict(sorted(self.spk_feat_dict.items(), key=lambda x: x[0]))
+
+        # register the list of available speaker embedding features
+        self.spk_feat_list = list(self.spk_feat_dict.keys())
+        self.spk_feat_num = len(self.spk_feat_list)
+
+    def extract_main_data_fn(self, main_data: Dict[str, str]) -> Dict[str, Any]:
+        """
+        This hook function randomly pick up a speaker embedding feature from the given spk_feat file as the reference.
+        The randomness is controlled by the `seed` you give in the exp_cfg.
+
+        """
+        assert 'spk_ids' not in main_data.keys(), \
+            f"Please don't give spk_ids to main_data of {self.__class__.__name__}. " \
+            "This Dataset is used to evaluate open-set multi-speaker TTS that uses external speaker embedding."
+        assert 'spk_feat' not in main_data.keys(), \
+            f"Please don't give spk_feat to main_data of {self.__class__.__name__}. " \
+            f"Your spk_feat should be given outside the main_data."
+
+        # process 'feat' and 'text' by the parent class
+        main_data = super(RandomSpkFeatDataset, self).extract_main_data_fn(main_data)
+
+        # randomly pick up a speaker embedding feature vector
+        spk_feat_idx = self.spk_feat_list[random.randint(0, self.spk_feat_num - 1)]
+        main_data['spk_feat'] = read_data_by_path(self.spk_feat_dict[spk_feat_idx], return_tensor=True)
+        main_data['spk_feat_ids'] = spk_feat_idx
 
         return main_data

@@ -31,6 +31,7 @@ The concrete implementation classes of the blocks with dashed edges can be freel
 ## Configuration Format
 ```
 model:
+    model_type: xxx.XXX
     customize_conf:
         token_type: ...
         token_vocab: ...
@@ -71,26 +72,28 @@ model:
 ## Available Backbones
 1. Speech-Transformer ([paper reference](https://ieeexplore.ieee.org/abstract/document/8462506))
     ```
-    frontend:
-        type: mel_fbank
-        conf:
-            ...
-    enc_prenet:
-        type: conv2d
-        conf:
-            ...
-    encoder:
-        type: transformer
-        conf:
-            ...
-    dec_emb:
-        type: emb
-        conf:
-            ...
-    decoder:
-        type: transformer
-        conf:
-            ...
+    model_type: ar_asr.ARASR
+    module_conf:
+        frontend:
+            type: mel_fbank
+            conf:
+                ...
+        enc_prenet:
+            type: conv2d
+            conf:
+                ...
+        encoder:
+            type: transformer
+            conf:
+                ...
+        dec_emb:
+            type: emb
+            conf:
+                ...
+        decoder:
+            type: transformer
+            conf:
+                ...
     ```
 2. Paraformer ([paper reference](https://arxiv.org/pdf/2206.08317), coming soon~)
 
@@ -126,6 +129,22 @@ model:
     In the future, this argument will also be used to on-the-fly downsample the input speech.
   * _**audio_format:**_ str == 'wav'   
     This argument is only used for input speech recording during model visualization.
+  * _**ctc_weight:**_ float = 0.0  
+    The weight on the CTC loss for training the ASR model. 
+    If `ctc_weight` is 0, the CTC layer will be disabled and the ASR model is trained only by the cross-entropy loss.
+  * _**return_att_type:**_ List[str] or str = `['encdec', 'enc', 'dec'] ` 
+    The type of attentions you want to return for both attention guidance and attention visualization.
+    It can be given as a string (one type) or a list of strings (multiple types).
+    The type should be one of
+      1. `encdec`: the encoder-decoder attention, shared by both Transformer and RNN
+      2. `enc`: the encoder self-attention, only for Transformer
+      3. `dec`: the decoder self-attention, only for Transformer
+  * _**return_att_head_num:**_ int = -1  
+    The number of returned attention heads. If -1, all the heads in an attention layer will be returned.
+    RNN can be considered to one-head attention, so `return_att_head_num` > 1 is equivalent to 1 for RNN.
+  * _**return_att_layer_num:**_ int = 1  
+    The number of returned attention layers. If -1, all the attention layers will be returned.
+    RNN can be considered to one-layer attention, so `return_att_layer_num` > 1 is equivalent to 1 for RNN.
 
   _Arguments from `module_conf`:_  
   * _**frontend:**_ Dict  
@@ -158,16 +177,22 @@ model:
 ### speechain.model.asr.ASR.criterion_init()
 * **Description:**  
     This function initializes all the necessary _Criterion_ members:
-    1. `speechain.criterion.cross_entropy.CrossEntropy` for training loss calculation.
-    2. `speechain.criterion.accuracy.Accuracy` for teacher-forcing validation accuracy calculation.
-    3. `speechain.criterion.error_rate.ErrorRate` for evaluation CER & WER calculation.
+    1. `speechain.criterion.cross_entropy.CrossEntropy` for CrossEntropy loss calculation.
+    2. `speechain.criterion.ctc.CTCLoss` for CTC loss calculation.
+    3. `speechain.criterion.accuracy.Accuracy` for teacher-forcing validation accuracy calculation.
+    4. `speechain.criterion.error_rate.ErrorRate` for evaluation CER & WER calculation.
 * **Arguments:**
-  * _**is_normalized:**_ bool = False  
-    Controls whether the sentence normalization is performed.  
+  * _**ce_normalized:**_ bool = False  
+    Controls whether the sentence normalization is performed for cross-entropy loss.  
     For more details, please refer to [speechain.criterion.cross_entropy.CrossEntropy](https://github.com/ahclab/SpeeChain/blob/main/speechain/criterion/cross_entropy.py#L14)
   * _**label_smoothing:**_ float = 0.0  
     Controls the scale of label smoothing. 0 means no smoothing.  
     For more details, please refer to [speechain.criterion.cross_entropy.CrossEntropy](https://github.com/ahclab/SpeeChain/blob/main/speechain/criterion/cross_entropy.py#L14)
+  * _**ctc_zero_infinity:**_ bool = True  
+    Whether to zero infinite losses and the associated gradients when calculating the CTC loss.
+  * _**att_guid_sigma:**_ float = 0.0  
+    The value of the sigma used to calculate the attention guidance loss.
+    If this argument is set to 0.0, the attention guidance will be disabled.
 
 👆[Back to the API list](https://github.com/ahclab/SpeeChain/tree/main/recipes/asr#api-document)
 
@@ -210,13 +235,14 @@ model:
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/recipes/asr#table-of-contents)
 
 ## How to train an ASR model
-Suppose that I want to train an ASR model by the configuration `${SPEECHAIN_ROOT}/recipes/asr/librispeech/train-clean-100/exp_cfg/transformer-narrow_v1_accum1_ngpu2.yaml`.
+Suppose that we want to train an ASR model by the configuration `${SPEECHAIN_ROOT}/recipes/asr/librispeech/train-clean-100/exp_cfg/transformer-narrow_v1_accum1_ngpu2.yaml`.
 1. Train the ASR model on your target training set
    ```
    cd ${SPEECHAIN_ROOT}/recipes/asr/librispeech/train-clean-100
-   bash run.sh --train true --exp_cfg transformer-narrow_v1_accum1_ngpu2
+   bash run.sh --train true --exp_cfg transformer-narrow_v1_accum1_ngpu2 (--ngpu x --gpus x,x)
    ```
    **Note:** Please take a look at the comments in the configuration file to make sure that your computational equipments fit the configuration before training the model.
+   If your equipments don't match the configuration, please adjust it by `--ngpu` and `--gpus`.
 2. Tune the inference hyperparameters on the corresponding validation set
    ```
    bash run.sh --test true --exp_cfg transformer-narrow_v1_accum1_ngpu2 --data_cfg validtune_clean
@@ -224,9 +250,9 @@ Suppose that I want to train an ASR model by the configuration `${SPEECHAIN_ROOT
    **Note:** `--data_cfg` is used to change the data loading configuration from the original one for training in `exp_cfg` to the one for validation tuning.
 3. Evaluate the trained ASR model on the official test sets
    ```
-   bash run.sh --test true --exp_cfg transformer-narrow_v1_accum1_ngpu2 --data_cfg test_clean+other
+   bash run.sh --test true --exp_cfg transformer-narrow_v1_accum1_ngpu2 --data_cfg test_clean+other --infer_cfg "{the-best-configuration-you-get-during-validation-tuning}"
    ```
-   **Note:** Please modify `infer_cfg` in `exp_cfg` to the optimal one you get after tuning on the validation set before executing this job.
+   **Note:** If the optimal `infer_cfg` tuned on the validation set is too complicated to be given in the terminal, please modify `infer_cfg` in `exp_cfg` before executing this job.
 
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/recipes/asr#table-of-contents)
 

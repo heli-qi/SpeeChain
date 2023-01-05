@@ -1,0 +1,47 @@
+### Author: Heli Qi
+### Affiliation: NAIST
+### Date: 2022.09
+
+
+### --- Reference Values --- ###
+# These values can be referred and reused by the representer '!ref' like the way below
+exp_root: recipes/tts/libritts/train-clean-100
+infer_root: config/infer/tts
+### ------------------------ ###
+
+
+# Group 1: Calculation and System Backend
+seed: 0
+num_workers: 1
+pin_memory: True
+non_blocking: True
+
+# Group 2: Gradient Calculation and Back-Propagation
+accum_grad: 2
+ft_factor: 1.0
+grad_clip: 1.0
+
+# Group 3: Multi-GPU Distribution
+ngpu: 1 # 2
+
+# Group 4: Model Training
+train: False
+num_epochs: 1000
+best_model_selection:
+  - !tuple (train, loss, min, 10)
+  - !tuple (valid, loss, min, 10)
+early_stopping_patience: 10
+last_model_number: !ref <early_stopping_patience>
+
+# Group 5: Real-time Model Visualization Snapshotting
+model_snapshot_number: 0
+model_snapshot_interval: 5
+
+# Group 6: Model Testing
+test: True
+test_model: 10_train_loss_average
+
+# Group 7: Experiment .yaml Configuration File
+#data_cfg: !ref <exp_root>/data_cfg/22.05khz_g2p_train_5e6.yaml
+data_cfg: !ref <exp_root>/data_cfg/g2p_test-clean+other.yaml
+train_cfg: !ref <exp_root>/train_cfg/22.05khz_g2p_factor1_transformer_default-loss.yaml

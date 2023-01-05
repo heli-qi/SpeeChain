@@ -132,11 +132,15 @@ class Iterator(ABC):
             # check the data index in data_len and self.dataset
             data_len_keys, dataset_keys = set(self.data_len.keys()), set(self.dataset.get_data_index())
             # delete the redundant key-value pairs in data_len
-            for redundant_key in data_len_keys.difference(dataset_keys):
-                self.data_len.pop(redundant_key)
+            redundant_keys = data_len_keys.difference(dataset_keys)
+            if len(redundant_keys) > 0:
+                for redundant_key in redundant_keys:
+                    self.data_len.pop(redundant_key)
             # delete the redundant key-value pairs in self.dataset
-            for redundant_key in dataset_keys.difference(data_len_keys):
-                self.dataset.remove_data_by_index(redundant_key)
+            redundant_keys = dataset_keys.difference(data_len_keys)
+            if len(redundant_keys) > 0:
+                for redundant_key in dataset_keys.difference(data_len_keys):
+                    self.dataset.remove_data_by_index(redundant_key)
         else:
             self.data_len = None
 
@@ -157,6 +161,10 @@ class Iterator(ABC):
         # --- 3. Initialize the Customized Part (batching strategy) of the Iterator --- #
         # initialize the customized part of the iterator and get the batches of data indices
         self.batches = self.batches_generate_fn(self.sorted_data, self.data_len, **iter_conf)
+        assert len(self.batches) > 0, \
+            f"There is no batch generated in {self.__class__.__name__}! " \
+            f"It's probably because there is a index mismatch between you given main_data in the dataset."
+
         # make sure that each batch has self.ngpu data indices for even workload on each GPU
         if self.ngpu > 1:
             _tmp_indices = None

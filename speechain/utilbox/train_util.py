@@ -22,7 +22,8 @@ class Identity(torch.nn.Module):
         return self.__class__.__name__ + '()'
 
 
-def make_mask_from_len(data_len: torch.Tensor, max_len: int = None, mask_type: torch.dtype = torch.bool):
+def make_mask_from_len(data_len: torch.Tensor, max_len: int = None,
+                       mask_type: torch.dtype = torch.bool, return_3d: bool = True):
     """
 
     Args:
@@ -32,6 +33,10 @@ def make_mask_from_len(data_len: torch.Tensor, max_len: int = None, mask_type: t
             The max length of the mask matrix. Could be larger than the real length of data_len
         mask_type: torch.dtype
             The value type of the mask matric.
+        return_3d: bool
+            Whether to return a 3d mask tensors.
+            If True, the returned mask tensor will be 3d (batch_size, 1, max_len)
+            If False, the returned mask tensor will be 2d (batch_size, max_len)
 
     Returns:
         The corresponding mask for this batch.
@@ -42,9 +47,14 @@ def make_mask_from_len(data_len: torch.Tensor, max_len: int = None, mask_type: t
     if max_len is None:
         max_len = data_len.max()
 
-    mask = torch.zeros((batch_size, 1, max_len), dtype=mask_type)
-    for i in range(data_len.size(0)):
-        mask[i, :, :data_len[i]] = 1.0
+    if return_3d:
+        mask = torch.zeros((batch_size, 1, max_len), dtype=mask_type)
+        for i in range(data_len.size(0)):
+            mask[i, :, :data_len[i]] = 1.0
+    else:
+        mask = torch.zeros((batch_size, max_len), dtype=mask_type)
+        for i in range(data_len.size(0)):
+            mask[i, :data_len[i]] = 1.0
 
     return mask
 

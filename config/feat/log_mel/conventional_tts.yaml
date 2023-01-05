@@ -1,0 +1,10 @@
+# The configuration of log-Mel Spectrogram extraction for conventional TTS models.
+# It follows the conventional TTS setting: 50ms stft window + 12.5ms stft hopping.
+# No preemphasis is used here and the frequency band is restricted between 125 Hz and 7600 Hz in the mel-spectrogram.
+# The sampling rate 'sr' is automatically decided by the target waveform.
+
+n_mels: 80
+win_length: 0.05
+hop_length: 0.0125
+fmin: 125
+fmax: 7600

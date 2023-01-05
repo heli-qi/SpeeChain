@@ -9,9 +9,7 @@ In the sub-folder of each task, each dataset has a second-level sub-folder.
 1. [**Available Models & Datasets**](https://github.com/ahclab/SpeeChain/tree/main/recipes#available-models--datasets)
    1. [ASR (Automatic Speech Recognition)](https://github.com/ahclab/SpeeChain/tree/main/recipes#automatic-speech-recognition-asr)
    2. [TTS (Text-To-Speech Synthesis)](https://github.com/ahclab/SpeeChain/tree/main/recipes#text-to-speech-synthesis-tts)
-   3. [SPKREC (Speaker Recognition)](https://github.com/ahclab/SpeeChain/tree/main/recipes#speaker-recognition-spkrec)
-   4. [Offline TTS-to-ASR Chain](https://github.com/ahclab/SpeeChain/tree/main/recipes#offline-tts-to-asr-chain)
-   4. [Offline ASR-to-TTS Chain](https://github.com/ahclab/SpeeChain/tree/main/recipes#offline-asr-to-tts-chain)
+   3. [Offline TTS-to-ASR Chain](https://github.com/ahclab/SpeeChain/tree/main/recipes#offline-tts-to-asr-chain)
 2. [**Experimental File System**](https://github.com/ahclab/SpeeChain/tree/main/recipes#experimental-file-system)
 
 
@@ -27,13 +25,17 @@ Please press the hyperlinks below and jump to the README.md of your target task 
             /exp_cfg                # Experimental environment configuration files
             /train_cfg              # Model construction and optimization configuration files
         /train-clean-460        # Labeled data: train-clean-460 (train-clean-100 + train-clean-360)
-            /data_cfg
-            /exp_cfg
-            /train_cfg
-        /train-960              # Labeled data: train_960 (train-clean-460 + train-other-500)
-            /data_cfg
-            /exp_cfg
-            /train_cfg
+            ...
+        /train-960              # Labeled data: train-960 (train-clean-460 + train-other-500)
+            ...
+    /librispeech+libritts   # ASR Recipes for the joint dataset of LibriSpeech and 16khz-downsampled LibriTTS
+        /train-clean-100-360    # Labeled data: LibriSpeech_train-clean-100 & 16khz-LibriTTS_train-clean-360
+            ...
+        /train-960              # Labeled data: LibriSpeech_train-960 & 16khz-LibriTTS_train-960
+            ...
+    /libritts               # ASR Recipes for the 22.05khz-LibriTTS dataset
+        /train-960              # Labeled data: 22.05khz-LibriTTS_train-960
+            ...
 ```
 <table>
 	<tr>
@@ -48,17 +50,36 @@ Please press the hyperlinks below and jump to the README.md of your target task 
 	    <td rowspan="3">Speech-Transformer</td>
 	    <td>train-clean-100</td>
 	    <td>12.10% / 29.10%</td>
-	    <td></td>
+	    <td>coming soon~~~</td>
 	</tr>
 	<tr>
 	    <td>train-clean-460</td>
 	    <td>5.73% / 16.63%</td>
-        <td></td>
+        <td>coming soon~~~</td>
 	</tr>
 	<tr>
 	    <td>train-960</td>
 	    <td>4.45% / 10.46%</td>
-        <td></td>
+        <td>coming soon~~~</td>
+	</tr>
+    <tr>
+	    <td rowspan="2">LibriSpeech + 16khz-LibriTTS (test-clean / test-other)</td>
+	    <td rowspan="2">Speech-Transformer</td>
+	    <td>train-clean-100-360</td>
+	    <td>7.11% / 20.32%</td>
+	    <td>coming soon~~~</td>
+	</tr>
+	<tr>
+	    <td>train-960</td>
+	    <td>coming soon~~~</td>
+        <td>coming soon~~~</td>
+	</tr>
+    <tr>
+	    <td rowspan="1">22.05khz-LibriTTS (test-clean / test-other)</td>
+	    <td rowspan="1">Speech-Transformer</td>
+	    <td>train-960</td>
+	    <td>coming soon~~~</td>
+	    <td>coming soon~~~</td>
 	</tr>
 </table>
 
@@ -74,72 +95,25 @@ Please press the hyperlinks below and jump to the README.md of your target task 
             /exp_cfg                # Experimental environment configuration files
             /train_cfg              # Model construction and optimization configuration files
         /train-clean-460        # Labeled data: train-clean-460 (train-clean-100 + train-clean-360)
-            /data_cfg
-            /exp_cfg
-            /train_cfg
-        /train-960              # Labeled data: train_960 (train-clean-460 + train-other-500)
-            /data_cfg
-            /exp_cfg
-            /train_cfg
+            ...
+        /train-960              # Labeled data: train-960 (train-clean-460 + train-other-500)
+            ...
     /ljspeech               # TTS Recipes for the LJSpeech dataset, LJSpeech doesn't have the official subset division.
-        /data_cfg
-        /exp_cfg
-        /train_cfg
+        ...
 ```
-<table>
-	<tr>
-	    <th>Dataset (Test Sets)</th>
-	    <th>TTS Model</th>
-	    <th>SPK Model</th>
-	    <th>Setting</th>  
-	    <th>MCD</th>  
-	</tr>
-	<tr>
-	    <td rowspan="3">LibriTTS (test-clean / test-other)</td>
-	    <td rowspan="3">Transformer-TTS</td>
-	    <td rowspan="3">One-hot Embedding</td>
-	    <td>train-clean-100</td>
-	    <td></td>
-	</tr>
-	<tr>
-	    <td>train-clean-460</td>
-	    <td></td>
-	</tr>
-	<tr>
-	    <td>train-960</td>
-	    <td></td>
-	</tr>
-    <tr>
-	    <td>LJSpeech (test)</td>
-	    <td>Transformer-TTS</td>
-	    <td>N/A</td>
-	    <td>train</td>
-	    <td></td>
-	</tr>
-</table>
-
-👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/recipes#table-of-contents)
-
-### [Speaker Recognition (SPKREC)](https://github.com/ahclab/SpeeChain/tree/main/recipes/spkrec#speaker-recognition-spkrec)
 
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/recipes#table-of-contents)
 
 ### [Offline TTS-to-ASR Chain](https://github.com/ahclab/SpeeChain/tree/main/recipes/offline_tts2asr#offline-tts-to-asr-chain)
 ```
 /offline_tts2asr
-    /libritts_librispeech   # TTS mode use LibriTTS and ASR model use LibriSpeech
-        /train-clean-100-360    # Labeled data: train-clean-100; Unlabeled data: train-clean-360
+    /libritts_librispeech   # TTS model is trained on 16khz-LibriTTS and ASR model is trained on LibriSpeech
+        /train-clean-100-360    # Labeled data: LibriSpeech_train-clean-100 (ASR) & 16khz-LibriTTS_train-clean-100 (TTS); Unlabeled data: 16khz-LibriTTS_train-clean-360
             /data_cfg               # Data loading configuration files that are shared by different models
             /exp_cfg                # Experimental environment configuration files
             /train_cfg              # Model construction and optimization configuration files
-        /train-100-860          # Labeled data: train-clean-100; Unlabeled data: train-clean-360 + train-other-500
-            /data_cfg
-            /exp_cfg
-            /train_cfg
-        /train-460-500          # Labeled data: train-clean-460; Unlabeled data: train-other-500
-            /data_cfg
-            /exp_cfg
-            /train_cfg
+        /train-100-860          # Labeled data: LibriSpeech_train-clean-100 (ASR) & 16khz-LibriTTS_train-clean-100 (TTS); Unlabeled data: 16khz-LibriTTS_train-clean-360 & 16khz-LibriTTS_train-other-500
+            ...
 ```
 <table>
 	<tr>
@@ -149,68 +123,33 @@ Please press the hyperlinks below and jump to the README.md of your target task 
 	    <th>ASR Model</th>
 	    <th>Setting</th>  
 	    <th>WER w/o. LM</th>  
+	    <th>WER w. Transformer LM</th>  
 	</tr>
 	<tr>
-	    <td rowspan="3">LibriTTS-LibriSpeech (test-clean / test-other)</td>
-	    <td rowspan="3">Transformer-TTS</td>
-	    <td rowspan="3">One-hot Embedding</td>
-	    <td rowspan="3">Speech-Transformer</td>
+	    <td rowspan="4">16khz-LibriTTS to LibriSpeech (test-clean / test-other)</td>
+	    <td rowspan="4">Transformer-TTS</td>
+	    <td rowspan="1">One-hot Embedding</td>
+	    <td rowspan="4">Speech-Transformer</td>
 	    <td>train-clean-100-360</td>
 	    <td></td>
+	    <td>coming soon~~~</td>
 	</tr>
 	<tr>
-	    <td>train-460-500</td>
+	    <td>Xvector</td>
+        <td>train-clean-100-360</td>
 	    <td></td>
+	    <td>coming soon~~~</td>
 	</tr>
 	<tr>
+        <td rowspan="3">ECAPA</td>
+	    <td>train-clean-100-360</td>
+	    <td></td>
+	    <td>coming soon~~~</td>
+	</tr>
+    <tr>
 	    <td>train-100-860</td>
 	    <td></td>
-	</tr>
-</table>
-
-👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/recipes#table-of-contents)
-
-### [Offline ASR-to-TTS Chain](https://github.com/ahclab/SpeeChain/tree/main/recipes/offline_asr2tts#offline-asr-to-tts-chain)
-```
-/offline_asr2tts
-    /libritts   # ASR & TTS models are trained on LibriTTS
-        /train-clean-100-360    # Labeled data: train-clean-100; Unlabeled data: train-clean-360
-            /data_cfg               # Data loading configuration files that are shared by different models
-            /exp_cfg                # Experimental environment configuration files
-            /train_cfg              # Model construction and optimization configuration files
-        /train-100-860          # Labeled data: train-clean-100; Unlabeled data: train-clean-360 + train-other-500
-            /data_cfg
-            /exp_cfg
-            /train_cfg
-        /train-460-500          # Labeled data: train-clean-460; Unlabeled data: train-other-500
-            /data_cfg
-            /exp_cfg
-            /train_cfg
-```
-<table>
-	<tr>
-	    <th>Dataset (Test Sets)</th>
-	    <th>ASR Model</th>
-	    <th>TTS Model</th>
-	    <th>SPK Model</th>
-	    <th>Setting</th>  
-	    <th>MCD</th>  
-	</tr>
-	<tr>
-	    <td rowspan="3">LibriTTS (test-clean / test-other)</td>
-	    <td rowspan="3">Speech-Transformer</td>
-	    <td rowspan="3">Transformer-TTS</td>
-	    <td rowspan="3">One-hot Embedding</td>
-	    <td>train-clean-100-360</td>
-	    <td></td>
-	</tr>
-	<tr>
-	    <td>train-460-500</td>
-	    <td></td>
-	</tr>
-	<tr>
-	    <td>train-100-860s</td>
-	    <td></td>
+	    <td>coming soon~~~</td>
 	</tr>
 </table>
 

@@ -91,17 +91,12 @@ class CrossEntropy(Criterion):
                 f"Expect text_len.max() is either equal to or 1 smaller than text.size(1), " \
                 f"but got text_len.max()={text_len.max()} and text.size(1)={text.size(1)}."
             # remove the <sos/eos> at the beginning
-            text = text[:, 1:].squeeze()
+            text = text[:, 1:].squeeze(dim=-1)
             # don't use text_len -= 1 here because it will also change the text_len outside this function
             text_len = text_len - 1
         # Otherwise, text must not have a <sos/eos> at the beginning (equal in length with logits)
         elif logits.size(1) != text.size(1):
             raise RuntimeError
-
-        # mask generation for the input text length
-        text_mask = make_mask_from_len(text_len).squeeze()
-        if text.is_cuda:
-            text_mask = text_mask.cuda(text.device)
 
         # reshape predictions and do log-softmax
         batch, seq_maxlen, vocab_size = logits.size()
@@ -121,16 +116,13 @@ class CrossEntropy(Criterion):
             loss = loss * self.token_weights.index_select(0, text.reshape(-1))
 
         # mask the padding parts in the loss before summing up each sentence in the batch
-        if text_mask is not None:
-            loss = loss.masked_fill(~text_mask.reshape(-1), 0.0)
-        loss = loss.reshape(batch, seq_maxlen).sum(dim=-1)
+        text_mask = make_mask_from_len(text_len).squeeze()
+        if text.is_cuda:
+            text_mask = text_mask.cuda(text.device)
+        loss = loss.masked_fill(~text_mask.reshape(-1), 0.0).reshape(batch, seq_maxlen).sum(dim=-1)
 
         # normalize the loss by the token sequence length if specified
         if self.is_normalized:
-            assert text_mask is not None, \
-                "If you want to normalize the cross_entropy loss, " \
-                "you need to give the masks of target sequences (text_mask)."
-
             loss /= text_len
 
         return -loss.mean()

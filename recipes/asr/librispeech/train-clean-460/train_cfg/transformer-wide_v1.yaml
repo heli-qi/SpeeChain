@@ -9,32 +9,52 @@
 
 
 ### --- Reference Values --- ###
-token_root: datasets/speech_text/librispeech/data/subword/train-clean-460/bpe5k/normal
+# data-related
+dataset: librispeech
+train_set: train-clean-460
+data_root: !ref datasets/<dataset>/data
+
+# waveform-related
+wav_format: wav
+sample_rate: 16000
+
+# tokenizer-related
+txt_format: librispeech
+token_type: sentencepiece
+token_num: bpe5k
+
+# model-related
+label_smoothing: 0.2
+
 d_model: 512
 num_heads: 8
 fdfwd_dim: 2048
 dropout: 0.1
+
+# optimizer-related
+warmup_steps: 16000
 ### ------------------------ ###
 
 
+
 model:
-  model_type: asr.ASR
+  model_type: ar_asr.ARASR
   model_conf:
     customize_conf:
-      token_type: subword
-      token_vocab: !ref <token_root>/vocab
+      token_type: !ref <token_type>
+      token_vocab: !ref <data_root>/<token_type>/<train_set>/<token_num>/<txt_format>/vocab
 
   module_conf:
     frontend:
       type: mel_fbank
       conf:
+        sr: !ref <sample_rate>
         preemphasis: 0.97
         hop_length: 0.010
         win_length: 0.025
         n_mels: 80
 
-    normalize:
-      norm_type: global
+    normalize: True
 
     specaug:
       freq_mask_width: 15
@@ -91,7 +111,7 @@ model:
         layernorm_first: true
 
   criterion_conf:
-    label_smoothing: 0.2
+    label_smoothing: !ref <label_smoothing>
 
 
 optim_sches:
@@ -103,4 +123,4 @@ optim_sches:
         - 0.9
         - 0.98
       eps: 1.0e-9
-    warmup_steps: 16000
+    warmup_steps: !ref <warmup_steps>

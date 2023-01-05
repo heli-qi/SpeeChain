@@ -202,9 +202,9 @@ class Dataset(torch.utils.data.Dataset, ABC):
             # initialize the sorted indices and metadata values of the data instances
             meta_sorted_data = meta_info[:, 0][np.argsort(meta_info[:, 1].astype(float))]
             meta_sorted_value = np.sort(meta_info[:, 1].astype(float))
-            # retain only the intersection of data instances in case that there is a index mismatch
-            intsec_indices = np.in1d(meta_sorted_data, sorted_data)
-            meta_sorted_data, meta_sorted_value = meta_sorted_data[intsec_indices], meta_sorted_value[intsec_indices]
+            # retain only the intersection of data instances in case that there is an index mismatch
+            retain_flags = np.in1d(meta_sorted_data, sorted_data)
+            meta_sorted_data, meta_sorted_value = meta_sorted_data[retain_flags], meta_sorted_value[retain_flags]
 
             # select a certain amount of data instances
             if isinstance(selection_num, (int, float)):

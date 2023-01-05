@@ -39,8 +39,8 @@ class Tokenizer(ABC):
             **tokenizer_conf:
                 The arguments used by tokenizer_init_fn() for your customized Tokenizer initialization.
         """
-        token_vocab = np.loadtxt(parse_path_args(token_vocab), dtype=str, delimiter="\n")
-        self.idx2token = dict(enumerate(token_vocab))
+        self.token_vocab = parse_path_args(token_vocab)
+        self.idx2token = dict(enumerate(np.loadtxt(self.token_vocab, dtype=str, delimiter="\n")))
         self.token2idx = dict(map(reversed, self.idx2token.items()))
         self.vocab_size = len(self.token2idx)
 
@@ -87,14 +87,19 @@ class Tokenizer(ABC):
                         for idx in tensor.tolist() if idx != self.sos_eos_idx])
 
     @abstractmethod
-    def text2tensor(self, text: str) -> torch.LongTensor:
+    def text2tensor(self, text: str, no_sos: bool = False, no_eos: bool = False) -> torch.LongTensor:
         """
         This functions encodes a text string into a model-friendly tensor.
         This interface is mandatory to be overridden.
+        By default, this function will attach two <sos/eos> at the beginning and end of the returned token id sequence.
 
         Args:
             text: str
                 the input text string to be encoded
+            no_sos: bool = False
+                Whether to remove the <sos/eos> at the beginning of the token id sequence.
+            no_eos: bool = False
+                Whether to remove the <sos/eos> at the end of the token id sequence.
 
         Returns: torch.LongTensor
             The tensor of the encoded sentence

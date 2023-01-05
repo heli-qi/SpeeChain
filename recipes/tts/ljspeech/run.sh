@@ -20,9 +20,10 @@ function print_help_message {
     [--data_cfg DATA_CFG] \\                                # The name of your specified configuration file in ${SPEECHAIN_ROOT}/recipes/tts/ljspeech/data_cfg (default: none)
     [--train_cfg TRAIN_CFG] \\                              # The name of your specified configuration file in ${SPEECHAIN_ROOT}/recipes/tts/ljspeech/train_cfg (default: none)
     [--infer_cfg INFER_CFG] \\                              # The name of your specified configuration file in ${SPEECHAIN_ROOT}/config/tts/ (default: none)
-    [--num_workers NUM_WORKERS] \\                          # The value of num_workers given to runner.py (default: 1)
-    [--ngpu NGPU] \\                                        # The value of ngpu given to runner.py (default: 1)
-    [--gpus GPUS] \\                                        # The value of gpus given to runner.py (default: none)
+    [--num_workers NUM_WORKERS] \\                          # The value of 'num_workers' given to runner.py (default: 1)
+    [--accum_grad ACCUM_GRAD] \\                            # The value of 'accum_grad' given to runner.py (default: 1)
+    [--ngpu NGPU] \\                                        # The value of 'ngpu' given to runner.py (default: 1)
+    [--gpus GPUS] \\                                        # The value of 'gpus' given to runner.py (default: none)
     --train false or true \\                                # Whether to activate training mode (default: false)
     --test false or true                                   # Whether to activate testing mode (default: false)" >&2
   exit 1
@@ -48,6 +49,7 @@ train_cfg=
 infer_cfg=
 
 num_workers=
+accum_grad=
 ngpu=
 gpus=
 
@@ -105,6 +107,10 @@ while getopts ":h-:" optchar; do
           val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
           num_workers=${val}
           ;;
+        accum_grad)
+          val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
+          accum_grad=${val}
+          ;;
         ngpu)
           val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
           ngpu=${val}
@@ -153,6 +159,10 @@ fi
 #
 if [ -n "${num_workers}" ];then
   args="${args} --num_workers ${num_workers}"
+fi
+#
+if [ -n "${accum_grad}" ];then
+  args="${args} --accum_grad ${accum_grad}"
 fi
 #
 if [ -n "${gpus}" ];then

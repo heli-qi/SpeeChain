@@ -14,6 +14,7 @@ import numpy as np
 
 from multiprocessing import Pool
 from functools import partial
+from speechain.utilbox.data_loading_util import parse_path_args, load_idx2data_file
 
 
 def parse():
@@ -60,21 +61,22 @@ def waveform_downsample(idx2src_wav: List[List[str]], tgt_path: str, sample_rate
 
 
 def main(src_file: str, tgt_path: str, sample_rate: int, ncpu: int, chunk_size: int = 1000):
-    src_file, tgt_path = os.path.abspath(src_file), os.path.abspath(tgt_path)
+    src_file, tgt_path = parse_path_args(src_file), parse_path_args(tgt_path)
     os.makedirs(tgt_path, exist_ok=True)
 
     # skip the dowmsampling process if there has already been an idx2wav
     idx2tgt_wav_path = os.path.join(tgt_path, "idx2wav")
     if not os.path.exists(idx2tgt_wav_path):
         # reshape the source waveform paths into individual chunks by the given chunk_size
-        idx2src_wav = np.loadtxt(src_file, delimiter=" ", dtype=str)
+        idx2src_wav = load_idx2data_file(src_file)
         _residue = len(idx2src_wav) % chunk_size
         idx2src_wav_chunk = idx2src_wav[:-_residue].reshape(-1, chunk_size, idx2src_wav.shape[-1]).tolist()
         idx2src_wav_chunk.append(idx2src_wav[-_residue:].tolist())
 
         # saving the downsampled audio files to the disk
         with Pool(ncpu) as executor:
-            waveform_downsample_func = partial(waveform_downsample, tgt_path=tgt_path, sample_rate=sample_rate)
+            waveform_downsample_func = partial(waveform_downsample,
+                                               tgt_path=os.path.join(tgt_path, 'wav'), sample_rate=sample_rate)
             idx2tgt_wav_chunk = executor.map(waveform_downsample_func, idx2src_wav_chunk)
 
         idx2tgt_wav = []

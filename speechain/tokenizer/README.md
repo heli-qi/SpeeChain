@@ -19,16 +19,20 @@ For model forward calculation, the text data is better to be in the form of vect
     /tokenizer
         /abs.py         # Abstract class of Tokenizer. Base of all Tokenizer implementations.
         /char.py        # Tokenizer implementation of the character tokenizer.
-        /subword.py     # Tokenizer implementation of the subword tokenizer by SentencePiece package.
+        /sp.py          # Tokenizer implementation of the subword tokenizer by SentencePiece package.
+        /g2p.py         # Tokenizer implementation of the phoneme tokenizer by G2P package.
 ```
 
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/speechain/tokenizer#table-of-contents)
 
 ## API Document
+_Non-overridable backbone functions:_
 1. [speechain.tokenizer.abs.Tokenizer.\_\_init__](https://github.com/ahclab/SpeeChain/tree/main/speechain/tokenizer#speechaintokenizerabstokenizer__init__self-token_vocab-tokenizer_conf)
-2. [speechain.tokenizer.abs.Tokenizer.tokenizer_init_fn](https://github.com/ahclab/SpeeChain/tree/main/speechain/tokenizer#speechaintokenizerabstokenizertokenizer_init_fnself-tokenizer_conf)
-3. [speechain.tokenizer.abs.Tokenizer.tensor2text](https://github.com/ahclab/SpeeChain/tree/main/speechain/tokenizer#speechaintokenizerabstokenizertensor2textself-tensor)
-4. [speechain.tokenizer.abs.Tokenizer.text2tensor](https://github.com/ahclab/SpeeChain/tree/main/speechain/tokenizer#speechaintokenizerabstokenizertext2tensorself-text)
+
+_Overridable interface functions:_  
+1. [speechain.tokenizer.abs.Tokenizer.tokenizer_init_fn](https://github.com/ahclab/SpeeChain/tree/main/speechain/tokenizer#speechaintokenizerabstokenizertokenizer_init_fnself-tokenizer_conf)
+2. [speechain.tokenizer.abs.Tokenizer.tensor2text](https://github.com/ahclab/SpeeChain/tree/main/speechain/tokenizer#speechaintokenizerabstokenizertensor2textself-tensor)
+3. [speechain.tokenizer.abs.Tokenizer.text2tensor](https://github.com/ahclab/SpeeChain/tree/main/speechain/tokenizer#speechaintokenizerabstokenizertext2tensorself-text)
 
 
 ### speechain.tokenizer.abs.Tokenizer.\_\_init__(self, token_vocab, **tokenizer_conf)
@@ -77,10 +81,15 @@ For model forward calculation, the text data is better to be in the form of vect
 ### speechain.tokenizer.abs.Tokenizer.text2tensor(self, text)
 * **Description:**  
     This functions encodes a text string into a model-friendly tensor.  
-    This interface is mandatory to be overridden.
+    This interface is mandatory to be overridden.  
+    By default, this function will attach two <sos/eos> at the beginning and end of the returned token id sequence.
 * **Arguments:**
   * _**text:**_ str  
     The input text string to be encoded
+  * _**no_sos:**_ bool = False  
+    Whether to remove the <sos/eos> at the beginning of the token id sequence.
+  * _**no_eos:**_ bool = False  
+    Whether to remove the <sos/eos> at the end of the token id sequence.
 * **Return:** torch.LongTensor  
     The tensor of the encoded sentence
 

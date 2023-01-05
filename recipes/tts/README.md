@@ -34,6 +34,7 @@ The concrete implementation classes of the blocks with dashed edges can be freel
 ## Configuration Format
 ```
 model:
+    model_type: xxx.XXX
     customize_conf:
         token_type: ...
         token_vocab: ...
@@ -91,36 +92,38 @@ model:
 ## Available Backbones
 1. Transformer-TTS ([paper reference](https://ojs.aaai.org/index.php/AAAI/article/view/4642/4520))
     ```
-    frontend:
-        type: mel_fbank
-        conf:
+    model_type: ar_tts.ARTTS
+    module_conf:
+        frontend:
+            type: mel_fbank
+            conf:
+                ...
+        enc_emb:
+            type: emb
+            conf:
+                ...
+        enc_prenet:
+            type: conv1d
+            conf:
+                ...
+        encoder:
+            type: transformer
+            conf:
+                ...
+        dec_prenet:
+            type: linear
+            conf:
+                ...
+        spk_emb: (required for multi-speaker TTS)
             ...
-    enc_emb:
-        type: emb
-        conf:
-            ...
-    enc_prenet:
-        type: conv1d
-        conf:
-            ...
-    encoder:
-        type: transformer
-        conf:
-            ...
-    dec_prenet:
-        type: linear
-        conf:
-            ...
-    spk_emb: (required for multi-speaker TTS)
-        ...
-    decoder:
-        type: transformer
-        conf:
-            ...
-    dec_postnet:
-        type: conv1d
-        conf:
-            ...
+        decoder:
+            type: transformer
+            conf:
+                ...
+        dec_postnet:
+            type: conv1d
+            conf:
+                ...
     ```
 2. FastSpeech2 ([paper reference](https://arxiv.org/pdf/2006.04558), coming soon~)
 
@@ -162,6 +165,19 @@ model:
     In the future, this argument will also be used to on-the-fly downsample the input speech.
   * _**audio_format:**_ str = 'wav'  
     This argument is only used for input speech recording during model visualization.
+  * _**return_att_type:**_ List[str] or str = `['encdec', 'enc', 'dec'] ` 
+    The type of attentions you want to return for both attention guidance and attention visualization.
+    It can be given as a string (one type) or a list of strings (multiple types).
+    The type should be one of
+      1. `encdec`: the encoder-decoder attention, shared by both Transformer and RNN
+      2. `enc`: the encoder self-attention, only for Transformer
+      3. `dec`: the decoder self-attention, only for Transformer
+  * _**return_att_head_num:**_ int = -1  
+    The number of returned attention heads. If -1, all the heads in an attention layer will be returned.
+    RNN can be considered to one-head attention, so `return_att_head_num` > 1 is equivalent to 1 for RNN.
+  * _**return_att_layer_num:**_ int = 1  
+    The number of returned attention layers. If -1, all the attention layers will be returned.
+    RNN can be considered to one-layer attention, so `return_att_layer_num` > 1 is equivalent to 1 for RNN.
   
   _Arguments from `module_conf`:_  
   * _**frontend:**_ Dict  
@@ -226,6 +242,10 @@ model:
     The value of beta for stop flag f-score calculation.  
     The larger beta is, the more f-score focuses on true positive stop flag prediction result.  
     For more details, please refer to [speechain.criterion.fbeta_score.FBetaScore](https://github.com/ahclab/SpeeChain/blob/main/speechain/criterion/fbeta_score.py#L12).
+  * _**att_guid_sigma:**_ float = 0.2  
+    The value of the sigma used to calculate the attention guidance loss.
+    If this argument is set to 0.0, the attention guidance will be disabled.  
+    For more details, please refer to [speechain.criterion.att_guid.AttentionGuidance](https://github.com/ahclab/SpeeChain/blob/main/speechain/criterion/att_guid.py#L6).
 
 👆[Back to the API list](https://github.com/ahclab/SpeeChain/tree/main/recipes/tts#api-document)
 
@@ -261,10 +281,6 @@ model:
     The speaker embedding of the average speaker is a zero vector.
   * _**return_att:**_ bool = False  
     Whether the attention matrix of the input speech is returned.
-  * _**feat_only:**_ bool = False  
-    Whether only decode the text into acoustic features without vocoding.
-  * _**decode_only:**_ bool = False  
-    Whether skip the evaluation step and do the decoding step only.
   * _**use_dropout:**_ bool = False  
     Whether turn on the dropout layers in the prenet of the TTS decoder when decoding.
   * _**use_before:**_ bool = False  
@@ -279,3 +295,68 @@ model:
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/recipes/tts#table-of-contents)
 
 ## How to train an TTS model
+Suppose that we want to train an TTS model by the configuration `${SPEECHAIN_ROOT}/recipes/tts/libritts/train-clean-100/exp_cfg/16khz_ecapa_transformer_v1_accum1_20gb.yaml`.
+1. Train the TTS model on your target training set
+   ```
+   cd ${SPEECHAIN_ROOT}/recipes/tts/libritts/train-clean-100
+   bash run.sh --train true --exp_cfg 16khz_ecapa_transformer_v1_accum1_20gb (--ngpu x --gpus x,x)
+   ```
+   **Note:** Please take a look at the comments in the configuration file to make sure that your computational equipments fit the configuration before training the model. 
+   If your equipments don't match the configuration, please adjust it by `--ngpu` and `--gpus`.
+2. Tune the inference hyperparameters on the corresponding validation set
+   ```
+   bash run.sh --test true --exp_cfg 16khz_ecapa_transformer_v1_accum1_20gb --data_cfg g2p_validtune-clean
+   ```
+   **Note:** `--data_cfg` is used to change the data loading configuration from the original one for training in `exp_cfg` to the one for validation tuning.
+3. Generate the synthetic acoustic features by the trained TTS model on the official test sets
+   ```
+   bash run.sh --test true --exp_cfg 16khz_ecapa_transformer_v1_accum1_20gb --data_cfg g2p_test-clean+other --infer_cfg {the-best-configuration-you-get-during-validation-tuning}
+   ```
+   **Note:** If the optimal `infer_cfg` tuned on the validation set is too complicated to be given in the terminal, please modify `infer_cfg` in `exp_cfg` before executing this job.
+4. Convert the acoustic features into waveforms by a chosen vocoder.
+   1. If you want to generate the waveforms by GL algorithm, please follow the following instructions.
+      ```
+      cd ${SPEECHAIN_ROOT}/recipes/tts
+      ${SPEECHAIN_PYTHON} spec_to_wav.py \
+         --hypo_idx2feat recipes/tts/libritts/train-clean-100/exp_cfg/16khz_ecapa_transformer_v1_accum1_20gb/default_inference/10_train_loss_average/test-clean/idx2feat \
+         --vocoder_name gl \
+         --frontend_cfg recipes/tts/libritts/train-clean-100/exp_cfg/16khz_ecapa_transformer_v1_accum1_20gb/train_cfg.yaml \
+         (--batch_size x --ngpu x) 
+      ```
+      A folder named `gl_wav` and two metadata files named `idx2gl_wav` and `idx2gl_wav_len` will be created in `${SPEECHAIN_ROOT}/recipes/tts/libritts/train-clean-100/exp_cfg/16khz_ecapa_transformer_v1_accum1_20gb/default_inference/10_train_loss_average/test-clean`.  
+      **Note:** spec_to_wav.py is default to be done by `--batch_size 1 --ncpu 8`. If you want to use GPUs, please give `--ngpu x`.
+   2. If you want to generate the waveforms by HiFiGAN, please follow the following instructions. 
+      ```
+      cd ${SPEECHAIN_ROOT}/recipes/tts
+      ${SPEECHAIN_PYTHON} spec_to_wav.py \
+         --hypo_idx2feat recipes/tts/libritts/train-clean-100/exp_cfg/16khz_ecapa_transformer_v1_accum1_20gb/default_inference/10_train_loss_average/test-clean/idx2feat \
+         --vocoder_name hifigan \
+         --sample_rate 22050 \
+         --vocoder_train_data libritts \
+         (--batch_size x --ngpu x)  
+      ```
+      A folder named `hifigan_wav` and two metadata files named `idx2hifigan_wav` and `idx2hifigan_wav_len` will be created in `${SPEECHAIN_ROOT}/recipes/tts/libritts/train-clean-100/exp_cfg/16khz_ecapa_transformer_v1_accum1_20gb/default_inference/10_train_loss_average/test-clean`. 
+5. Evaluate the synthetic waveforms by objective metrics.
+   ```
+   cd ${SPEECHAIN_ROOT}/recipes/tts
+   ${SPEECHAIN_PYTHON} tts_evaluation.py \
+      --hypo_idx2wav recipes/tts/libritts/train-clean-100/exp_cfg/16khz_ecapa_transformer_v1_accum1_20gb/default_inference/10_train_loss_average/test-clean/idx2hifigan_wav \
+      --refer_idx2wav datasets/speech_text/libritts/data/wav16000/test-clean/idx2wav \
+      (--ncpu x)  
+   ```
+   A metadata file named `idx2{xxx}` and a .md report file named `hifigan_{xxx}_reports.md` will be crated in `${SPEECHAIN_ROOT}/recipes/tts/libritts/train-clean-100/exp_cfg/16khz_ecapa_transformer_v1_accum1_20gb/default_inference/10_train_loss_average/test-clean`. 
+   `xxx` is the name of an objective metric. Currently, `mcd` and `wav_len_ratio` are supported.  
+   Note: If you want to change the number of processes for `tts_evaluation.py`, please give `--ngpu x` in your terminal.
+6. Evaluate the synthetic waveforms by a pretrained ASR model.
+   ```
+   cd ${SPEECHAIN_ROOT}/recipes/tts
+   bash asr_evaluation.sh \
+      --asr_model_path  \
+      --tts_result_path  \
+      --asr_refer_idx2text  \
+      --vocoder  \
+      --asr_infer_cfg  \
+      
+   ```
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/recipes/tts#table-of-contents)
+

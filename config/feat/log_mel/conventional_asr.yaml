@@ -1,0 +1,8 @@
+# The configuration of log-Mel Spectrogram extraction for conventional ASR models.
+# It follows the conventional ASR setting: 0.97 preemphasis + 25ms stft window + 10ms stft hopping.
+# The sampling rate 'sr' is automatically decided by the target waveform.
+
+preemphasis: 0.97
+n_mels: 80
+win_length: 0.025
+hop_length: 0.01

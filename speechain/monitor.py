@@ -7,6 +7,8 @@ import copy
 import os
 import argparse
 import time
+import warnings
+
 import GPUtil
 import shutil
 from contextlib import contextmanager
@@ -17,18 +19,21 @@ import numpy as np
 try:
     import soundfile as sf
 except OSError as e:
-    print(e)
+    warnings.warn(f"Monitor meets {e} when importing soundfile.")
 
 from typing import Dict, List
 from abc import ABC, abstractmethod
 from multiprocessing import Process, Queue, Event
 
+try:
+    from speechain.snapshooter import snapshot_logs
+except ImportError as e:
+    warnings.warn(f"Monitor meets {e} when importing speechain.snapshooter.snapshot_logs.")
 from speechain.model.abs import Model
-from speechain.snapshooter import snapshot_logs
 from speechain.utilbox.md_util import get_table_strings, get_list_strings
 
-from speechain.utilbox.tensor_util import to_cpu
 from speechain.utilbox.import_util import parse_path_args
+from speechain.utilbox.data_saving_util import save_data_by_format
 
 
 class Monitor(ABC):
@@ -102,6 +107,7 @@ class Monitor(ABC):
             raise RuntimeError
 
     def empty_queue(self):
+        self.logs_queue.qsize()
         return self.logs_queue.empty()
 
     @contextmanager
@@ -531,10 +537,11 @@ class ValidMonitor(Monitor):
             assert self.best_model_selection[i][2] in ['max', 'min'], \
                 f"The best_model_mode must be either 'max' or 'min', but got {self.best_model_selection[i][2]}."
 
+        # model saving-related members
         self.best_model_performance = dict()
         for metric in self.best_model_selection:
             self.best_model_performance['_'.join(metric[:2])] = dict()
-
+        self.saved_model_epoch = []
         self.model_save_path = os.path.join(self.result_path, 'models')
         if not os.path.exists(self.model_save_path):
             os.makedirs(self.model_save_path, exist_ok=True)
@@ -551,7 +558,7 @@ class ValidMonitor(Monitor):
         self.last_model_number = args.last_model_number
 
         # initialize the snapshooter of this validation monitor
-        self.model_snapshot_interval = args.model_snapshot_interval
+        self.visual_snapshot_interval = args.visual_snapshot_interval
 
     def start_epoch(self, epoch: int):
         """
@@ -606,7 +613,7 @@ class ValidMonitor(Monitor):
         # get the visualization logs for model snapshotting
         vis_logs = self.model(batch_data=used_sample, epoch=epoch,
                               epoch_records=self.epoch_records, sample_index=sample_index,
-                              snapshot_interval=self.model_snapshot_interval)
+                              snapshot_interval=self.visual_snapshot_interval)
 
         # put all the visualization logs into the queue
         self.enqueue(vis_logs)
@@ -628,13 +635,16 @@ class ValidMonitor(Monitor):
         # the threshold is applied to the better comparison
         return query > _target if mode == 'max' else query < _target
 
-    def model_insert(self, train_records: Dict):
+    def model_insert(self, train_records: Dict, valid_flag: bool):
         """
         Control whether to insert the model of the current epoch into the best models so far
 
         """
         # loop each metric for best model selection
         for metric in self.best_model_selection:
+            if metric[0] == 'valid' and not valid_flag:
+                continue
+
             _metric_name, _metric_mode, _model_num = '_'.join(metric[:2]), metric[2], metric[3]
             _criteria_dict = train_records['criteria'] if metric[0] == 'train' else self.epoch_records['criteria']
             curr_performance = _criteria_dict[metric[1]][-1]
@@ -659,9 +669,8 @@ class ValidMonitor(Monitor):
                 self.best_model_performance[_metric_name][self.epoch] = curr_performance
 
         # save the model of the latest epoch onto the disk
-        epoch_save_path = os.path.join(self.model_save_path, f"epoch_{self.epoch}.pth")
-        if not os.path.exists(epoch_save_path):
-            torch.save(self.model.state_dict(), epoch_save_path)
+        torch.save(self.model.state_dict(), os.path.join(self.model_save_path, f"epoch_{self.epoch}.pth"))
+        self.saved_model_epoch.append(self.epoch)
 
     def update_best_and_pop_worst(self, epoch_message: str):
         """
@@ -714,15 +723,10 @@ class ValidMonitor(Monitor):
                 epoch_record['sorted_epochs'].remove(worst_epoch)
                 metric_pop_flags[metric_name] = True
 
-                # remove the actual model file of the worst epoch
-                epoch_model_path = os.path.join(self.model_save_path, f"epoch_{worst_epoch}.pth")
-                if whether_remove(worst_epoch) and os.path.exists(epoch_model_path):
-                    os.remove(epoch_model_path)
-
             # update the symbol links of all the best models so far
             for i, epoch in enumerate(epoch_record['sorted_epochs']):
                 _best_model_pointer = f"{metric_name}_best.pth" if i == 0 else f"{metric_name}_best_{i + 1}.pth"
-                # create a soft link from the best model pointer to the model file of the current epoch
+                # create a soft link from the best model pointer to the model fi le of the current epoch
                 symlink_dst = os.path.join(self.model_save_path, _best_model_pointer)
                 if os.path.islink(symlink_dst) or os.path.exists(symlink_dst):
                     os.unlink(symlink_dst)
@@ -737,31 +741,45 @@ class ValidMonitor(Monitor):
                 os.unlink(symlink_dst)
             os.symlink(os.path.join(self.model_save_path, f"epoch_{epoch}.pth"), symlink_dst)
 
+        # remove the redundant model files
+        saved_epochs = self.saved_model_epoch.copy()
+        for epoch in saved_epochs:
+            epoch_model_path = os.path.join(self.model_save_path, f"epoch_{epoch}.pth")
+            if whether_remove(epoch) and os.path.exists(epoch_model_path):
+                os.remove(epoch_model_path)
+                if not os.path.exists(epoch_model_path):
+                    self.saved_model_epoch.remove(epoch)
+                else:
+                    epoch_message += f"Redundant model file 'epoch_{epoch}.pth' has not been successfully removed!\n"
+
         # --- Early-Stopping epoch number checking for the early-stopping metric --- #
-        best_epoch = metric_epoch_records[self.early_stopping_metric]['sorted_epochs'][0]
-        # refresh to 0 or add 1 depending on the comparison the best one and the second best one
-        if best_epoch == self.epoch:
-            epoch_message += f"{self.early_stopping_metric} of the current epoch no.{self.epoch} is the best so far.\n"
+        if len(metric_epoch_records[self.early_stopping_metric]['sorted_epochs']) != 0:
+            best_epoch = metric_epoch_records[self.early_stopping_metric]['sorted_epochs'][0]
+            # refresh to 0 or add 1 depending on the comparison the best one and the second best one
+            if best_epoch == self.epoch:
+                epoch_message += \
+                    f"{self.early_stopping_metric} of the current epoch no.{self.epoch} is the best so far.\n"
 
-            # compare the current performance and the last best performance
-            best_performance = self.best_model_performance[self.early_stopping_metric][best_epoch]
-            if self.is_better(best_performance, self.last_best_performance,
-                              mode=self.early_stopping_mode, threshold=self.early_stopping_threshold):
-                epoch_message += f"The early-stopping threshold {self.early_stopping_threshold} is reached, " \
-                                 "so the early-stopping epoch number is refreshed.\n"
-                self.early_stopping_epochs = 0
-                self.last_best_performance = best_performance
+                # compare the current performance and the last best performance
+                best_performance = self.best_model_performance[self.early_stopping_metric][best_epoch]
+                if self.is_better(best_performance, self.last_best_performance,
+                                  mode=self.early_stopping_mode, threshold=self.early_stopping_threshold):
+                    epoch_message += f"The early-stopping threshold {self.early_stopping_threshold} is reached, " \
+                                     "so the early-stopping epoch number is refreshed.\n"
+                    self.early_stopping_epochs = 0
+                    self.last_best_performance = best_performance
+                else:
+                    epoch_message += f"The early-stopping threshold {self.early_stopping_threshold} is not reached, " \
+                                     "so the early-stopping epoch number keeps increasing.\n"
+                    self.early_stopping_epochs += 1
+            # directly add 1 if the current epoch is not the best
             else:
-                epoch_message += f"The early-stopping threshold {self.early_stopping_threshold} is not reached, " \
-                                 "so the early-stopping epoch number keeps increasing.\n"
+                epoch_message += \
+                    f"No improvement of {self.early_stopping_metric} in the current epoch no.{self.epoch}.\n"
                 self.early_stopping_epochs += 1
-        # directly add 1 if the current epoch is not the best
-        else:
-            epoch_message += f"No improvement of {self.early_stopping_metric} in the current epoch no.{self.epoch}.\n"
-            self.early_stopping_epochs += 1
 
-        # report the updated early-stopping epoch number
-        epoch_message += f"The early-stopping epoch number has been updated to {self.early_stopping_epochs}.\n"
+            # report the updated early-stopping epoch number
+            epoch_message += f"The early-stopping epoch number has been updated to {self.early_stopping_epochs}.\n"
 
         # early-stopping check by the patience
         early_stopping_flag = False
@@ -778,7 +796,7 @@ class ValidMonitor(Monitor):
 
         Args:
             epoch_message:
-            worst_pop_flag:
+            metric_pop_flags:
 
         Returns:
 
@@ -788,12 +806,17 @@ class ValidMonitor(Monitor):
             # sum up the parameters of all best models
             avg_model = None
             for epoch in aver_epoch_list:
+                _tgt_model_path = os.path.join(self.model_save_path, f"epoch_{epoch}.pth")
+                # skip if the model doesn't exist
+                if not os.path.exists(_tgt_model_path):
+                    continue
+
                 _avg = None
                 # access self.model_save_path from the outer scope
                 if avg_model is not None:
-                    _avg = torch.load(os.path.join(self.model_save_path, f"epoch_{epoch}.pth"), map_location="cpu")
+                    _avg = torch.load(_tgt_model_path, map_location="cpu")
                 else:
-                    avg_model = torch.load(os.path.join(self.model_save_path, f"epoch_{epoch}.pth"), map_location="cpu")
+                    avg_model = torch.load(_tgt_model_path, map_location="cpu")
 
                 if _avg is not None:
                     for key in avg_model.keys():
@@ -834,49 +857,55 @@ class ValidMonitor(Monitor):
 
         return epoch_message
 
-    def finish_epoch(self, train_records: Dict):
+    def finish_epoch(self, train_records: Dict, valid_flag: bool, valid_per_epochs: int):
         """
         This function contains the logic of early stopping, best models updating, models averaging.
 
         """
         # ---- The Information Logging Part ---- #
-        # report the overall consuming time of the current validation epoch
-        epoch_message = f"The validation part of epoch no.{self.epoch} is finished in {time.time() - self.epoch_start_time:.2f}s.\n" \
-                        f"Summary of all validation steps:\n"
+        if valid_flag:
+            # report the overall consuming time of the current validation epoch
+            epoch_message = f"The validation part of epoch no.{self.epoch} is finished in " \
+                            f"{time.time() - self.epoch_start_time:.2f}s.\n" \
+                            f"Summary of all validation steps:\n"
 
-        # report the information of the consumed calculation time
-        epoch_message = self.record_consumed_time(epoch_message)
+            # report the information of the consumed calculation time
+            epoch_message = self.record_consumed_time(epoch_message)
 
-        # report the information of the consumed GPU memory
-        epoch_message = self.record_consumed_memory(epoch_message)
+            # report the information of the consumed GPU memory
+            epoch_message = self.record_consumed_memory(epoch_message)
 
-        if not self.dry_run:
-            # report the information of all the validation criteria
-            epoch_message = self.record_criteria(epoch_message)
+            if not self.dry_run:
+                # report the information of all the validation criteria
+                epoch_message = self.record_criteria(epoch_message)
 
-        # ---- The SnapShotting Part ---- #
-        for key in self.epoch_records.keys():
-            # only snapshot the time and memory info in the dry running mode
-            if self.dry_run and key != 'consumed_time':
-                continue
-            # skip the model visualization records
-            elif key in ['consumed_time', 'consumed_memory', 'criteria']:
-                # snapshot the epoch records so for to a curve figure
-                self.enqueue(
-                    dict(
-                        materials=copy.deepcopy(self.epoch_records[key]), plot_type='curve',
-                        epoch=self.epoch, xlabel="epoch", sep_save=False, subfolder_names=key
+            # ---- The SnapShotting Part ---- #
+            for key in self.epoch_records.keys():
+                # only snapshot the time and memory info in the dry running mode
+                if self.dry_run and key != 'consumed_time':
+                    continue
+                # skip the model visualization records
+                elif key in ['consumed_time', 'consumed_memory', 'criteria']:
+                    # snapshot the epoch records so for to a curve figure
+                    self.enqueue(
+                        dict(
+                            materials=copy.deepcopy(self.epoch_records[key]), plot_type='curve',
+                            epoch=self.epoch, xlabel="epoch", sep_save=False, subfolder_names=key,
+                            x_stride=valid_per_epochs
+                        )
                     )
-                )
 
-        # notify the snapshooter process of the new queue elements
-        self.event.set()
+            # notify the snapshooter process of the new queue elements
+            self.event.set()
+
+        else:
+            epoch_message = f"The validation part of epoch no.{self.epoch} is skipped.\n"
 
         # ---- The Model Saving and Early Stopping Part ---- #
         early_stopping_flag = False
         if not self.dry_run:
             # insert the current model into self.best_model_performance if needed
-            self.model_insert(train_records)
+            self.model_insert(train_records, valid_flag)
 
             # After inserting, deal with the worst model performance so far and check the early-stopping
             epoch_message, early_stopping_flag, metric_pop_flags = self.update_best_and_pop_worst(epoch_message)
@@ -935,23 +964,27 @@ class TrainValidMonitor(object):
     def valid_model_snapshot(self, epoch: int, sample_index: str, used_sample: Dict):
         self.valid_monitor.model_snapshot(epoch=epoch, sample_index=sample_index, used_sample=used_sample)
 
-    def finish_valid_epoch(self):
-        return self.valid_monitor.finish_epoch(train_records=self.train_monitor.epoch_records)
+    def finish_valid_epoch(self, valid_flag: bool, valid_per_epochs: int):
+        return self.valid_monitor.finish_epoch(train_records=self.train_monitor.epoch_records, valid_flag=valid_flag,
+                                               valid_per_epochs=valid_per_epochs)
 
-    def wait_empty_queues(self, sleep_time: int = 60):
+    def wait_empty_queues(self, sleep_time: int = 60, max_wait_round: int = 10):
         """
         Check whether the snapshooters of train_monitor and valid_monitor are still working.
         wait until the material queues of the snapshooters become empty.
 
         """
-        while not self.train_monitor.empty_queue() or not self.valid_monitor.empty_queue():
-            message = ""
-            if not self.train_monitor.empty_queue():
-                message += "The training snapshooter is still snapshotting. "
-            if not self.valid_monitor.empty_queue():
-                message += "The validation snapshooter is still snapshotting. "
-            self.logger.info(message + "Waiting for 1 minute......")
-            time.sleep(sleep_time)
+        if not self.train_monitor.empty_queue() or not self.valid_monitor.empty_queue():
+            for _ in range(max_wait_round):
+                message = ""
+                if not self.train_monitor.empty_queue():
+                    message += "The training snapshooter is still snapshotting. "
+                if not self.valid_monitor.empty_queue():
+                    message += "The validation snapshooter is still snapshotting. "
+                self.logger.info(message + "Waiting for 1 minute......")
+                time.sleep(sleep_time)
+            self.logger.info(f"The maximal waiting time {max_wait_round * sleep_time}s is reached, "
+                             f"so the snapshooters will be shut down......")
 
     def state_dict(self):
         return dict(
@@ -1027,35 +1060,10 @@ class TestMonitor(Monitor):
 
             # for other files, data needs to be saved to the disk in real time to reduce the memory burden
             else:
-                # create the file folder
-                folder_path = os.path.join(self.result_path, name)
-                os.makedirs(folder_path, exist_ok=True)
-
-                # save the feature vectors as .npy files
-                if result['format'].lower() == 'npy':
-                    for index, feat in zip(test_index, result['content']):
-                        if isinstance(feat, torch.Tensor):
-                            feat = to_cpu(feat, tgt='numpy')
-                        feat = feat.astype(np.float32)
-                        np.save(os.path.join(folder_path, f'{index}.npy'), feat)
-                # save the waveforms as .wav files, sampling rate needs to be given in the result Dict as 'sample_rate'
-                elif result['format'].lower() == 'wav':
-                    for index, wav in zip(test_index, result['content']):
-                        if isinstance(wav, torch.Tensor):
-                            wav = to_cpu(wav, tgt='numpy')
-                        sf.write(file=os.path.join(folder_path, f'{index}.wav'), data=wav,
-                                 samplerate=result['sample_rate'], format='WAV', subtype=sf.default_subtype('WAV'))
-                # save the waveforms as .flac files, sampling rate needs to be given in the result Dict as 'sample_rate'
-                elif result['format'].lower() == 'flac':
-                    for index, wav in zip(test_index, result['content']):
-                        if isinstance(wav, torch.Tensor):
-                            wav = to_cpu(wav, tgt='numpy')
-                        sf.write(file=os.path.join(folder_path, f'{index}.flac'), data=wav,
-                                 samplerate=result['sample_rate'], format='FLAC', subtype=sf.default_subtype('FLAC'))
-
-                # other file formats are not supported now
-                else:
-                    raise NotImplementedError
+                save_data_by_format(file_format=result['format'].lower(),
+                                    save_path=os.path.join(self.result_path, name),
+                                    file_name_list=test_index, file_content_list=result['content'],
+                                    sample_rate=result['sample_rate'] if 'sample_rate' in result.keys() else None)
 
         # --- Report the testing midway information to users --- #
         test_step_message = None
@@ -1137,17 +1145,17 @@ class TestMonitor(Monitor):
                     group_meta_info[meta_type][group].append(index)
 
         # --- Gather the checkpoint information of all the processes --- #
-        final_path = '.'.join(self.result_path.split('.')[:-1])
+        final_path = '/'.join(self.result_path.split('/')[:-1])
         os.makedirs(final_path, exist_ok=True)
 
         # load the checkpoint of rank0 and delete testing time information
-        self.load_state_dict(torch.load(os.path.join(final_path + '.0', 'checkpoint.pth'))['monitor'])
+        self.load_state_dict(torch.load(os.path.join(final_path, '.0', 'checkpoint.pth'))['monitor'])
         self.step_info.pop('group_time')
         self.step_info.pop('total_time')
 
         if self.distributed:
             for rank in range(1, torch.distributed.get_world_size()):
-                _tmp_dict = torch.load(os.path.join(final_path + f'.{rank}', 'checkpoint.pth'))['monitor']['step_info']
+                _tmp_dict = torch.load(os.path.join(final_path, f'.{rank}', 'checkpoint.pth'))['monitor']['step_info']
                 for key in self.step_info.keys():
                     self.step_info[key].update(_tmp_dict[key])
 
@@ -1175,12 +1183,12 @@ class TestMonitor(Monitor):
         # copy the files from the other ranks in the distributed setting
         if self.distributed:
             for rank in range(1, torch.distributed.get_world_size()):
-                for file_name in os.listdir(final_path + f'.{rank}'):
+                for file_name in os.listdir(os.path.join(final_path, f'.{rank}')):
                     # only consider the folders not named as 'figures'
-                    if os.path.isdir(os.path.join(final_path + f'.{rank}', file_name)) and file_name != 'figures':
+                    if os.path.isdir(os.path.join(final_path, f'.{rank}', file_name)) and file_name != 'figures':
                         # move all the files to the final_path once a time (shutil.move doesn't work)
-                        for data_file in os.listdir(os.path.join(final_path + f'.{rank}', file_name)):
-                            os.rename(src=os.path.join(final_path + f'.{rank}', file_name, data_file),
+                        for data_file in os.listdir(os.path.join(final_path, f'.{rank}', file_name)):
+                            os.rename(src=os.path.join(final_path, f'.{rank}', file_name, data_file),
                                       dst=os.path.join(final_path, file_name, data_file))
 
         # generate the data path files
@@ -1301,8 +1309,7 @@ class TestMonitor(Monitor):
             time.sleep(60)
 
         # copy the plotted figures into final_path
-        shutil.move(src=os.path.join(self.result_path, 'figures'),
-                    dst=os.path.join(final_path, 'figures'))
+        shutil.move(src=os.path.join(self.result_path, 'figures'), dst=os.path.join(final_path, 'figures'))
 
     def state_dict(self):
         """

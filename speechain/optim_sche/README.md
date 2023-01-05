@@ -65,17 +65,17 @@ optim_sches:
 
 ## API Document
 _Non-overridable backbone functions:_
-1. [speechain_optim_sche.abs.OptimScheduler.\_\_init__](https://github.com/ahclab/SpeeChain/tree/main/speechain/optim_sche#speechain_optim_scheabsoptimscheduler__init__self-optim_type-optim_conf-model-distributed-optim_loss-updated_modules-step_per_update-use_amp-accum_grad-ft_factor-grad_clip-grad_norm_type-sche_conf)
-2. [speechain.optim_sche.abs.OptimScheduler.step](https://github.com/ahclab/SpeeChain/tree/main/speechain/optim_sche#speechain_optim_scheabsoptimschedulersteplosses-time_func-optim_name-step_num)
-3. [speechain.optim_sche.abs.OptimScheduler.get_lr](https://github.com/ahclab/SpeeChain/tree/main/speechain/optim_sche#speechain_optim_scheabsoptimschedulerget_lrself)
-4. [speechain.optim_sche.abs.OptimScheduler.state_dict](https://github.com/ahclab/SpeeChain/tree/main/speechain/optim_sche#speechain_optim_scheabsoptimschedulerstate_dictself)
-5. [speechain.optim_sche.abs.OptimScheduler.load_state_dict](https://github.com/ahclab/SpeeChain/tree/main/speechain/optim_sche#speechain_optim_scheabsoptimschedulerload_state_dictself-state_dict)
-6. [speechain.optim_sche.abs.OptimScheduler.\_\_repr__](https://github.com/ahclab/SpeeChain/tree/main/speechain/optim_sche#speechain_optim_scheabsoptimscheduler__repr__self)
+   1. [speechain_optim_sche.abs.OptimScheduler.\_\_init__](https://github.com/ahclab/SpeeChain/tree/main/speechain/optim_sche#speechain_optim_scheabsoptimscheduler__init__self-optim_type-optim_conf-model-distributed-optim_loss-updated_modules-step_per_update-use_amp-accum_grad-ft_factor-grad_clip-grad_norm_type-sche_conf)
+   2. [speechain.optim_sche.abs.OptimScheduler.step](https://github.com/ahclab/SpeeChain/tree/main/speechain/optim_sche#speechain_optim_scheabsoptimschedulersteplosses-time_func-optim_name-step_num)
+   3. [speechain.optim_sche.abs.OptimScheduler.get_lr](https://github.com/ahclab/SpeeChain/tree/main/speechain/optim_sche#speechain_optim_scheabsoptimschedulerget_lrself)
+   4. [speechain.optim_sche.abs.OptimScheduler.state_dict](https://github.com/ahclab/SpeeChain/tree/main/speechain/optim_sche#speechain_optim_scheabsoptimschedulerstate_dictself)
+   5. [speechain.optim_sche.abs.OptimScheduler.load_state_dict](https://github.com/ahclab/SpeeChain/tree/main/speechain/optim_sche#speechain_optim_scheabsoptimschedulerload_state_dictself-state_dict)
+   6. [speechain.optim_sche.abs.OptimScheduler.\_\_repr__](https://github.com/ahclab/SpeeChain/tree/main/speechain/optim_sche#speechain_optim_scheabsoptimscheduler__repr__self)  
 
 _Overridable interface functions:_  
-1. [speechain.optim_sche.abs.OptimScheduler.sche_init](https://github.com/ahclab/SpeeChain/tree/main/speechain/optim_sche#speechain_optim_scheabsoptimschedulersche_initsche_conf)
-2. [speechain.optim_sche.abs.OptimScheduler.update_lr](https://github.com/ahclab/SpeeChain/tree/main/speechain/optim_sche#speechain_optim_scheabsoptimschedulerupdate_lrself-real_step)
-3. [speechain.optim_sche.abs.OptimScheduler.extra_repr_fn](https://github.com/ahclab/SpeeChain/tree/main/speechain/optim_sche#speechain_optim_scheabsoptimschedulerextra_repr_fnself)
+   1. [speechain.optim_sche.abs.OptimScheduler.sche_init](https://github.com/ahclab/SpeeChain/tree/main/speechain/optim_sche#speechain_optim_scheabsoptimschedulersche_initsche_conf)
+   2. [speechain.optim_sche.abs.OptimScheduler.update_lr](https://github.com/ahclab/SpeeChain/tree/main/speechain/optim_sche#speechain_optim_scheabsoptimschedulerupdate_lrself-real_step)
+   3. [speechain.optim_sche.abs.OptimScheduler.extra_repr_fn](https://github.com/ahclab/SpeeChain/tree/main/speechain/optim_sche#speechain_optim_scheabsoptimschedulerextra_repr_fnself)
 
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/speechain/optim_sche#table-of-contents)
 

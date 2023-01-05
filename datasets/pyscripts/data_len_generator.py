@@ -13,7 +13,7 @@ import numpy as np
 
 from typing import List
 from multiprocessing import Pool
-from speechain.utilbox.data_loading_util import read_data_by_path
+from speechain.utilbox.data_loading_util import read_data_by_path, parse_path_args, load_idx2data_file
 
 
 def parse():
@@ -38,6 +38,7 @@ def get_feat_length(idx2data: List[List[str]]):
 
 
 def main(src_file: str, ncpu: int, chunk_size: int = 1000):
+    src_file = parse_path_args(src_file)
     src_path = os.path.dirname(src_file)
     src_file_name = os.path.basename(src_file)
     tgt_file_name = '_'.join([src_file_name, 'len'])
@@ -45,7 +46,7 @@ def main(src_file: str, ncpu: int, chunk_size: int = 1000):
 
     # skip the length dumping process if there has already been a idx2wav_len or idx2feat_len
     if not os.path.exists(tgt_path):
-        idx2data = np.loadtxt(src_file, delimiter=" ", dtype=str)
+        idx2data = load_idx2data_file(src_file)
         _residue = len(idx2data) % chunk_size
         idx2data_chunk = idx2data[:-_residue].reshape(-1, chunk_size, idx2data.shape[-1]).tolist()
         idx2data_chunk.append(idx2data[-_residue:].tolist())
