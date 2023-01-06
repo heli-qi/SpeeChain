@@ -27,12 +27,12 @@ ngpu: 2
 # Group 4: Model Training
 train: False
 best_model_selection: !tuple (valid, accuracy, max, 10)
-early_stopping_patience: 15
+early_stopping_patience: 10
 last_model_number: !ref <early_stopping_patience>
 
 # Group 5: Real-time Model Visualization Snapshotting
-model_snapshot_number: 0
-model_snapshot_interval: 5
+visual_snapshot_number: 3
+visual_snapshot_interval: 5
 
 # Group 6: Model Testing
 test: True

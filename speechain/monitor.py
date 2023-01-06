@@ -1193,19 +1193,23 @@ class TestMonitor(Monitor):
 
         # generate the data path files
         for file_name in os.listdir(final_path):
-            # only consider the folders not named as 'figures'
-            if os.path.isdir(os.path.join(final_path, file_name)) and file_name != 'figures':
-                idx2path = []
-                for data_file in os.listdir(os.path.join(final_path, file_name)):
-                    data_index = '.'.join(data_file.split('.')[:-1])
-                    if data_index == '':
-                        continue
+            # only consider folders
+            if not os.path.isdir(os.path.join(final_path, file_name)):
+                continue
+            # only consider the folders not named as 'figures' and '.rank'
+            if file_name.startswith('.') or file_name == 'figures':
+                continue
+            idx2path = []
+            for data_file in os.listdir(os.path.join(final_path, file_name)):
+                data_index = '.'.join(data_file.split('.')[:-1])
+                if data_index == '':
+                    continue
 
-                    data_path = os.path.join(final_path, file_name, data_file)
-                    idx2path.append([data_index, data_path])
+                data_path = os.path.join(final_path, file_name, data_file)
+                idx2path.append([data_index, data_path])
 
-                idx2path = list(sorted(idx2path, key=lambda x: x[0]))
-                np.savetxt(os.path.join(final_path, f'idx2{file_name}'), idx2path, fmt="%s")
+            idx2path = list(sorted(idx2path, key=lambda x: x[0]))
+            np.savetxt(os.path.join(final_path, f'idx2{file_name}'), idx2path, fmt="%s")
 
         # --- Group-level Evaluation Report Production --- #
         result_path = os.path.join(final_path, "overall_results.md")

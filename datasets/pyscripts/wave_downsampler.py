@@ -20,8 +20,12 @@ from speechain.utilbox.data_loading_util import parse_path_args, load_idx2data_f
 def parse():
     parser = argparse.ArgumentParser(description='params')
     parser.add_argument('--sample_rate', type=int, default=16000)
-    parser.add_argument('--src_file', type=str, required=True)
-    parser.add_argument('--tgt_path', type=str, required=True)
+    parser.add_argument('--src_file', type=str,
+                        # required=True,
+                        default="datasets/libritts/data/wav/train-clean-100/idx2wav")
+    parser.add_argument('--tgt_path', type=str,
+                        # required=True,
+                        default="datasets/libritts/data/wav16000/train-clean-100")
     parser.add_argument('--chunk_size', type=int, default=1000,
                         help="The number of waveform instances packaged in a chunk when downsamping by multiple "
                              "processes. (default: 1000)")
@@ -69,12 +73,14 @@ def main(src_file: str, tgt_path: str, sample_rate: int, ncpu: int, chunk_size: 
     if not os.path.exists(idx2tgt_wav_path):
         # reshape the source waveform paths into individual chunks by the given chunk_size
         idx2src_wav = load_idx2data_file(src_file)
+        idx2src_wav = np.array([[idx, src_wav] for idx, src_wav in idx2src_wav.items()])
         _residue = len(idx2src_wav) % chunk_size
         idx2src_wav_chunk = idx2src_wav[:-_residue].reshape(-1, chunk_size, idx2src_wav.shape[-1]).tolist()
         idx2src_wav_chunk.append(idx2src_wav[-_residue:].tolist())
 
         # saving the downsampled audio files to the disk
         with Pool(ncpu) as executor:
+            os.makedirs(os.path.join(tgt_path, 'wav'), exist_ok=True)
             waveform_downsample_func = partial(waveform_downsample,
                                                tgt_path=os.path.join(tgt_path, 'wav'), sample_rate=sample_rate)
             idx2tgt_wav_chunk = executor.map(waveform_downsample_func, idx2src_wav_chunk)
