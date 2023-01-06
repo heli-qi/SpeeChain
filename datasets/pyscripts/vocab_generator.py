@@ -54,7 +54,7 @@ def parse():
 
 
 def save_token_vocab(save_path: str, text_path: str, txt_format: str, text2tokens_func, vocab_size: int,
-                     save_idx2text: bool = False):
+                     save_idx2text: bool = False, save_idx2text_len: bool = False):
     """
     Obtain and save the token vocabulary for char and word tokenizers.
     The tokens in the vocabulary are sorted in descending order by their occurrence frequency in the text data.
@@ -72,6 +72,7 @@ def save_token_vocab(save_path: str, text_path: str, txt_format: str, text2token
             The maximum number of tokens in the vocabulary.
             Useless if vocab_size is larger than the actual token number.
         save_idx2text: bool = False
+        save_idx2text_len: bool = False
 
     Returns:
         The modified save_path where the tokenizer configuration is attached at the end
@@ -114,6 +115,7 @@ def save_token_vocab(save_path: str, text_path: str, txt_format: str, text2token
         np.savetxt(text_token_path, [[idx, str(text_token)] for idx, text_token in idx2text_token.items()], fmt="%s")
         print(f"Tokenized text has been successfully saved to {text_token_path}.")
 
+    if save_idx2text_len:
         text_len_path = os.path.join(save_path, 'idx2text_len')
         np.savetxt(text_len_path, [[idx, len(text_token)] for idx, text_token in idx2text_token.items()], fmt="%s")
         print(f"The length of tokenized text has been successfully saved to {text_len_path}.")
@@ -123,7 +125,7 @@ def generate_vocab_char(save_path: str, text_path: str, txt_format: str, vocab_s
     # --- Vocabulary List Generation --- #
     save_token_vocab(
         save_path=save_path, text_path=text_path, txt_format=txt_format,
-        text2tokens_func=lambda x: list(x), vocab_size=vocab_size, save_idx2text=True
+        text2tokens_func=lambda x: list(x), vocab_size=vocab_size, save_idx2text_len=True
     )
 
 
@@ -171,7 +173,7 @@ def generate_vocab_g2p(save_path: str, text_path: str, txt_format: str, vocab_si
     # --- Vocabulary List Generation --- #
     save_token_vocab(
         save_path=save_path, text_path=text_path, txt_format=txt_format,
-        text2tokens_func=lambda x: g2p(x), vocab_size=vocab_size, save_idx2text=True
+        text2tokens_func=lambda x: g2p(x), vocab_size=vocab_size, save_idx2text=True, save_idx2text_len=True
     )
 
 
