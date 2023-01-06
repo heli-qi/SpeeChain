@@ -48,8 +48,8 @@ def parse():
 
     # Shared Arguments
     group = parser.add_argument_group("Shared Arguments")
-    group.add_argument('--vocoder', type=str, default='gl',
-                       help="The type of the vocoder you want to use to generate waveforms. (default: gl)")
+    group.add_argument('--vocoder', type=str, default='hifigan',
+                       help="The type of the vocoder you want to use to generate waveforms. (default: hifigan)")
     group.add_argument('--hypo_idx2feat', type=str, required=True,
                        help="The absolute path of the 'idx2feat' containing the addresses of all the hypothesis "
                             "acoustic features. This argument is required.")
@@ -74,11 +74,11 @@ def parse():
 
     # Neural Vocoder-specific Arguments
     group = parser.add_argument_group("Neural Vocoder-specific Arguments")
-    group.add_argument('--sample_rate', type=int, default=22050,
-                       help="The sampling rate of generated waveforms. (default: 22050)")
-    group.add_argument('--vocoder_train_data', type=str, default='ljspeech',
+    group.add_argument('--sample_rate', type=int, default=16000,
+                       help="The sampling rate of generated waveforms. (default: 16000)")
+    group.add_argument('--vocoder_train_data', type=str, default='libritts',
                        help="The dataset used to train the neural vocoder. "
-                            "This argument is required if your input vocoder is not 'gl'. (default: ljspeech)")
+                            "This argument is required if your input vocoder is not 'gl'. (default: libritts)")
     return parser.parse_args()
 
 
