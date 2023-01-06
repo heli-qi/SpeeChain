@@ -47,6 +47,7 @@ def main(src_file: str, ncpu: int, chunk_size: int = 1000):
     # skip the length dumping process if there has already been a idx2wav_len or idx2feat_len
     if not os.path.exists(tgt_path):
         idx2data = load_idx2data_file(src_file)
+        idx2data = np.array([[idx, data] for idx, data in idx2data.items()])
         _residue = len(idx2data) % chunk_size
         idx2data_chunk = idx2data[:-_residue].reshape(-1, chunk_size, idx2data.shape[-1]).tolist()
         idx2data_chunk.append(idx2data[-_residue:].tolist())

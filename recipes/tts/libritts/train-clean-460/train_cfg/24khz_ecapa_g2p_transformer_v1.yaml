@@ -6,12 +6,12 @@
 ### --- Reference Values --- ###
 # data-related
 dataset: libritts
-train_set: train-clean-100
+train_set: train-clean-460
 data_root: !ref datasets/<dataset>/data
 
 # waveform-related
 wav_format: wav
-sample_rate: 22050
+sample_rate: 24000
 
 # tokenizer-related
 txt_format: normal
@@ -20,7 +20,7 @@ token_num: full_tokens
 
 # model-related
 reduction_factor: 1
-spk_emb_dim: 512
+spk_emb_dim: 192
 norm_type: global
 
 layer_num: 6
@@ -81,7 +81,7 @@ model:
     frontend:
       type: mel_fbank
       conf:
-        sr: !ref <sample_rate>
+        sr: 22050
         mag_spec: True
         hop_length: 256
         win_length: 1024

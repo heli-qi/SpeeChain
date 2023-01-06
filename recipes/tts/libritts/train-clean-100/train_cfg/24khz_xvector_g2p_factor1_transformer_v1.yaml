@@ -5,13 +5,13 @@
 
 ### --- Reference Values --- ###
 # data-related
-dataset: librispeech
+dataset: libritts
 train_set: train-clean-100
 data_root: !ref datasets/<dataset>/data
 
 # waveform-related
 wav_format: wav
-sample_rate: 16000
+sample_rate: 24000
 
 # tokenizer-related
 txt_format: normal
@@ -19,8 +19,8 @@ token_type: g2p
 token_num: full_tokens
 
 # model-related
-reduction_factor: 4
-spk_emb_dim: 192
+reduction_factor: 1
+spk_emb_dim: 512
 norm_type: global
 
 layer_num: 6
@@ -31,7 +31,7 @@ dropout: 0.5
 trmf_dropout: 0.1
 
 # optimizer-related
-warmup_steps: 8000
+warmup_steps: 16000
 ### ------------------------ ###
 
 

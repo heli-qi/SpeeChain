@@ -16,7 +16,7 @@ data_root: !ref datasets/<dataset>/data
 
 # waveform-related
 wav_format: wav
-sample_rate: 22050
+sample_rate: 24000
 
 # tokenizer-related
 txt_format: librispeech

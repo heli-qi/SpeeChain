@@ -106,50 +106,53 @@ def main(src_file: str, result_path: str, spk_emb_model: str, batch_size: int, n
         result_path = os.path.dirname(src_idx2wav)
     else:
         result_path = parse_path_args(result_path)
-    # read the source idx2wav file into a Dict, str -> Dict[str, str]
-    src_idx2wav = load_idx2data_file(src_idx2wav)
 
-    # initialize the speaker embedding model and downloading path for speechbrain API
-    spk_emb_model = spk_emb_model.lower()
-    download_dir = parse_path_args("datasets/speech_text/spk_emb_models")
-    if spk_emb_model == 'ecapa':
-        speechbrain_args = dict(
-            source="speechbrain/spkrec-ecapa-voxceleb",
-            savedir=os.path.join(download_dir, 'spkrec-ecapa-voxceleb')
-        )
-    elif spk_emb_model == 'xvector':
-        speechbrain_args = dict(
-            source="speechbrain/spkrec-xvect-voxceleb",
-            savedir=os.path.join(download_dir, 'spkrec-xvect-voxceleb')
-        )
-    else:
-        raise ValueError(f"Unknown speaker embedding model ({spk_emb_model})! "
-                         f"Currently, spk_emb_model should be one of ['ecapa', 'xvector'].")
+    idx2spk_feat_path = os.path.join(result_path, f'idx2{spk_emb_model}_spk_feat')
+    # skip if idx2spk_feat has already existed
+    if not os.path.exists(idx2spk_feat_path):
+        # read the source idx2wav file into a Dict, str -> Dict[str, str]
+        src_idx2wav = load_idx2data_file(src_idx2wav)
 
-    # initialize the arguments for the execution function
-    extract_spk_feat_func = partial(extract_spk_feat, batch_size=batch_size, speechbrain_args=speechbrain_args,
-                                    save_path=os.path.join(result_path, spk_emb_model))
+        # initialize the speaker embedding model and downloading path for speechbrain API
+        spk_emb_model = spk_emb_model.lower()
+        download_dir = parse_path_args("datasets/speech_text/spk_emb_models")
+        if spk_emb_model == 'ecapa':
+            speechbrain_args = dict(
+                source="speechbrain/spkrec-ecapa-voxceleb",
+                savedir=os.path.join(download_dir, 'spkrec-ecapa-voxceleb')
+            )
+        elif spk_emb_model == 'xvector':
+            speechbrain_args = dict(
+                source="speechbrain/spkrec-xvect-voxceleb",
+                savedir=os.path.join(download_dir, 'spkrec-xvect-voxceleb')
+            )
+        else:
+            raise ValueError(f"Unknown speaker embedding model ({spk_emb_model})! "
+                             f"Currently, spk_emb_model should be one of ['ecapa', 'xvector'].")
 
-    device_list = get_idle_gpu(ngpu, id_only=True) if ngpu > 0 else [-1 for _ in range(ncpu)]
-    n_proc = len(device_list) if ngpu > 0 else ncpu
-    src_idx2wav = list(src_idx2wav.items())
-    func_args = [[dict(src_idx2wav[i::n_proc]), device_list[i]] for i in range(n_proc)]
+        # initialize the arguments for the execution function
+        extract_spk_feat_func = partial(extract_spk_feat, batch_size=batch_size, speechbrain_args=speechbrain_args,
+                                        save_path=os.path.join(result_path, spk_emb_model))
 
-    # # debugging use
-    # extraction_results = [extract_spk_feat_func(*i) for i in func_args]
+        device_list = get_idle_gpu(ngpu, id_only=True) if ngpu > 0 else [-1 for _ in range(ncpu)]
+        n_proc = len(device_list) if ngpu > 0 else ncpu
+        src_idx2wav = list(src_idx2wav.items())
+        func_args = [[dict(src_idx2wav[i::n_proc]), device_list[i]] for i in range(n_proc)]
 
-    # start the executing jobs
-    with Pool(n_proc) as executor:
-        extraction_results = executor.starmap(extract_spk_feat_func, func_args)
+        # # debugging use
+        # extraction_results = [extract_spk_feat_func(*i) for i in func_args]
 
-    # gather the results from all the processes
-    idx2spk_feat = {}
-    for _idx2spk_feat in extraction_results:
-        idx2spk_feat.update(_idx2spk_feat)
+        # start the executing jobs
+        with Pool(n_proc) as executor:
+            extraction_results = executor.starmap(extract_spk_feat_func, func_args)
 
-    # record the address of the .npy file of each vector
-    np.savetxt(os.path.join(result_path, f'idx2{spk_emb_model}_spk_feat'),
-               sorted(idx2spk_feat.items(), key=lambda x: x[0]), fmt='%s')
+        # gather the results from all the processes
+        idx2spk_feat = {}
+        for _idx2spk_feat in extraction_results:
+            idx2spk_feat.update(_idx2spk_feat)
+
+        # record the address of the .npy file of each vector
+        np.savetxt(idx2spk_feat_path, sorted(idx2spk_feat.items(), key=lambda x: x[0]), fmt='%s')
 
 
 if __name__ == '__main__':
