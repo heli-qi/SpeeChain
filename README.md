@@ -103,7 +103,7 @@ We recommend you first install *Anaconda* into your machine before using our too
 After the installation of *Anaconda*, please follow the steps below to deploy our toolkit on your machine:
 1. Find a path with enough disk memory space.
 2. Clone our toolkit by `git clone https://github.com/ahclab/SpeeChain.git`.
-3. Move to the root path of our toolkit by `cd SpeeChain`.
+3. Go to the root path of our toolkit by `cd SpeeChain`.
 4. Run `source envir_preparation.sh` to build the environment for SpeeChain toolkit. 
 After execution, a virtual environment named `speechain` will be created and two environmental variables `SPEECHAIN_ROOT` and `SPEECHAIN_PYTHON` will be initialized in your `~/.bashrc`.  
 **Note:** It must be executed in the root path `SpeeChain` and by the command `source` rather than `./envir_preparation.sh`.

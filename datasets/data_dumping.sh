@@ -14,7 +14,8 @@ function print_help_message {
   $0 \\ (The arguments in [] are optional while other arguments must be given by your run.sh.)
       [--start_step START_STEP] \\                          # Which step you would like to start from. (default: 1)
       [--stop_step STOP_STEP] \\                            # Which step you would like to end at. (default: 10000)
-      [--dataset_path DATASET_PATH] \\                      # The path of the existing dataset on your disk. If you have already downloaded the dataset, please give its absolute path (starting by a slash '/') by this argument. (default: none)
+      [--src_path SRC_PATH] \\                              # The path of the source dataset. If src_path is not given, the dataset will be downloaded to ${SPEECHAIN_ROOT}/datasets/{dataset_name}. If you have already downloaded the dataset, please give its absolute path (starting by a slash '/') by this argument. (default: none)
+      [--tgt_path TGT_PATH] \\                              # The metadata files will be generated to {tgt_path}/{dataset_name}. If tgt_path is not given, metadata files will be saved to ${SPEECHAIN_ROOT}/datasets/{dataset_name}. If you want to save metadata files elsewhere, please give its absolute path (starting by a slash '/') by this argument. (default: none)
       [--feat_type FEAT_TYPE] \\                            # The type of the feature you would like to dump. If given, its value should match the name of the folder in ${SPEECHAIN_ROOT}/config/feat/ (default: wav)
       [--feat_config FEAT_CONFIG] \\                        # The name of acoustic feature extraction configuration file under ${SPEECHAIN_ROOT}/config/feat/{feat_type}/. (default: none)
       [--sample_rate SAMPLE_RATE] \\                        # The sampling rate you want the waveforms to have. (default: none)
@@ -50,7 +51,8 @@ data_root=${SPEECHAIN_ROOT}/datasets
 # general arguments, their values are shared across different datasets
 start_step=1
 stop_step=10000
-dataset_path=
+src_path=
+tgt_path=
 dataset_name=
 feat_type=wav
 # empty feat_config means no feature extraction configuration
@@ -93,9 +95,13 @@ while getopts ":h-:" optchar; do
           val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
           stop_step=${val}
           ;;
-        dataset_path)
+        src_path)
           val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
-          dataset_path=${val}
+          src_path=${val}
+          ;;
+        tgt_path)
+          val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
+          tgt_path=${val}
           ;;
         feat_type)
           val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
@@ -199,25 +205,29 @@ if [ ${stop_step} -ge 8 ] && [ -z "${token_type}" ];then
    exit 1
 fi
 
+# --- Step0: Update the Root Path of Data if needed --- #
+if [ -z ${tgt_path} ];then
+  tgt_path=${data_root}
+fi
 
 # --- Step1: Data Downloading from the Internet --- #
-if [ -z ${dataset_path} ] && [ ${start_step} -le 1 ] && [ ${stop_step} -ge 1 ]; then
-  echo "Downloading the dataset from the Internet to ${data_root}/${dataset_name}/"
+if [ -z ${src_path} ] && [ ${start_step} -le 1 ] && [ ${stop_step} -ge 1 ]; then
+  echo "Downloading the dataset from the Internet to ${tgt_path}/${dataset_name}/"
   "${data_root}"/${dataset_name}/data_download.sh \
-    --download_path "${data_root}"/${dataset_name} \
+    --download_path "${tgt_path}"/${dataset_name} \
     ${download_args}
 fi
 
 
 # --- Step2: Meta Data Generation --- #
 if [ ${start_step} -le 2 ] && [ ${stop_step} -ge 2 ]; then
-  echo "Generate the metadata files of the dataset in ${data_root}/${dataset_name}/data/wav"
-  if [ -n "${dataset_path}" ];then
-    meta_generate_args="${meta_generate_args} --src_path ${dataset_path}"
+  echo "Generate the metadata files of the dataset in ${tgt_path}/${dataset_name}/data/wav"
+  if [ -n "${src_path}" ];then
+    meta_generate_args="${meta_generate_args} --src_path ${src_path}"
   fi
 
   ${SPEECHAIN_PYTHON} "${data_root}"/${dataset_name}/meta_generator.py \
-    --tgt_path "${data_root}"/${dataset_name}/data/wav \
+    --tgt_path "${tgt_path}"/${dataset_name}/data/wav \
     --txt_format ${txt_format} \
     ${meta_generate_args}
 fi
@@ -225,13 +235,13 @@ fi
 
 # --- Step3: Downsampling the audio files (optional) --- #
 if [ -n "${sample_rate}" ] && [ ${start_step} -le 3 ] && [ ${stop_step} -ge 3 ]; then
-  mkdir -p "${data_root}"/${dataset_name}/data/wav${sample_rate}
+  mkdir -p "${tgt_path}"/${dataset_name}/data/wav${sample_rate}
   for set in ${subsets}; do
-    echo "Downsampling the audio files in ${data_root}/${dataset_name}/data/wav/${set}/idx2wav to ${data_root}/${dataset_name}/data/wav${sample_rate}/${set}."
+    echo "Downsampling the audio files from ${tgt_path}/${dataset_name}/data/wav/${set}/idx2wav to ${tgt_path}/${dataset_name}/data/wav${sample_rate}/${set}."
     ${SPEECHAIN_PYTHON} "${pyscript_root}"/wave_downsampler.py \
       --sample_rate ${sample_rate} \
-      --src_file "${data_root}"/${dataset_name}/data/wav/${set}/idx2wav \
-      --tgt_path "${data_root}"/${dataset_name}/data/wav${sample_rate}/${set} \
+      --src_file "${tgt_path}"/${dataset_name}/data/wav/${set}/idx2wav \
+      --tgt_path "${tgt_path}"/${dataset_name}/data/wav${sample_rate}/${set} \
       --ncpu ${ncpu}
   done
 fi
@@ -245,14 +255,14 @@ if [ ${feat_type} != 'wav' ] && [ ${start_step} -le 4 ] && [ ${stop_step} -ge 4 
   fi
 
   for set in ${subsets}; do
-    echo "Generating acoustic features from ${data_root}/${dataset_name}/data/wav${sample_rate}/${set} to ${data_root}/${dataset_name}/data/${feat_type}/${feat_config}/${set}"
-    mkdir -p "${data_root}"/${dataset_name}/data/${feat_type}/${feat_config}/${set}
+    echo "Generating acoustic features from ${tgt_path}/${dataset_name}/data/wav${sample_rate}/${set} to ${tgt_path}/${dataset_name}/data/${feat_type}/${feat_config}/${set}"
+    mkdir -p "${tgt_path}"/${dataset_name}/data/${feat_type}/${feat_config}/${set}
 
     ${SPEECHAIN_PYTHON} "${pyscript_root}"/feat_extractor.py \
-      --idx2wav "${data_root}"/${dataset_name}/data/wav${sample_rate}/${set}/idx2wav \
+      --idx2wav "${tgt_path}"/${dataset_name}/data/wav${sample_rate}/${set}/idx2wav \
       --feat_type ${feat_type} \
       --feat_config "${config_root}"/${feat_type}/${feat_config}.yaml \
-      --feat_path "${data_root}"/${dataset_name}/data/${feat_type}/${feat_config}/${set} \
+      --feat_path "${tgt_path}"/${dataset_name}/data/${feat_type}/${feat_config}/${set} \
       --ncpu ${ncpu}
   done
 fi
@@ -267,11 +277,11 @@ if [ ${start_step} -le 5 ] && [ ${stop_step} -ge 5 ]; then
   fi
 
   for set in ${subsets}; do
-    echo "Generating data lengths from ${data_root}/${dataset_name}/data/${folder_name}/${set}/idx2${feat_type}
-    to ${data_root}/${dataset_name}/data/${folder_name}/${set}/idx2${feat_type}_len"
+    echo "Generating data lengths from ${tgt_path}/${dataset_name}/data/${folder_name}/${set}/idx2${feat_type}
+    to ${tgt_path}/${dataset_name}/data/${folder_name}/${set}/idx2${feat_type}_len"
 
     ${SPEECHAIN_PYTHON} "${pyscript_root}"/data_len_generator.py \
-      --src_file "${data_root}"/${dataset_name}/data/${folder_name}/${set}/idx2${feat_type} \
+      --src_file "${tgt_path}"/${dataset_name}/data/${folder_name}/${set}/idx2${feat_type} \
       --ncpu ${ncpu}
   done
 fi
@@ -280,8 +290,8 @@ fi
 # --- Step6: Speaker Embedding Extraction --- #
 if [ -n "${spk_emb_model}" ] && [ ${feat_type} == 'wav' ] && [ ${start_step} -le 6 ] && [ ${stop_step} -ge 6 ]; then
   for set in ${subsets}; do
-    echo "Generating speaker embedding from ${data_root}/${dataset_name}/data/${feat_type}${sample_rate}/${set}/idx2${feat_type}
-    to ${data_root}/${dataset_name}/data/${feat_type}${sample_rate}/${set}/idx2${spk_emb_model}_spk_feat"
+    echo "Generating speaker embedding from ${tgt_path}/${dataset_name}/data/${feat_type}${sample_rate}/${set}/idx2${feat_type}
+    to ${tgt_path}/${dataset_name}/data/${feat_type}${sample_rate}/${set}/idx2${spk_emb_model}_spk_feat"
 
     args=
     if [ -n "${ngpu}" ];then
@@ -289,7 +299,7 @@ if [ -n "${spk_emb_model}" ] && [ ${feat_type} == 'wav' ] && [ ${start_step} -le
     fi
 
     ${SPEECHAIN_PYTHON} "${pyscript_root}"/spk_feat_extractor.py \
-      --src_file "${data_root}"/${dataset_name}/data/${feat_type}${sample_rate}/${set}/idx2${feat_type} \
+      --src_file "${tgt_path}"/${dataset_name}/data/${feat_type}${sample_rate}/${set}/idx2${feat_type} \
       --spk_emb_model "${spk_emb_model}" \
       --ncpu ${ncpu} \
       ${args}
@@ -328,9 +338,9 @@ if [ ${start_step} -le 8 ] && [ ${stop_step} -ge 8 ]; then
   fi
 
   if [ -f "${data_root}/${dataset_name}/meta_post_processor.py" ]; then
-    echo "Post-processing the statistical information in ${data_root}/${dataset_name}/data/${folder_name}."
+    echo "Post-processing the metadata information in ${tgt_path}/${dataset_name}/data/${folder_name}."
     ${SPEECHAIN_PYTHON} "${data_root}"/${dataset_name}/meta_post_processor.py \
-      --src_path "${data_root}"/${dataset_name}/data/${folder_name} \
+      --src_path "${tgt_path}"/${dataset_name}/data/${folder_name} \
       ${meta_post_process_args}
   fi
 fi
@@ -339,10 +349,10 @@ fi
 # --- Step9: Vocabulary List and Sentence Length Generation --- #
 if [ ${start_step} -le 9 ] && [ ${stop_step} -ge 9 ]; then
   for set in ${vocab_src_subsets}; do
-    echo "Generating ${token_type} vocabulary by ${data_root}/${dataset_name}/data/wav/${set}/idx2${txt_format}_text......"
+    echo "Generating ${token_type} vocabulary by ${tgt_path}/${dataset_name}/data/wav/${set}/idx2${txt_format}_text......"
     ${SPEECHAIN_PYTHON} "${pyscript_root}"/vocab_generator.py \
-      --text_path "${data_root}"/${dataset_name}/data/wav/${set} \
-      --save_path "${data_root}"/${dataset_name}/data/${token_type}/${set} \
+      --text_path "${tgt_path}"/${dataset_name}/data/wav/${set} \
+      --save_path "${tgt_path}"/${dataset_name}/data/${token_type}/${set} \
       --token_type ${token_type} \
       --txt_format ${txt_format} \
       ${vocab_generate_args}

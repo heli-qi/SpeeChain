@@ -14,7 +14,8 @@ function print_help_message {
   $0 \\ (The arguments in [] are optional while other arguments must be given by your run.sh.)
       [--start_step START_STEP] \\                          # Which step you would like to start from. (default: 1)
       [--stop_step STOP_STEP] \\                            # Which step you would like to end at. (default: 10000)
-      [--dataset_path DATASET_PATH] \\                      # The path of the existing LJSpeech dataset on your disk. If you have already downloaded the dataset, please give its absolute path (starting by a slash '/') by this argument. (default: none)
+      [--src_path SRC_PATH] \\                              # The path of the existing LJSpeech dataset on your disk. If you have already downloaded the dataset, please give its absolute path (starting by a slash '/') by this argument. (default: none)
+      [--tgt_path TGT_PATH] \\                              # The metadata files will be generated to {tgt_path}/ljspeech. If tgt_path is not given, metadata files will be saved to ${SPEECHAIN_ROOT}/datasets/ljspeech. If you want to save metadata files elsewhere, please give its absolute path (starting by a slash '/') by this argument. (default: none)
       [--feat_type FEAT_TYPE] \\                            # The type of the feature you would like to dump. (default: wav)
       [--feat_config FEAT_CONFIG] \\                        # The name of acoustic feature extraction configuration file. (default: none)
       [--sample_rate SAMPLE_RATE] \\                        # The sampling rate you want the waveforms to have. (default: none)
@@ -42,7 +43,8 @@ datatype_root=${SPEECHAIN_ROOT}/datasets
 # execution-related arguments
 start_step=1
 stop_step=10000
-dataset_path=
+src_path=
+tgt_path=
 ncpu=8
 # acoustic feature-related arguments
 feat_type=wav
@@ -87,9 +89,13 @@ while getopts ":h-:" optchar; do
           val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
           stop_step=${val}
           ;;
-        dataset_path)
+        src_path)
           val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
-          dataset_path=${val}
+          src_path=${val}
+          ;;
+        tgt_path)
+          val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
+          tgt_path=${val}
           ;;
         feat_type)
           val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
@@ -190,7 +196,8 @@ fi
 "${datatype_root}"/data_dumping.sh \
   --start_step "${start_step}" \
   --stop_step "${stop_step}" \
-  --dataset_path "${dataset_path}" \
+  --src_path "${src_path}" \
+  --tgt_path "${tgt_path}" \
   --feat_type "${feat_type}" \
   --feat_config "${feat_config}" \
   --sample_rate "${sample_rate}" \

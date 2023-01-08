@@ -231,7 +231,7 @@ For example,
 ## How to Dump a Dataset on your Machine
 For dumping an existing dataset, 
 1. Change the absolute paths at the top of `${SPEECHAIN_ROOT}/datasets/data_dumping.sh` to the corresponding places on your machine.
-2. Move to the folder of your target dataset `${SPEECHAIN_ROOT}/datasets/{dataset_name}`
+2. Go to the folder of your target dataset `${SPEECHAIN_ROOT}/datasets/{dataset_name}`
 3. Change the absolute paths at the top of `${SPEECHAIN_ROOT}/datasets/{dataset_name}/run.sh` to the corresponding places on your machine.
 4. Run `./run.sh -h` to familiarize yourself with the involved arguments.
 5. Run `./run.sh` to dump your target dataset (add some arguments if needed).
@@ -279,16 +279,23 @@ In `${SPEECHAIN_ROOT}/datasets/data_dumping.sh`, there are 8 steps to dump your 
 
 ## How to Use the Existing Dataset on my Disk
 1. **If your dataset is one of the supported datasets in this toolkit:**
-   1. move to the specific folder of your target dataset in `${SPEECHAIN_ROOT}/datasets/`
+   1. Go to the specific folder of your target dataset in `${SPEECHAIN_ROOT}/datasets/` (e.g. if you want to dump LibriTTS, please go to `${SPEECHAIN_ROOT}/datasets/libritts`)
    2. Run `bash run.sh --help` to familiarize yourself with the arguments
-   3. Run `bash run.sh --dataset_path {the-path-of-your-existing-dataset}` with your personal argument setting.  
-      **Note:** `dataset_path` should be an absolute path starting by a slash '/'.
+   3. Run `bash run.sh --src_path {the-path-of-your-existing-dataset}` with your personal argument setting.  
+      **Note:** 
+      1. `src_path` should be an absolute path starting by a slash '/'.
+      2. The content of `src_path` should be exactly the same with the one downloaded from the internet. (e.g. the folder `LibriTTS` for the data downloaded from `https://www.openslr.org/resources/60`)
 2. **If your dataset is not supported by this toolkit:**  
    
+**PS:** 
+If you want to save the generated metadata files outside the toolkit folder, please attach the argument `--tgt_path {the-path-you-want-to-save-files}` to `bash run.sh`. 
+Please make sure that `tgt_path` is an absolute path starting with a slash '/'.
+
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/datasets#table-of-contents)
 
 ## How to Extract Speaker Embedding by my own model
 If you want to use the pretrained speaker embedding model on your machine, please
-1. move to the specific folder of your target dataset in `${SPEECHAIN_ROOT}/datasets/`
+1. Go to the specific folder of your target dataset in `${SPEECHAIN_ROOT}/datasets/`
 2. Run `bash run.sh` with your personal argument setting.  
     **Note:** don't give the argument `--spk_emb_model`
 3. Write your own extraction script. You can use the metadata files `idx2wav` and `idx2wav_len` to read and organize the audio files. 
@@ -301,10 +308,12 @@ Please save all the speaker embedding vectors in a specific folder under the dir
       1. save each vector to an individual `.npy` file
       2. save all vectors to a `.npz` file where the index of each vector is exactly the one in `idx2spk_feat`.
 
+👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/datasets#table-of-contents)
+
 ## How to Contribute a New Dataset
 If the dataset that you want to use for your experiments is not included here, 
 you could make the dumping pipeline of your target dataset by the following instructions:
-1. Move to `${SPEECHAIN_ROOT}/datasets/`.
+1. Go to `${SPEECHAIN_ROOT}/datasets/`.
 2. Run `./data_dumping.sh -h` to familiarize yourself with the involved arguments.
 3. Make a new sub-folder in `${SPEECHAIN_ROOT}/datasets/` with the folder name as the name of your target dataset.
 4. Make a new ***data_download.sh*** in `${SPEECHAIN_ROOT}/datasets/{dataset_name}` to download your target dataset from the internet.
