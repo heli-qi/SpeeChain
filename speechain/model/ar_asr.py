@@ -147,9 +147,9 @@ class ARASR(Model):
         # --- 1. Module-independent Initialization --- #
         # initialize the tokenizer
         if token_type.lower() == 'char':
-            self.tokenizer = CharTokenizer(token_vocab)
+            self.tokenizer = CharTokenizer(token_vocab, copy_path=self.result_path)
         elif token_type.lower() == 'sentencepiece':
-            self.tokenizer = SentencePieceTokenizer(token_vocab)
+            self.tokenizer = SentencePieceTokenizer(token_vocab, copy_path=self.result_path)
         else:
             raise ValueError(f"Unknown token_type {token_type}. "
                              f"Your input token_type should be one of ['char', 'sentencepiece'].")

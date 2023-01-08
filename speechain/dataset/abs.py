@@ -219,8 +219,9 @@ class Dataset(torch.utils.data.Dataset, ABC):
                     removed_sorted_data = meta_sorted_data[:-selection_num]
                 # 'middle' means the instances with the minimal and maximal meta values will be excluded
                 elif selection_mode == 'middle':
-                    removed_sorted_data = meta_sorted_data[:int((meta_sorted_data.shape[0] - selection_num) / 2)] + \
-                                          meta_sorted_data[-int((meta_sorted_data.shape[0] - selection_num) / 2):]
+                    removed_sorted_data = np.concatenate(
+                        (meta_sorted_data[:int((meta_sorted_data.shape[0] - selection_num) / 2)],
+                         meta_sorted_data[-int((meta_sorted_data.shape[0] - selection_num) / 2):]), axis=0)
                 else:
                     raise ValueError
 

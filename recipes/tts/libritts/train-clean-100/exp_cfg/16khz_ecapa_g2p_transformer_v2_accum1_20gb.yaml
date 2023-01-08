@@ -13,8 +13,8 @@ infer_root: config/infer/tts
 # Group 1: Calculation and System Backend
 seed: 0
 num_workers: 1
-pin_memory: False
-non_blocking: False
+pin_memory: True
+non_blocking: True
 
 # Group 2: Gradient Calculation and Back-Propagation
 accum_grad: 1
@@ -25,7 +25,7 @@ grad_clip: 1.0
 ngpu: 2
 
 # Group 4: Model Training
-train: False
+train: True
 num_epochs: 1000
 best_model_selection:
   - !tuple (train, loss, min, 10)
@@ -35,13 +35,13 @@ last_model_number: !ref <early_stopping_patience>
 valid_per_epochs: 10
 
 # Group 5: Real-time Model Visualization Snapshotting
-model_snapshot_number: 0
-model_snapshot_interval: 5
+visual_snapshot_number: 3
+visual_snapshot_interval: 10
 
 # Group 6: Model Testing
-test: True
+test: False
 test_model: 10_train_loss_average
 
 # Group 7: Experiment .yaml Configuration File
-data_cfg: !ref <exp_root>/data_cfg/16khz_xvector_g2p_train_1.3e7.yaml
-train_cfg: !ref <exp_root>/train_cfg/16khz_xvector_g2p_factor4_transformer_default-loss.yaml
+data_cfg: !ref <exp_root>/data_cfg/16khz_ecapa_g2p_train_1e7.yaml
+train_cfg: !ref <exp_root>/train_cfg/16khz_ecapa_g2p_factor4_transformer_v2.yaml

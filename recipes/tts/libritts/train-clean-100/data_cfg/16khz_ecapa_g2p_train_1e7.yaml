@@ -6,19 +6,20 @@
 # The testing set is the same with the validation set, so that we can tune the decoding hyperparameters before the final evaluation
 
 
-### --- Reference Values --- ###
+### --- Reference Zone --- ###
 # These values can be referred and referred by the representer '!ref' to be part of the value contents
 dataset: libritts
 train_set: train-clean-100
 valid_set: dev-clean
 
-wav_format: wav
 txt_format: normal
+wav_format: wav16000
 token_num: full_tokens
+spk_emb_model: ecapa
 data_root: !ref datasets/<dataset>/data
 
 # batch-related
-batch_len: 5e6
+batch_len: 1e7
 ### ---------------------- ###
 
 
@@ -31,7 +32,7 @@ train:
             main_data:
                 feat: !ref <data_root>/<wav_format>/<train_set>/idx2wav
                 text: !ref <data_root>/g2p/<train_set>/<token_num>/<txt_format>/idx2text
-                spk_ids: !ref <data_root>/<wav_format>/<train_set>/idx2spk
+                spk_feat: !ref <data_root>/<wav_format>/<train_set>/idx2<spk_emb_model>_spk_feat
             data_selection:
                 - min
                 - 0.95
@@ -52,7 +53,7 @@ valid:
             main_data:
                 feat: !ref <data_root>/<wav_format>/<valid_set>/idx2wav
                 text: !ref <data_root>/g2p/<valid_set>/<token_num>/<txt_format>/idx2text
-                spk_ids: !ref <data_root>/<wav_format>/<valid_set>/idx2spk
+                spk_feat: !ref <data_root>/<wav_format>/<valid_set>/idx2<spk_emb_model>_spk_feat
             data_selection:
                 - min
                 - 0.95

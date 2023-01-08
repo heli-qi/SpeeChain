@@ -107,7 +107,13 @@ After the installation of *Anaconda*, please follow the steps below to deploy ou
 4. Run `source envir_preparation.sh` to build the environment for SpeeChain toolkit. 
 After execution, a virtual environment named `speechain` will be created and two environmental variables `SPEECHAIN_ROOT` and `SPEECHAIN_PYTHON` will be initialized in your `~/.bashrc`.  
 **Note:** It must be executed in the root path `SpeeChain` and by the command `source` rather than `./envir_preparation.sh`.
-6. Read the [handbook](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#speechain-handbook) and start your journey in SpeeChain!
+5. Run `conda activate speechain` in your terminal to examine the installation of Conda environment. 
+If the environment `speechain` is not successfully activated, please run `conda env create -f environment.yaml` to manually install it.
+6. Run `echo ${SPEECHAIN_ROOT}`, and `echo ${SPEECHAIN_PYTHON}` in your terminal to examine the environmental variables. 
+If either one is empty, please manually add them into your `~/.bashrc` by `export SPEECHAIN_ROOT=xxx` or `export SPEECHAIN_PYTHON=xxx` and then `source ~/.bashrc`.  
+   1. `${SPEECHAIN_ROOT}` should be the absolute path of the `SpeeChain` folder you have just downloaded (i.e. `/xxx/SpeeChain` where `/xxx/` is the parent directory);  
+   2. `${SPEECHAIN_PYTHON}` should be the absolute path of the python compiler in the folder of `speechain` environment (i.e. `/xxx/anaconda3/envs/speechain/bin/python3.X` where `/xxx/` is where your `anaconda3` is placed and `X` depends on `environment.yaml`).
+8. Read the [handbook](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#speechain-handbook) and start your journey in SpeeChain!
 
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain#table-of-contents)
 

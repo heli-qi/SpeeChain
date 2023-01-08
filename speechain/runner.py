@@ -82,7 +82,7 @@ class Runner(object):
             "--config",
             type=str,
             # default=None,
-            default="recipes/tts/libritts/train-clean-100/exp_cfg/debug.yaml",
+            default="recipes/offline_tts2asr/libritts_librispeech/train-clean-100-360/exp_cfg/ecapa-wav_ratio-filter-v3_transformer-wide_v1_accum1_40gb.yaml",
             help="The path of the all-in-one experiment configuration file. You can write all the arguments in this "
                  "all-in-one file instead of giving them to `runner.py` by command lines."
         )
@@ -820,7 +820,7 @@ class Runner(object):
             min_train_batch_num = min(train_batch_nums)
             if len(train_batch_nums) != 1:
                 logger.info(f"Your training iterators have different batch numbers: {train_batch_nums}. "
-                            f"The real batch number during training is set to {min_train_batch_num}!")
+                            f"The actual batch number during training is set to {min_train_batch_num}!")
         # single dataloader scenario
         elif isinstance(iterators['train'], Iterator):
             min_train_batch_num = len(iterators['train'])
@@ -834,7 +834,7 @@ class Runner(object):
             min_valid_batch_num = min(valid_batch_nums)
             if len(valid_batch_nums) != 1:
                 logger.info(f"Your validation iterators have different batch numbers: {valid_batch_nums}. "
-                            f"The real batch number during validation is set to {min_valid_batch_num}!")
+                            f"The actual batch number during validation is set to {min_valid_batch_num}!")
         # single dataloader scenario
         elif isinstance(iterators['valid'], Iterator):
             min_valid_batch_num = len(iterators['valid'])

@@ -14,11 +14,12 @@ function print_help_message {
   $0 \\ (The arguments in [] are optional while other arguments must be given by your run.sh.)
       [--start_step START_STEP] \\                          # Which step you would like to start from. (default: 1)
       [--stop_step STOP_STEP] \\                            # Which step you would like to end at. (default: 10000)
+      [--dataset_path DATASET_PATH] \\                      # The path of the existing LJSpeech dataset on your disk. If you have already downloaded the dataset, please give its absolute path (starting by a slash '/') by this argument. (default: none)
       [--feat_type FEAT_TYPE] \\                            # The type of the feature you would like to dump. (default: wav)
       [--feat_config FEAT_CONFIG] \\                        # The name of acoustic feature extraction configuration file. (default: none)
       [--sample_rate SAMPLE_RATE] \\                        # The sampling rate you want the waveforms to have. (default: none)
       [--comp_chunk_ext COMP_CHUNK_EXT] \\                  # The file extension of the compressed chunk files. (default: none)
-      [--token_type TOKEN_TYPE] \\                          # The type of the token you want your tokenizer to have. (default: sentencepiece)
+      [--token_type TOKEN_TYPE] \\                          # The type of the token you want your tokenizer to have. (default: g2p)
       [--txt_format TXT_FORMAT] \\                          # The text processing format for the transcripts in the dataset. (default: normal)
       [--ncpu NCPU] \\                                      # The number of processes used for all the multiprocessing jobs. (default: 8)
       [--vocab_size VOCAB_SIZE] \\                          # The size of the tokenizer vocabulary. (default: 1000 for dump_part '100'; 5000 for dump_part '460'; 10000 for dump_part '960')
@@ -41,13 +42,18 @@ datatype_root=${SPEECHAIN_ROOT}/datasets
 # execution-related arguments
 start_step=1
 stop_step=10000
+dataset_path=
 ncpu=8
 # acoustic feature-related arguments
 feat_type=wav
+# empty feat_config means no feature extraction configuration
 feat_config=
+# empty sample_rate means the sampling rate of the original LJSpeech (22.05kHz) will be used
 sample_rate=
 # tokenization-related arguments
-token_type=char
+token_type=g2p
+# empty vocab_size will be automatically initialized if token_type is 'word' or 'sentencepiece':
+# 1000 for dump_part '100'; 5000 for dump_part '460'; 10000 for dump_part '960'
 vocab_size=
 # sentencepiece-specific arguments, won't be used if token_type is 'char' or 'word'
 model_type=bpe
@@ -80,6 +86,10 @@ while getopts ":h-:" optchar; do
         stop_step)
           val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
           stop_step=${val}
+          ;;
+        dataset_path)
+          val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
+          dataset_path=${val}
           ;;
         feat_type)
           val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
@@ -180,6 +190,7 @@ fi
 "${datatype_root}"/data_dumping.sh \
   --start_step "${start_step}" \
   --stop_step "${stop_step}" \
+  --dataset_path "${dataset_path}" \
   --feat_type "${feat_type}" \
   --feat_config "${feat_config}" \
   --sample_rate "${sample_rate}" \

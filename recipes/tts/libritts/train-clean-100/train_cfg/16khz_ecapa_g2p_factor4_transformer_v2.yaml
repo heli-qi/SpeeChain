@@ -21,7 +21,7 @@ token_num: full_tokens
 # model-related
 reduction_factor: 4
 spk_emb_dim: 192
-norm_type: group
+norm_type: global
 
 layer_num: 6
 head_num: 8
@@ -41,7 +41,6 @@ model:
     customize_conf:
       token_type: !ref <token_type>
       token_vocab: !ref <data_root>/<token_type>/<train_set>/<token_num>/<txt_format>/vocab
-      spk_list: !ref <data_root>/<wav_format>/<train_set>/spk_list
       reduction_factor: !ref <reduction_factor>
       return_att_head_num: 2
       return_att_layer_num: 2
@@ -83,14 +82,10 @@ model:
       type: mel_fbank
       conf:
         sr: !ref <sample_rate>
-        mag_spec: True
-        hop_length: 256
-        win_length: 1024
+        preemphasis: 0.97
+        hop_length: 0.010
+        win_length: 0.025
         n_mels: 80
-        fmin: 0
-        fmax: 8000
-        log_base: null
-        clamp: 1e-5
 
     normalize:
       norm_type: !ref <norm_type>

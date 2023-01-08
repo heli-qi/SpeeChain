@@ -5,6 +5,7 @@
 """
 from abc import ABC, abstractmethod
 
+import os
 import torch
 import numpy as np
 
@@ -22,7 +23,7 @@ class Tokenizer(ABC):
 
     """
 
-    def __init__(self, token_vocab: str, **tokenizer_conf):
+    def __init__(self, token_vocab: str, copy_path: str = None, **tokenizer_conf):
         """
         This function registers some shared member variables for all _Tokenizer_ subclasses:
         1. `self.idx2token`: the mapping Dict from the token index to token string.
@@ -36,26 +37,46 @@ class Tokenizer(ABC):
         Args:
             token_vocab: str
                 The path where the token vocabulary is placed.
+            copy_path: str = None
+                The path where you want to paste the given token vocabulary as a backup.
+                If not given, no backup will be saved.
             **tokenizer_conf:
                 The arguments used by tokenizer_init_fn() for your customized Tokenizer initialization.
         """
-        self.token_vocab = parse_path_args(token_vocab)
+        # initialize the path of the token vocabulary
+        if copy_path is not None:
+            copy_path = parse_path_args(copy_path)
+            if os.path.exists(os.path.join(copy_path, 'token_vocab')):
+                self.token_vocab = os.path.join(copy_path, 'token_vocab')
+            else:
+                self.token_vocab = parse_path_args(token_vocab)
+        else:
+            self.token_vocab = parse_path_args(token_vocab)
+
+        # register token-related variables
         self.idx2token = dict(enumerate(np.loadtxt(self.token_vocab, dtype=str, delimiter="\n")))
         self.token2idx = dict(map(reversed, self.idx2token.items()))
         self.vocab_size = len(self.token2idx)
-
         self.sos_eos_idx = self.token2idx['<sos/eos>']
         self.ignore_idx = self.token2idx['<blank>']
         self.unk_idx = self.token2idx['<unk>']
 
-        self.tokenizer_init_fn(**tokenizer_conf)
+        # save the backup if copy_path is given
+        if copy_path is not None:
+            np.savetxt(os.path.join(copy_path, 'token_vocab'), list(self.token2idx.keys()), fmt="%s")
 
-    def tokenizer_init_fn(self, **tokenizer_conf):
+        # call the hook function for customized initialization
+        self.tokenizer_init_fn(copy_path=copy_path, **tokenizer_conf)
+
+    def tokenizer_init_fn(self, copy_path: str = None, **tokenizer_conf):
         """
         This hook interface function initializes the customized part of a _Tokenizer_ subclass if had.
         This interface is not mandatory to be overridden.
 
         Args:
+            copy_path: str = None
+                The path where you want to paste the given tokenizer model as a backup.
+                If not given, no backup will be saved.
             **tokenizer_conf:
                 The arguments used by tokenizer_init_fn() for your customized Tokenizer initialization.
                 For more details, please refer to the docstring of your target Tokenizer subclass.

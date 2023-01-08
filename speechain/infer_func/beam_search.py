@@ -360,7 +360,7 @@ def beam_searching(enc_feat: torch.Tensor,
         enc_feat = enc_feat[beam_idx]
         enc_feat_mask = enc_feat_mask[beam_idx]
 
-    # --- Post-processing --- #
+    # --- 6. Post-processing --- #
     # for the predictions that end without an eos token at the end because of the max length
     for batch_idx in range(batch_size):
         # skip the sentences that get enough hypotheses ending with eos
@@ -373,7 +373,7 @@ def beam_searching(enc_feat: torch.Tensor,
             final_tokens = hypo_text[effective_beam_id][1:].detach().cpu()
             generated_hyps[batch_idx].add(final_tokens, final_score)
 
-    # --- Length Calculation --- #
+    # --- 7. Length Calculation --- #
     hypo_text_len = hypo_text_len.new(batch_size * sent_per_beam)
     hypo_text_list = []
     hypo_text_confid = []
@@ -391,7 +391,7 @@ def beam_searching(enc_feat: torch.Tensor,
             hypo_text_list.append(best_hyp)
             hypo_text_confid.append(_hypo[0])
 
-    # --- Padding --- #
+    # --- 8. Padding --- #
     # some sentences are shorter than the maximal length
     if hypo_text_len.min().item() != hypo_text_len.max().item():
         sent_max_len = min(hypo_text_len.max().item(), hypo_maxlen)

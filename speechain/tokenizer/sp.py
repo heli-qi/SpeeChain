@@ -4,6 +4,8 @@
     Date: 2022.07
 """
 import os
+import shutil
+
 import torch
 import sentencepiece as spm
 
@@ -20,23 +22,47 @@ class SentencePieceTokenizer(Tokenizer):
 
     """
 
-    def tokenizer_init_fn(self, token_model: str = None):
+    def tokenizer_init_fn(self, copy_path: str = None, token_model: str = None):
         """
         Initialize the sentencepiece tokenizer model.
 
         Args:
+            copy_path: str = None
+                The path where you want to paste the given tokenizer model as a backup.
+                If not given, no backup will be saved.
             token_model: str = None
                 The path of your specified sentencepiece tokenizer model file.
                 If not given, the model will automatically selected in the same folder as the given token_vocab
 
         """
-        # the sentencepiece model file is automatically selected in the same folder as the given vocab
-        if token_model is None:
-            token_model = os.path.join(os.path.dirname(self.token_vocab), 'model')
+        # initialize the path of the tokenizer model
+        if copy_path is not None:
+            copy_path = parse_path_args(copy_path)
+            if os.path.exists(os.path.join(copy_path, 'token_model')):
+                self.token_model = os.path.join(copy_path, 'token_model')
+            else:
+                # the sentencepiece model file is automatically selected in the same folder as the given vocab
+                if token_model is None:
+                    self.token_model = os.path.join(os.path.dirname(self.token_vocab), 'model')
+                else:
+                    self.token_model = parse_path_args(token_model)
+        else:
+            # the sentencepiece model file is automatically selected in the same folder as the given vocab
+            if token_model is None:
+                self.token_model = os.path.join(os.path.dirname(self.token_vocab), 'model')
+            else:
+                self.token_model = parse_path_args(token_model)
 
-        # tokenization by the sentencepiece package
+        # initialize the tokenizer model by the sentencepiece package
         self.sp_model = spm.SentencePieceProcessor()
-        self.sp_model.load(parse_path_args(token_model))
+        self.sp_model.load(self.token_model)
+
+        # save the backup if copy_path is given
+        if copy_path is not None:
+            try:
+                shutil.copy(src=self.token_model, dst=os.path.join(copy_path, 'token_model'))
+            except shutil.SameFileError:
+                pass
 
     def tensor2text(self, tensor: torch.LongTensor):
         """

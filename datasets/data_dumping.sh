@@ -14,6 +14,7 @@ function print_help_message {
   $0 \\ (The arguments in [] are optional while other arguments must be given by your run.sh.)
       [--start_step START_STEP] \\                          # Which step you would like to start from. (default: 1)
       [--stop_step STOP_STEP] \\                            # Which step you would like to end at. (default: 10000)
+      [--dataset_path DATASET_PATH] \\                      # The path of the existing dataset on your disk. If you have already downloaded the dataset, please give its absolute path (starting by a slash '/') by this argument. (default: none)
       [--feat_type FEAT_TYPE] \\                            # The type of the feature you would like to dump. If given, its value should match the name of the folder in ${SPEECHAIN_ROOT}/config/feat/ (default: wav)
       [--feat_config FEAT_CONFIG] \\                        # The name of acoustic feature extraction configuration file under ${SPEECHAIN_ROOT}/config/feat/{feat_type}/. (default: none)
       [--sample_rate SAMPLE_RATE] \\                        # The sampling rate you want the waveforms to have. (default: none)
@@ -22,7 +23,7 @@ function print_help_message {
       [--token_type TOKEN_TYPE] \\                          # The type of the token you want your tokenizer to have. (default: char)
       [--txt_format TXT_FORMAT] \\                          # The text processing format for the transcripts in the dataset. (default: normal)
       [--ncpu NCPU] \\                                      # The number of processes used for all the multiprocessing jobs. (default: 8)
-      [--ngpu NGPU] \\                                      # The number of GPUs used only for speaker embedding extraction. (default: 0)
+      [--ngpu NGPU] \\                                      # The number of GPUs used only for speaker embedding extraction. (default: 1)
       --dataset_name DATASET_NAME \\                        # The name of the dataset folder you want to dump.
       --subsets SUBSETS \\                                  # A blank-separated string which defines the subsets of the target dataset you want to dump
       --download_args DOWNLOAD_ARGS \\                      # The arguments you want to give to the data_download.sh.
@@ -49,16 +50,21 @@ data_root=${SPEECHAIN_ROOT}/datasets
 # general arguments, their values are shared across different datasets
 start_step=1
 stop_step=10000
+dataset_path=
 dataset_name=
 feat_type=wav
+# empty feat_config means no feature extraction configuration
 feat_config=
+# empty sample_rate means the sampling rate of the original audio files in the dataset will be used
 sample_rate=
+# empty spk_emb_model means no speaker embedding will be extracted
 spk_emb_model=
+# empty comp_chunk_ext means no data compression will be done
 comp_chunk_ext=
 token_type=char
 txt_format=normal
 ncpu=8
-ngpu=
+ngpu=1
 
 # specific arguments, their values need to be designed for each dataset
 # the additional arguments for data downloading in step1
@@ -86,6 +92,10 @@ while getopts ":h-:" optchar; do
         stop_step)
           val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
           stop_step=${val}
+          ;;
+        dataset_path)
+          val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
+          dataset_path=${val}
           ;;
         feat_type)
           val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
@@ -191,7 +201,7 @@ fi
 
 
 # --- Step1: Data Downloading from the Internet --- #
-if [ ${start_step} -le 1 ] && [ ${stop_step} -ge 1 ]; then
+if [ -z ${dataset_path} ] && [ ${start_step} -le 1 ] && [ ${stop_step} -ge 1 ]; then
   echo "Downloading the dataset from the Internet to ${data_root}/${dataset_name}/"
   "${data_root}"/${dataset_name}/data_download.sh \
     --download_path "${data_root}"/${dataset_name} \
@@ -201,9 +211,13 @@ fi
 
 # --- Step2: Meta Data Generation --- #
 if [ ${start_step} -le 2 ] && [ ${stop_step} -ge 2 ]; then
-  echo "Generate the statistical information of the dataset in ${data_root}/${dataset_name}/data/wav"
+  echo "Generate the metadata files of the dataset in ${data_root}/${dataset_name}/data/wav"
+  if [ -n "${dataset_path}" ];then
+    meta_generate_args="${meta_generate_args} --src_path ${dataset_path}"
+  fi
+
   ${SPEECHAIN_PYTHON} "${data_root}"/${dataset_name}/meta_generator.py \
-    --src_path "${data_root}"/${dataset_name}/data/wav \
+    --tgt_path "${data_root}"/${dataset_name}/data/wav \
     --txt_format ${txt_format} \
     ${meta_generate_args}
 fi

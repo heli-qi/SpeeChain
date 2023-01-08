@@ -35,8 +35,8 @@ last_model_number: !ref <early_stopping_patience>
 valid_per_epochs: 10
 
 # Group 5: Real-time Model Visualization Snapshotting
-model_snapshot_number: 0
-model_snapshot_interval: 5
+visual_snapshot_number: 3
+visual_snapshot_interval: 10
 
 # Group 6: Model Testing
 test: False
@@ -44,4 +44,4 @@ test_model: 10_train_loss_average
 
 # Group 7: Experiment .yaml Configuration File
 data_cfg: !ref <exp_root>/data_cfg/16khz_ecapa_g2p_train_1.3e7.yaml
-train_cfg: !ref <exp_root>/train_cfg/16khz_ecapa_g2p_factor4_transformer_default-loss.yaml
+train_cfg: !ref <exp_root>/train_cfg/16khz_ecapa_g2p_factor4_transformer_v1.yaml

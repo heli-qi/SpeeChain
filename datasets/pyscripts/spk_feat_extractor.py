@@ -32,9 +32,9 @@ def parse():
     parser.add_argument("--spk_emb_model", type=str, required=True,
                         help="The speaker recognition model you want to use to extract the speaker embeddings. This "
                              "argument is required and its value must be either 'xvector' or 'ecapa'.")
-    parser.add_argument('--batch_size', type=int, default=1,
+    parser.add_argument('--batch_size', type=int, default=10,
                         help="The number of utterances you want to pass to the speaker embedding model in a batch for "
-                             "parallel computation. (default: 1)")
+                             "parallel computation. (default: 10)")
     parser.add_argument("--ncpu", type=int, default=8,
                         help="The number of processes you want to use to extract speaker embeddings. If ngpu is given, "
                              "this argument won't be used. (default: 8)")

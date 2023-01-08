@@ -141,9 +141,9 @@ class ARTTS(Model):
         # --- 1. Model-Customized Part Initialization --- #
         # initialize the tokenizer
         if token_type == 'char':
-            self.tokenizer = CharTokenizer(token_vocab)
+            self.tokenizer = CharTokenizer(token_vocab, copy_path=self.result_path)
         elif token_type == 'g2p':
-            self.tokenizer = GraphemeToPhonemeTokenizer(token_vocab)
+            self.tokenizer = GraphemeToPhonemeTokenizer(token_vocab, copy_path=self.result_path)
         else:
             raise ValueError
 

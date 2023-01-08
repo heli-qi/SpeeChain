@@ -19,7 +19,9 @@ If you want to contribute a new dataset, we would appreciate it if you could fol
     8. [spk_list](https://github.com/ahclab/SpeeChain/tree/main/datasets#spk_list)
     9. [idx2gen](https://github.com/ahclab/SpeeChain/tree/main/datasets#idx2gen)
 3. [**How to Dump a Dataset on your Machine**](https://github.com/ahclab/SpeeChain/tree/main/datasets#how-to-dump-a-dataset-on-your-machine)
-4. [**How to Contribute a New Dataset**](https://github.com/ahclab/SpeeChain/tree/main/datasets#how-to-contribute-a-new-dataset)
+4. [**How to Use the Existing Dataset on my Disk**](https://github.com/ahclab/SpeeChain/tree/main/datasets#how-to-use-the-existing-dataset-on-my-disk)
+5. [**How to Extract Speaker Embedding by my own model**](https://github.com/ahclab/SpeeChain/tree/main/datasets#how-to-extract-speaker-embedding-by-my-own-model)
+6. [**How to Contribute a New Dataset**](https://github.com/ahclab/SpeeChain/tree/main/datasets#how-to-contribute-a-new-dataset)
 
 ## File System
 ```
@@ -274,6 +276,30 @@ In `${SPEECHAIN_ROOT}/datasets/data_dumping.sh`, there are 8 steps to dump your 
      **Note**: For subword tokenizers, there will be an additional file named `model` in `${SPEECHAIN_ROOT}/datasets/{dataset_name}/token_type/{src_subset}/{token_config}/{txt_format}` because the subword tokenization is done by third-party packages in this toolkit.
 
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/datasets#table-of-contents)
+
+## How to Use the Existing Dataset on my Disk
+1. **If your dataset is one of the supported datasets in this toolkit:**
+   1. move to the specific folder of your target dataset in `${SPEECHAIN_ROOT}/datasets/`
+   2. Run `bash run.sh --help` to familiarize yourself with the arguments
+   3. Run `bash run.sh --dataset_path {the-path-of-your-existing-dataset}` with your personal argument setting.  
+      **Note:** `dataset_path` should be an absolute path starting by a slash '/'.
+2. **If your dataset is not supported by this toolkit:**  
+   
+
+## How to Extract Speaker Embedding by my own model
+If you want to use the pretrained speaker embedding model on your machine, please
+1. move to the specific folder of your target dataset in `${SPEECHAIN_ROOT}/datasets/`
+2. Run `bash run.sh` with your personal argument setting.  
+    **Note:** don't give the argument `--spk_emb_model`
+3. Write your own extraction script. You can use the metadata files `idx2wav` and `idx2wav_len` to read and organize the audio files. 
+Please save all the speaker embedding vectors in a specific folder under the directory of `idx2wav` and give a metadata file named `idx2spk_feat` for data reference.  
+    **Note:** 
+   1. For the file format of `idx2spk_feat`, please click [here](https://github.com/ahclab/SpeeChain/tree/main/datasets#idx2spk_feat) for reference.
+   2. Please keep the same data index with `idx2wav` in your `idx2spk_feat`.
+   3. Each speaker embedding vector should be in the shape of `[1, spk_feat_dim]`.
+   4. Speaker embedding vectors could be saved in two ways:
+      1. save each vector to an individual `.npy` file
+      2. save all vectors to a `.npz` file where the index of each vector is exactly the one in `idx2spk_feat`.
 
 ## How to Contribute a New Dataset
 If the dataset that you want to use for your experiments is not included here, 

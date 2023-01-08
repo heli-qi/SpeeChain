@@ -10,6 +10,8 @@ from typing import Dict, List
 
 import numpy as np
 
+from speechain.utilbox.import_util import parse_path_args
+
 
 class SpeechTextMetaGenerator(ABC):
     """
@@ -21,13 +23,13 @@ class SpeechTextMetaGenerator(ABC):
     def parse(self):
         """
         Declaration function for the general arguments shared by all dataset implementations.
-        There are two shared general arguments here: 'src_path' and 'txt_format'.
+        There are 3 shared general arguments here: 'src_path', 'tgt_path', and 'txt_format'.
 
         """
         parser = argparse.ArgumentParser(description='params')
         group = parser.add_argument_group("General Arguments for Statistical Information Generation.")
-        group.add_argument('--src_path', type=str, required=True,
-                           help="The path where the original dataset is placed.")
+        group.add_argument('--src_path', type=str, default=None, help="The path where the original dataset is placed.")
+        group.add_argument('--tgt_path', type=str, required=True, help="The path where the metadata files are saved.")
         group.add_argument('--txt_format', type=str, default='normal',
                            help="The text processing format controlling how to process the transcript sentence of "
                                 "each utterance before saving them into 'idx2text' and 'text'. (default: normal)")
@@ -87,25 +89,30 @@ class SpeechTextMetaGenerator(ABC):
         """
         # --- 0. Argument Initialization --- #
         args = vars(self.parse())
-        src_path = args.pop('src_path')
+        tgt_path = args.pop('tgt_path')
+        if args['src_path'] is None:
+            args['src_path'] = tgt_path
         txt_format = args['txt_format']
 
         # --- 1. Meta Data Generation (meta data dict) --- #
-        meta_dict = self.generate_meta_dict(src_path, **args)
+        assert args['src_path'].startswith('/'), "Please start your input 'dataset_path' with a slash '/'."
+        args['src_path'] = parse_path_args(args['src_path'])
+        meta_dict = self.generate_meta_dict(**args)
 
         # --- 2. Save all the statistical information to the disk --- #
+        tgt_path = parse_path_args(tgt_path)
         for subset in meta_dict.keys():
             assert 'idx2wav' in meta_dict[subset].keys() and f'idx2{txt_format}_text' in meta_dict[subset].keys(), \
                 f"Your generate_meta_dict() implementation must return at least idx2wav, idx2{txt_format}_text " \
                 f"as the file names."
 
-            subset_path = os.path.join(src_path, subset)
+            subset_path = os.path.join(tgt_path, subset)
             os.makedirs(subset_path, exist_ok=True)
             print(f"Saving statistic data files {list(meta_dict[subset].keys())} of subset {subset} to {subset_path}/")
 
             # each key acts as the file name while the corresponding value is the content of the file
             for meta_name, meta_content in meta_dict[subset].items():
-                file_path = os.path.join(src_path, subset, meta_name)
+                file_path = os.path.join(tgt_path, subset, meta_name)
                 np.savetxt(file_path, meta_content if isinstance(meta_content, List) else list(meta_content.items()),
                            fmt='%s')
 
