@@ -18,7 +18,7 @@ function print_help_message {
       [--gpus GPUS] \\                                       # The GPUs you want to specify. (default: none)
       [--num_workers NUM_WORKERS] \\                         # The name of worker processes for data loading. (default: 1)
       [--resume RESUME] \\                                   # Whether to continue the unfinished evaluation. If true, the data loading strategy should remain the same as the last time. (default: false)
-      [--long_filter LONG_FILTER] \\                         # Whether to filter out long sentences with the largest text_len. (default: true)
+      [--long_filter LONG_FILTER] \\                         # Whether to filter out long sentences with the largest text_len. (default: false)
       [--filter_ratio FILTER_RATIO] \\                       # How many shorter utterances you want to retain. (default: 0.95)
       [--tts_infer_cfg TTS_INFER_CFG] \\                     # The configuration for TTS inference. If not given, infer_cfg in {tts_model_path}/exp_cfg.yaml will be used. (default: none)
       [--syn_result_path SYN_RESULT_PATH] \\                 # The path where you want to place the synthetic pseudo utterances. (default: recipes/offline_tts2asr/tts_syn_speech)
@@ -39,7 +39,7 @@ tts_model_path=
 tts_infer_cfg=
 syn_result_path=recipes/offline_tts2asr/tts_syn_speech
 
-long_filter=true
+long_filter=false
 filter_ratio=0.95
 
 ngpu=1

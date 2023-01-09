@@ -8,6 +8,14 @@ download_path=${PWD}
 # whether to remove the downloaded data package after unzipping, default to remain the packages
 package_removal=false
 
+function print_help_message {
+  echo "usage:
+  $0 \\ (The arguments in [] are optional while other arguments must be given by your run.sh.)
+    --download_path DOWNLOAD_PATH \\     # The path to place the downloaded dataset. (default: \$PWD)
+    [--package_removal PACKAGE_REMOVAL] # whether to remove the downloaded data package after unzipping. (default: false)" >&2
+  exit 1
+}
+
 ### get args from the command line ###
 while getopts ":h-:" optchar; do
   case "${optchar}" in
@@ -21,16 +29,17 @@ while getopts ":h-:" optchar; do
           val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
           package_removal=${val}
           ;;
-        ?)
-          echo "Unknown variable $OPTARG"
+        help)
+          print_help_message
+          ;;
+        *)
+          echo "Unknown variable --$OPTARG"
           exit 1 ;;
       esac
       ;;
     h)
-      echo "usage: $0 \\
-      --download_path DOWNLOAD_PATH \\     # The path to place the downloaded dataset. (default: \$PWD)
-      [--package_removal PACKAGE_REMOVAL] # whether to remove the downloaded data package after unzipping. (default: false)" >&2
-      exit 1 ;;
+      print_help_message
+      ;;
     *)
       echo "Please refer to an argument by '--'."
       exit 1 ;;

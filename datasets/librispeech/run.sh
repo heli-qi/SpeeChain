@@ -168,8 +168,9 @@ while getopts ":h-:" optchar; do
         help)
           print_help_message
           ;;
-        ?)
-          echo "Unknown variable $OPTARG"
+        *)
+          echo "Unknown variable --$OPTARG"
+          exit 1
           ;;
       esac
       ;;
@@ -178,6 +179,7 @@ while getopts ":h-:" optchar; do
       ;;
     *)
       echo "Please refer to an argument by '--'."
+      exit 1
       ;;
   esac
 done
