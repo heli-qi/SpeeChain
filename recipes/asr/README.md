@@ -235,24 +235,27 @@ model:
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/recipes/asr#table-of-contents)
 
 ## How to train an ASR model
-Suppose that we want to train an ASR model by the configuration `${SPEECHAIN_ROOT}/recipes/asr/librispeech/train-clean-100/exp_cfg/transformer-narrow_v1_accum1_ngpu2.yaml`.
+Suppose that we want to train an ASR model by the configuration `${SPEECHAIN_ROOT}/recipes/asr/librispeech/train-clean-100/exp_cfg/transformer-narrow_accum1_20gb.yaml`.
 1. Train the ASR model on your target training set
    ```
    cd ${SPEECHAIN_ROOT}/recipes/asr/librispeech/train-clean-100
-   bash run.sh --train true --exp_cfg transformer-narrow_v1_accum1_ngpu2 (--ngpu x --gpus x,x)
+   bash run.sh --train true --exp_cfg transformer-narrow_accum1_20gb (--ngpu x --gpus x,x)
    ```
    **Note:** Please take a look at the comments in the configuration file to make sure that your computational equipments fit the configuration before training the model.
    If your equipments don't match the configuration, please adjust it by `--ngpu` and `--gpus`.
 2. Tune the inference hyperparameters on the corresponding validation set
    ```
-   bash run.sh --test true --exp_cfg transformer-narrow_v1_accum1_ngpu2 --data_cfg validtune_clean
+   bash run.sh --test true --exp_cfg transformer-narrow_accum1_20gb --data_cfg validtune_dev-clean
    ```
    **Note:** `--data_cfg` is used to change the data loading configuration from the original one for training in `exp_cfg` to the one for validation tuning.
 3. Evaluate the trained ASR model on the official test sets
    ```
-   bash run.sh --test true --exp_cfg transformer-narrow_v1_accum1_ngpu2 --data_cfg test_clean+other --infer_cfg "{the-best-configuration-you-get-during-validation-tuning}"
+   bash run.sh --test true --exp_cfg transformer-narrow_v1_accum1_ngpu2 --infer_cfg "{the-best-configuration-you-get-during-validation-tuning}"
    ```
-   **Note:** If the optimal `infer_cfg` tuned on the validation set is too complicated to be given in the terminal, please modify `infer_cfg` in `exp_cfg` before executing this job.
+   **Note:** There are two ways to specify the optimal `infer_cfg` tuned on the validation set:
+   1. Change `infer_cfg` in `${SPEECHAIN_ROOT}/recipes/asr/librispeech/train-clean-100/exp_cfg/transformer-narrow_accum1_20gb.yaml`.
+   2. Give a parsable string as the value for `--infer_cfg` in the terminal. For example, `{beam_size:16,temperature:1.5}` can be converted into a dictionary with two key-value items (`beam_size:16` and `temperature:1.5`).  
+   For more details about how to give the parsable string that can be converted into a dictionary, please refer to [**here**](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#convertable-arguments-in-the-terminal) for instructions.
 
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/recipes/asr#table-of-contents)
 

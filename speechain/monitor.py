@@ -595,7 +595,7 @@ class ValidMonitor(Monitor):
         if valid_metrics is not None:
             self.record_step_info('criteria', valid_metrics)
 
-    def model_snapshot(self, epoch: int, sample_index: str, used_sample: Dict):
+    def model_snapshot(self, epoch: int, domain: str, sample_index: str, used_sample: Dict):
         """
 
         Args:
@@ -611,7 +611,7 @@ class ValidMonitor(Monitor):
             self.epoch_records[sample_index] = dict()
 
         # get the visualization logs for model snapshotting
-        vis_logs = self.model(batch_data=used_sample, epoch=epoch,
+        vis_logs = self.model(batch_data=used_sample, epoch=epoch, domain=domain,
                               epoch_records=self.epoch_records, sample_index=sample_index,
                               snapshot_interval=self.visual_snapshot_interval)
 
@@ -961,8 +961,8 @@ class TrainValidMonitor(object):
     def valid_step(self, valid_metrics: Dict[str, torch.Tensor]):
         self.valid_monitor.step(valid_metrics=valid_metrics)
 
-    def valid_model_snapshot(self, epoch: int, sample_index: str, used_sample: Dict):
-        self.valid_monitor.model_snapshot(epoch=epoch, sample_index=sample_index, used_sample=used_sample)
+    def valid_model_snapshot(self, epoch: int, domain: str, sample_index: str, used_sample: Dict):
+        self.valid_monitor.model_snapshot(epoch=epoch, domain=domain, sample_index=sample_index, used_sample=used_sample)
 
     def finish_valid_epoch(self, valid_flag: bool, valid_per_epochs: int):
         return self.valid_monitor.finish_epoch(train_records=self.train_monitor.epoch_records, valid_flag=valid_flag,

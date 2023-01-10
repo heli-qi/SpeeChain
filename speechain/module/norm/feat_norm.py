@@ -86,6 +86,11 @@ class FeatureNormalization(Module):
         Returns:
 
         """
+        if self.norm_type == 'group':
+            assert group_ids is not None, \
+                "You are using group-level feature normalization, but group_ids is not given. " \
+                "Please check 'data_cfg' in your configuration."
+
         batch_size = feat.size(0)
 
         # --- Mean and Standard Variance Initialization --- #
@@ -101,10 +106,7 @@ class FeatureNormalization(Module):
 
         # --- Perform Normalization based on Different branches --- #
         # utterance-level normalization or group-level normalization without group_ids
-        if self.norm_type == 'utterance' or (self.norm_type == 'group' and group_ids is None):
-            if self.training and (self.norm_type == 'group' and group_ids is None):
-                warnings.warn("You are training group-level feature normalization without giving group_ids, "
-                              "so it's replaced by the utterance-level normalization now!")
+        if self.norm_type == 'utterance':
             feat = feat - curr_means.unsqueeze(1) if curr_means is not None else feat
             feat = feat / curr_stds.unsqueeze(1) if curr_stds is not None else feat
 

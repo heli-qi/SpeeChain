@@ -80,7 +80,8 @@ def read_data_by_path(data_path: str, return_tensor: bool = False, return_sample
         return data
 
 
-def load_idx2data_file(file_path: str, data_type: type = str, separator: str = ' ') -> Dict[str, Any]:
+def load_idx2data_file(file_path: str, data_type: type = str, separator: str = ' ', do_separate: bool = True) \
+        -> Dict[str, Any]:
     """
     This function loads one file named as 'idx2XXX' from the disk into a dictionary.
 
@@ -91,6 +92,8 @@ def load_idx2data_file(file_path: str, data_type: type = str, separator: str = '
             The Python built-in data type of the key value of the returned dictionary.
         separator: str = " "
             The separator between the data instance index and the data value in each line of the 'idx2data' file.
+        do_separate: bool = True
+            Whether separate each row by the given separator
 
     Returns: Dict[str, str]
         In each key-value item, the key is the index of a data instance and the value is the target data.
@@ -100,10 +103,15 @@ def load_idx2data_file(file_path: str, data_type: type = str, separator: str = '
     with open(parse_path_args(file_path), mode='r') as f:
         data = f.readlines()
     # (n,) np.ndarray -> (n, 2) np.ndarray. Then, the index and sentence are separated by the first blank
-    data = np.array([row.replace('\n', '').split(separator, 1) for row in data], dtype=np.str)
+    data = np.array([row.replace('\n', '').split(separator, 1) if do_separate else row.replace('\n', '')
+                     for row in data], dtype=np.str)
 
-    # (n, 2) np.ndarray -> Dict[str, str]
-    return dict(zip(data[:, 0], data[:, 1].astype(data_type)))
+    if len(data.shape) == 2:
+        # (n, 2) np.ndarray -> Dict[str, str]
+        return dict(zip(data[:, 0], data[:, 1].astype(data_type)))
+    else:
+        # (n,) np.ndarray -> Dict[str, str]
+        return dict(enumerate(data))
 
 
 def read_idx2data_file_to_dict(path_dict: Dict[str, str or List[str]]) -> (Dict[str, str], List[str]):

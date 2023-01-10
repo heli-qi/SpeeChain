@@ -10,6 +10,7 @@ import torch
 import numpy as np
 
 from speechain.utilbox.import_util import parse_path_args
+from speechain.utilbox.data_loading_util import load_idx2data_file
 
 
 class Tokenizer(ABC):
@@ -54,7 +55,7 @@ class Tokenizer(ABC):
             self.token_vocab = parse_path_args(token_vocab)
 
         # register token-related variables
-        self.idx2token = dict(enumerate(np.loadtxt(self.token_vocab, dtype=str, delimiter="\n")))
+        self.idx2token = load_idx2data_file(self.token_vocab, do_separate=False)
         self.token2idx = dict(map(reversed, self.idx2token.items()))
         self.vocab_size = len(self.token2idx)
         self.sos_eos_idx = self.token2idx['<sos/eos>']

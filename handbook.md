@@ -44,7 +44,11 @@ Please refer to [**here**](https://github.com/ahclab/SpeeChain/tree/main/dataset
 
 
 ### How to prepare configuration files
+Please refer to [**here**](https://github.com/ahclab/SpeeChain/tree/main/recipes#recipes-folder-of-the-speechain-toolkit) for some configuration templates in those `exp_cfg` folders.
+
+
 In order to avoid messy and unreadable configuration setting in the terminal, SpeeChain provides the following services to simplify the configuration setting.
+(The following contents are not urgent for you to learn. If you don't want to jump into details too much right now, please go to the [**next step**](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#how-to-train-and-evaluate-a-model))
 
 #### Flexible Path Parsing Services
 In SpeeChain, the path arguments can be given in 3 ways:
@@ -173,118 +177,92 @@ In SpeeChain, we wrap the conventional _.yaml_ file and provides some advanced !
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#table-of-contents)
 
 
-#### Hierarchical Configuration File
-The configuration files in this toolkit are divided into the following 4 parts to improve their reusability:
-1. **Data loading and batching configuration** `data_cfg`:  
-    `data_cfg` defines how the SpeeChain framework fetches the raw data from the disk and organizes them into individual batches for model training or testing. 
-    These configuration files can be shared by different models in the folder of each dataset setting, i.e., `SPEECHAIN_ROOT/recipes/{dataset_name}/{setting_name}/data_cfg`.  
-    For more details about the arguments, please refer to the [_Iterator_ README.md](https://github.com/ahclab/SpeeChain/tree/main/speechain/iterator#configuration-file-format) and [_Dataset_ README.md](https://github.com/ahclab/SpeeChain/tree/main/speechain/dataset#configuration-file-format).
-2. **Model construction and optimization configuration** `train_cfg`:  
-    `train_cfg` defines how the SpeeChain framework constructs the model and optimizes its parameters during training. 
-    These configuration files are placed in the same folder as `data_cfg`, i.e., `SPEECHAIN_ROOT/recipes/{dataset_name}/{setting_name}/train_cfg`. 
-    This configuration is made up of two parts: `model` for model construction configuration and `optim_sche` for model optimization configuration.  
-    For more details about the arguments, please refer to the [_Model_ README.md](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#configuration-file-format) and [_OptimScheduler_ README.md](https://github.com/ahclab/SpeeChain/tree/main/speechain/optim_sche#configuration-file-format).
-
-    * _**infer_cfg:**_ str = None  
-    The configuration for model inference during model testing. This argument is required for model testing.  
-    There could be only one inference configuration or multiple configurations in *infer_cfg*:  
-      1. If _infer_cfg_ is not given, the default inference configuration will be used for model inference.
-      2. If you only want to give one inference configuration, please give it by either a string or a _Dict_.
-         1. **String:** The string indicates where the inference configuration file is placed. For example, 
-            `infer_cfg: config/infer/asr/greedy_decoding.yaml` means the configuration file `${SPEECHAIN_ROOT}/config/infer/asr/greedy_decoding.yaml` will be used for model inference. 
-            In this example, the evaluation results will be saved to a folder named `greedy_decoding`.  
-            If there are many arguments you need to give in the configuration, we recommend you to give them by a configuration file for concision. 
-         2. **Dict:** The _Dict_ indicates the content of your inference configuration. For example.
-            ```
-            infer_cfg:
-                beam_size: 1
-                temperature: 1.0
-            ```
-            means that `beam_size=1` and `temperature=1.0` will be used for ASR decoding. 
-            In this example, the evaluation results will be saved to a folder named `beam_size=1_temperature=1.0` which is decided by the keys and values in your given _Dict_.  
-            If there are not so many arguments in your configuration, we recommend you to give them by a _Dict_ to avoid messy configuration files on your disk.
-      3. If you want to give multiple inference configuration in *infer_cfg*, please give them by either a _List_ or a _Dict_.
-         1. **List:** Each element in the _List_ could be either a string or a _Dict_.  
-            * The string indicates the file paths of a given inference configuration. For example,
-              ```
-              infer_cfg:
-                - config/infer/asr/greedy_decoding.yaml
-                - config/infer/asr/beam_size=16.yaml
-              ```
-              means that both `greedy_decoding.yaml` and `beam_size=16.yaml` in `${SPEECHAIN_ROOT}/config/infer/asr/` will be used for ASR decoding.  
-            * The _Dict_ indicates the content of a given inference configuration. For example,
-              ```
-              infer_cfg:
-                - beam_size: 1
-                  temperature: 1.0
-                - beam_size: 16
-                  temperature: 1.0
-              ```
-              could be used and two folders `beam_size=1_temperature=1.0` and `beam_size=16_temperature=1.0` will be created to place their evaluation results.  
-            * Of course, strings and *Dict*s can be mixed in _infer_cfg_ like
-              ```
-              infer_cfg:
-                - config/infer/asr/greedy_decoding.yaml
-                - beam_size: 16
-                  temperature: 1.0
-              ```
-         2. **Dict:** There must be two keys in the _Dict_: `shared_args` and `exclu_args`.  
-            `shared_args` (short of 'shared arguments') is a _Dict_ which contains the arguments shared by all the configurations in the _Dict_.  
-            `exclu_args` (short of 'exclusive arguments') is a _List[Dict]_ where each element contains the exclusive arguments for each configuration.  
-            For example,
-            ```
-              infer_cfg:
-                shared_args:
-                    beam_size: 16
-                exclu_args:
-                    - temperature: 1.0
-                    - temperature: 1.5
-            ```
-            means that there will be two configurations used for model inference:
-            ```
-            beam_size: 16
+#### Inference Configuration for hyperparameter adjustment
+Model inference configuration is given by `infer_cfg` in the configuration file. 
+There could be either one inference configuration or multiple configurations in *infer_cfg*:  
+  1. If _infer_cfg_ is not given, the default inference configuration will be used for model inference.
+  2. If you only want to give one inference configuration, please give it by either a string or a _Dict_.
+     1. **String:** The string indicates where the inference configuration file is placed. For example, 
+        `infer_cfg: config/infer/asr/greedy_decoding.yaml` means the configuration file `${SPEECHAIN_ROOT}/config/infer/asr/greedy_decoding.yaml` will be used for model inference. 
+        In this example, the evaluation results will be saved to a folder named `greedy_decoding`.  
+        If there are many arguments you need to give in the configuration, we recommend you to give them by a configuration file for concision. 
+     2. **Dict:** The _Dict_ indicates the content of your inference configuration. For example.
+        ```
+        infer_cfg:
+            beam_size: 1
             temperature: 1.0
-            ```
-            and
-            ```
-            beam_size: 16
-            temperature: 1.5
-            ```
-            Their evaluation results will be saved to `beam_size=16_temperature=1.0` and `beam_size=16_temperature=1.5`.  
-            If your configurations don't contain too many arguments and you only want to change one or two arguments for each of them, we recommend you to give your configurations in this way.
+        ```
+        means that `beam_size=1` and `temperature=1.0` will be used for ASR decoding. 
+        In this example, the evaluation results will be saved to a folder named `beam_size=1_temperature=1.0` which is decided by the keys and values in your given _Dict_.  
+        If there are not so many arguments in your configuration, we recommend you to give them by a _Dict_ to avoid messy configuration files on your disk.
+  3. If you want to give multiple inference configuration in *infer_cfg*, please give them by either a _List_ or a _Dict_.
+     1. **List:** Each element in the _List_ could be either a string or a _Dict_.  
+        * The string indicates the file paths of a given inference configuration. For example,
+          ```
+          infer_cfg:
+            - config/infer/asr/greedy_decoding.yaml
+            - config/infer/asr/beam_size=16.yaml
+          ```
+          means that both `greedy_decoding.yaml` and `beam_size=16.yaml` in `${SPEECHAIN_ROOT}/config/infer/asr/` will be used for ASR decoding.  
+        * The _Dict_ indicates the content of a given inference configuration. For example,
+          ```
+          infer_cfg:
+            - beam_size: 1
+              temperature: 1.0
+            - beam_size: 16
+              temperature: 1.0
+          ```
+          could be used and two folders `beam_size=1_temperature=1.0` and `beam_size=16_temperature=1.0` will be created to place their evaluation results.  
+        * Of course, strings and *Dict*s can be mixed in _infer_cfg_ like
+          ```
+          infer_cfg:
+            - config/infer/asr/greedy_decoding.yaml
+            - beam_size: 16
+              temperature: 1.0
+          ```
+     2. **Dict:** There must be two keys in the _Dict_: `shared_args` and `exclu_args`.  
+        `shared_args` (short of 'shared arguments') is a _Dict_ which contains the arguments shared by all the configurations in the _Dict_.  
+        `exclu_args` (short of 'exclusive arguments') is a _List[Dict]_ where each element contains the exclusive arguments for each configuration.  
+        For example,
+        ```
+          infer_cfg:
+            shared_args:
+                beam_size: 16
+            exclu_args:
+                - temperature: 1.0
+                - temperature: 1.5
+        ```
+        means that there will be two configurations used for model inference:
+        ```
+        beam_size: 16
+        temperature: 1.0
+        ```
+        and
+        ```
+        beam_size: 16
+        temperature: 1.5
+        ```
+        Their evaluation results will be saved to `beam_size=16_temperature=1.0` and `beam_size=16_temperature=1.5`.  
+        If your configurations don't contain too many arguments and you only want to change one or two arguments for each of them, we recommend you to give your configurations in this way.
 
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#table-of-contents)
 
 
 ### How to train and evaluate a model
 We provide two levels of executable bash scripts:
-1. All-in-one executable `run.sh` in `${SPEECHAIN_ROOT}/recipes/`. This bash script is task-independent and can be called everywhere to run an experimental job. 
-    This all-in-one script exposes some frequently-used arguments to you as follows:
-   1. (optional) dry_run
-   2. (optional) no_optim
-   3. (optional) resume
-   4. (optional) train_result_path
-   5. (optional) test_result_path
-   6. (required) exp_cfg
-   7. (optional) data_cfg
-   8. (optional) train_cfg
-   9. (optional) infer_cfg
-   10. (optional) ngpu
-   11. (optional) gpus
-   12. (optional) num_workers
-   13. (required) train
-   14. (required) test
-   
-   For other arguments, please give them in an overall configuration file by `--exp_cfg`.
-2. Low-level `run.sh` designed for each subset of each task folder in `${SPEECHAIN_ROOT}/recipes/`. Those scripts are used to run the experiments of the specific subset for the specific task.
+1. All-in-one executable `run.sh` in `${SPEECHAIN_ROOT}/recipes/`. This bash script is task-independent and can be called everywhere to run an experimental job.  
+   For more details, please go to `${SPEECHAIN_ROOT}/recipes` and run `bash run.sh --help` for the message about involved arguments.
+2. Low-level `run.sh` designed for sub-folder in `${SPEECHAIN_ROOT}/recipes/`. Those scripts are used to run the experiments of the specific task.  
+   For more details, please go to the target sub-folder and run `bash run.sh --help` for the message about involved arguments.
 
-The execution hierarchy of the scripts is like:
+The execution hierarchy of the scripts is:
 ```
 ${SPEECHAIN_ROOT}/recipes/{task_name}/{dataset_name}/{subset_name}/run.sh
     --->${SPEECHAIN_ROOT}/recipes/run.sh
         --->${SPEECHAIN_ROOT}/speechain/runner.py
 ```
-For more details about those bash scripts, please move to their directories and use the command `bash run.sh --help` or `bash run.sh -h` to see the help message.
+
+For the detailed instructions about how to launch the jobs for each model, please refer to [**here**](https://github.com/ahclab/SpeeChain/tree/main/recipes#table-of-contents) and click your target model.
 
 By the way, you can also directly use the command `${SPEECHAIN_PYTHON} ${SPEECHAIN_ROOT}/speechain/runn.py` in your terminal or your own bash script to run your experimental jobs. 
 Before doing so, we recommend you to first use the command `${SPEECHAIN_PYTHON} ${SPEECHAIN_ROOT}/speechain/runn.py --help` to familiarize yourself with the involved arguments.
@@ -451,13 +429,7 @@ For how to customize your own optimization strategy, please refer to the [API do
 ### Contribution specifications
 We have some specifications for you to standardize your contribution:
 
-1. **Documentation**: We will appreciate it a lot if you could provide enough documents for your contribution. 
-    * Please give a header string at the top of the code file you made in the following format to notify others of your contribution:
-        ```
-            Author: Heli Qi
-            Affiliation: NAIST (abbreviation is OK)
-            Date: 2022.08 (yyyy.mm is enough)
-        ```
+1. **Documentation**: We will appreciate it a lot if you could provide enough documents for your contribution.
     * We recommend you to use the Google-style function docstring. 
     If you are using PyCharm, you can set the docstring style in File→Setting→Tools→Python Integrated Tools→Docstrings→Docstring format.
     

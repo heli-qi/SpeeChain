@@ -547,6 +547,7 @@ class ARASR(Model):
                   sample_index: str,
                   snapshot_interval: int = 1,
                   epoch_records: Dict = None,
+                  domain: str = None,
                   feat: torch.Tensor = None,
                   feat_len: torch.Tensor = None,
                   text: torch.Tensor = None,
@@ -560,7 +561,7 @@ class ARASR(Model):
         if len(self.visual_infer_conf) == 0:
             self.visual_infer_conf = dict(teacher_forcing=True)
         # obtain the inference results
-        infer_results = self.inference(infer_conf=self.visual_infer_conf, return_att=True,
+        infer_results = self.inference(infer_conf=self.visual_infer_conf, domain=domain, return_att=True,
                                        feat=feat, feat_len=feat_len, text=text, text_len=text_len)
 
         # --- snapshot the objective metrics --- #
@@ -946,32 +947,40 @@ class MultiDomainARASR(ARASR):
                     att_guid_loss_fn = None
 
                 # call the criterion_forward() of the parent class by the initialized loss functions
-                _losses, _metrics = super(MultiDomainARASR, self).criterion_forward(
+                _criteria = super(MultiDomainARASR, self).criterion_forward(
                     ce_loss_fn=ce_loss_fn, ctc_loss_fn=ctc_loss_fn, att_guid_loss_fn=att_guid_loss_fn,
                     **data_output_dict[domain])
 
-                # update the losses and metrics Dicts by the domain name at the beginning
-                losses.update(**{f"{domain}_{_key}": _value for _key, _value in _losses.items()})
-                metrics.update(**{f"{domain}_{_key}": _value for _key, _value in _metrics.items()})
+                # update loss and metric Dicts during training
+                if self.training:
+                    # update the losses and metrics Dicts by the domain name at the beginning
+                    losses.update(**{f"{domain}_{_key}": _value for _key, _value in _criteria[0].items()})
+                    metrics.update(**{f"{domain}_{_key}": _value for _key, _value in _criteria[1].items()})
+                # only update metric Dict during validation
+                else:
+                    metrics.update(**{f"{domain}_{_key}": _value for _key, _value in _criteria.items()})
 
-            # normalize losses of all the domains by the given loss_weights
-            if hasattr(self, 'loss_weights'):
-                assert len(self.loss_weights) == len(domain_list), \
-                    "There is a number mismatch of the domains between your data_cfg and train_cfg."
-                assert sum([domain in self.loss_weights.keys() for domain in domain_list]) == len(domain_list), \
-                    "There is a name mismatch of the domains between your data_cfg and train_cfg."
-                losses.update(
-                    loss=sum(
-                        [losses[f"{domain}_loss"] * self.loss_weights[domain] for domain in domain_list]
-                    ) / sum(
-                        [self.loss_weights[domain] for domain in domain_list]
+            # calculate the overall weighted loss during training
+            if self.training:
+                # normalize losses of all the domains by the given loss_weights
+                if hasattr(self, 'loss_weights'):
+                    assert len(self.loss_weights) == len(domain_list), \
+                        "There is a number mismatch of the domains between your data_cfg and train_cfg."
+                    assert sum([domain in self.loss_weights.keys() for domain in domain_list]) == len(domain_list), \
+                        "There is a name mismatch of the domains between your data_cfg and train_cfg."
+                    losses.update(
+                        loss=sum(
+                            [losses[f"{domain}_loss"] * self.loss_weights[domain] for domain in domain_list]
+                        ) / sum(
+                            [self.loss_weights[domain] for domain in domain_list]
+                        )
                     )
-                )
-            # average losses of all the domains if loss_weights is not given
-            else:
-                losses.update(
-                    loss=sum([losses[f"{domain}_loss"] for domain in domain_list]) / len(domain_list)
-                )
+                # average losses of all the domains if loss_weights is not given
+                else:
+                    losses.update(
+                        loss=sum([losses[f"{domain}_loss"] for domain in domain_list]) / len(domain_list)
+                    )
+
             if self.training:
                 return losses, metrics
             else:

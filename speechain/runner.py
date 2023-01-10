@@ -82,7 +82,7 @@ class Runner(object):
             "--config",
             type=str,
             # default=None,
-            default="recipes/offline_tts2asr/libritts_librispeech/train-100-860/exp_cfg/ecapa_transformer-wide_global.yaml",
+            default="recipes/offline_tts2asr/libritts_librispeech/train-clean-100-360/exp_cfg/ecapa_transformer-wide_group.yaml",
             help="The path of the all-in-one experiment configuration file. You can write all the arguments in this "
                  "all-in-one file instead of giving them to `runner.py` by command lines."
         )
@@ -731,24 +731,6 @@ class Runner(object):
 
         return start_epoch
 
-    @classmethod
-    def pickup_first_sample(cls, valid_batch: Any):
-        """
-
-        Args:
-            valid_batch:
-
-        Returns:
-
-        """
-        if isinstance(valid_batch, Dict):
-            return {key: cls.pickup_first_sample(value) for key, value in valid_batch.items()}
-        elif isinstance(valid_batch, torch.Tensor):
-            return valid_batch[0].unsqueeze(0)
-        elif isinstance(valid_batch, List):
-            return [valid_batch[0]]
-        else:
-            raise TypeError
 
     @classmethod
     def dict_transform(cls, src_dict, transform_func):
@@ -875,15 +857,19 @@ class Runner(object):
             if not args.distributed or args.rank == 0:
                 _valid_keys = list(data_cfg['valid'].keys())
                 if len(_valid_keys) == 2 and ('type' in _valid_keys and 'conf' in _valid_keys):
-                    _valid_conf = data_cfg['valid']['conf']
+                    visual_iterator = Iterator(dataset_type=data_cfg['valid']['conf']['dataset_type'],
+                                               dataset_conf=data_cfg['valid']['conf']['dataset_conf'],
+                                               batches_per_epoch=args.visual_snapshot_number,
+                                               shuffle=False, ngpu=1, distributed=False)
                 else:
+                    visual_domain = _valid_keys[0]
                     logger.info("There are multiple sub-Dict in your given data_cfg['valid']. "
-                                f"The one named {_valid_keys[0]} is used to initialize the visualization iterator.")
-                    _valid_conf = data_cfg['valid']['conf'][_valid_keys[0]]
-                visual_iterator = Iterator(dataset_type=_valid_conf['dataset_type'],
-                                           dataset_conf=_valid_conf['dataset_conf'],
-                                           batches_per_epoch=args.visual_snapshot_number,
-                                           shuffle=False, ngpu=1, distributed=False)
+                                f"The one named {visual_domain} is used to initialize the visualization iterator.")
+                    visual_iterator = \
+                        {visual_domain: Iterator(dataset_type=data_cfg['valid'][visual_domain]['conf']['dataset_type'],
+                                                 dataset_conf=data_cfg['valid'][visual_domain]['conf']['dataset_conf'],
+                                                 batches_per_epoch=args.visual_snapshot_number,
+                                                 shuffle=False, ngpu=1, distributed=False)}
             else:
                 visual_iterator = None
         else:
@@ -926,7 +912,7 @@ class Runner(object):
                             optim_sche.step(losses=losses,
                                             time_func=cls.measure_time(
                                                 None if monitor is None else monitor.train_monitor
-                                            ), optim_name=name, step_num=step_num)
+                                            ), optim_name=name, step_num=step_num, logger=logger)
                             optim_lr[name] = optim_sche.get_lr()
 
                 # log the information of the current training step
@@ -956,7 +942,6 @@ class Runner(object):
                         # --- data loading part --- #
                         with cls.measure_time(None if monitor is None else monitor.valid_monitor)("data_load_time"):
                             valid_batch = cls.dict_transform(src_dict=data_loaders, transform_func=next)
-                            # first_sample = cls.pickup_first_sample(valid_batch)
 
                         # forward the batch to get the validation criteria
                         valid_metrics = None
@@ -977,7 +962,13 @@ class Runner(object):
             if args.visual_snapshot_number > 0 and epoch % args.visual_snapshot_interval == 0:
                 # make sure that all processes go through the validation phase smoothly
                 if visual_iterator is not None:
-                    visual_dataloader = visual_iterator.build_loader()
+                    if not isinstance(visual_iterator, Dict):
+                        visual_domain = None
+                        visual_dataloader = visual_iterator.build_loader()
+                    else:
+                        visual_domain = list(visual_iterator.keys())[0]
+                        visual_dataloader = visual_iterator[visual_domain].build_loader()
+
                     visual_indices = visual_iterator.get_batch_indices()
 
                     # make sure that no gradient appears during validation
@@ -985,7 +976,7 @@ class Runner(object):
                     with torch.no_grad():
                         for step, visual_sample in enumerate(visual_dataloader):
                             # feed the current sample to the model
-                            monitor.valid_model_snapshot(epoch=epoch,
+                            monitor.valid_model_snapshot(epoch=epoch, domain=visual_domain,
                                                          sample_index=visual_indices[step][0],
                                                          used_sample=visual_sample)
                 # synchronize all the GPU processes at the end of the visualization stage

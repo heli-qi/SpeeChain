@@ -3,9 +3,11 @@
 # Tokens: Phoneme by G2P
 # losses: Default
 # Training: train-clean-100 of LibriTTS
+# Validation: dev-clean of LibriTTS
+# Testing: test-clean & test-other of LibriTTS
 # Authors: Heli Qi
-# Required GPUs: 4 × GeForce RTX 3090(24GB)
-# Required Time: Unknown
+# Required GPUs: 4 × GeForce GTX 1080 Ti(11GB) or 2 × GeForce RTX 3090(24GB)
+# Required Time: up to 31 hours
 # ############################################################################
 
 
@@ -16,12 +18,12 @@
 # if your dumped dataset is outside the toolkit folder, please change dataset_path. There should be a folder named 'libritts' in dataset_path
 dataset_path: datasets/
 dataset: libritts
-train_set: train-clean-460
+train_set: train-clean-100
 valid_set: dev-clean
 
 # waveform-related
-wav_format: wav
-sample_rate: 24000
+wav_format: wav22050
+sample_rate: 22050
 
 # tokenizer-related
 txt_format: normal
@@ -29,7 +31,7 @@ token_type: g2p
 token_num: full_tokens
 
 # batch-related
-batch_len: 1e7
+batch_len: 5e6
 
 # model-related
 reduction_factor: 1
@@ -58,7 +60,7 @@ ft_factor: 1.0
 grad_clip: 1.0
 
 # multi-GPU-related
-ngpu: 4 # please change ngpu based on the situation of your machine
+ngpu: 2 # please change ngpu based on the situation of your machine
 gpus: null # null means the GPUs with the largest free memory will be used
 
 # training-related
@@ -73,7 +75,7 @@ valid_per_epochs: 10
 
 # snapshot-related
 visual_snapshot_number: 3
-visual_snapshot_interval: !ref <valid_per_epochs>
+visual_snapshot_interval: 10
 
 # testing-related
 test: False
@@ -131,7 +133,6 @@ data_cfg:
         dataset_type: speech_text.RandomSpkFeatDataset
         dataset_conf:
           main_data:
-            feat: !ref <data_root>/<wav_format>/test-clean/idx2wav
             text: !ref <data_root>/g2p/test-clean/<token_num>/<txt_format>/idx2text
           spk_feat: !ref <data_root>/<wav_format>/<train_set>/idx2<spk_emb_model>_spk_feat
 
@@ -144,7 +145,6 @@ data_cfg:
         dataset_type: speech_text.RandomSpkFeatDataset
         dataset_conf:
           main_data:
-            feat: !ref <data_root>/<wav_format>/test-other/idx2wav
             text: !ref <data_root>/g2p/test-other/<token_num>/<txt_format>/idx2text
           spk_feat: !ref <data_root>/<wav_format>/<train_set>/idx2<spk_emb_model>_spk_feat
 
@@ -157,8 +157,7 @@ data_cfg:
 # Model Construction Configuration #
 ####################################
 train_cfg:
-  model:
-    model_type: ar_tts.ARTTS
+  model_type: ar_tts.ARTTS
     model_conf:
       customize_conf:
         token_type: !ref <token_type>
@@ -251,7 +250,7 @@ train_cfg:
       dec_postnet:
         type: conv1d
         conf:
-          conv_dims: !list [ 512, -1, -1, -1, 0 ]
+          conv_dims: !list [512, -1, -1, -1, 0]
           conv_kernel: 5
           conv_batchnorm: true
           conv_activation: Tanh

@@ -141,7 +141,7 @@ class OptimScheduler(ABC):
         """
         raise NotImplementedError
 
-    def step(self, losses: Dict[str, torch.Tensor], time_func, optim_name: str, step_num: int):
+    def step(self, losses: Dict[str, torch.Tensor], time_func, optim_name: str, step_num: int, logger = None):
         """
         This function optimizes the target parameters of the built-in model pointer with the input training losses.
 
@@ -157,6 +157,8 @@ class OptimScheduler(ABC):
             step_num: int
                 The number of the current training step.
                 This argument is used to update the learning rate for the current step by `self.update_lr()`.
+            logger:
+                Lazily passed logger object. Used to record logging information during optimization.
 
         """
         # --- 0. Initial Preparation Part --- #
@@ -212,8 +214,9 @@ class OptimScheduler(ABC):
 
                     # optimize the target parameters only when the values of gradients are not infinite
                     if not torch.isfinite(grad_norm):
-                        warnings.warn("The grad_norm in the current step is infinite! "
-                                      "The parameters are not updated in this step.")
+                        if logger is not None:
+                            logger.info("The grad_norm in the current step is infinite! "
+                                        "The parameters are not updated in this step.")
                         if self.scaler is not None:
                             self.scaler.step(self.optimizer)
                             self.scaler.update()

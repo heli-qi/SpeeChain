@@ -22,8 +22,7 @@ Please press the hyperlinks below and jump to the README.md of your target task 
     /librispeech            # ASR Recipes for the LibriSpeech dataset
         /train-clean-100        # Labeled data: train-clean-100
             /data_cfg               # Data loading configuration files
-            /exp_cfg                # Experimental environment configuration files
-            /train_cfg              # Model construction and optimization configuration files
+            /exp_cfg                # Experimental configuration files
         /train-clean-460        # Labeled data: train-clean-460 (train-clean-100 + train-clean-360)
             ...
         /train-960              # Labeled data: train-960 (train-clean-460 + train-other-500)
@@ -92,8 +91,7 @@ Please press the hyperlinks below and jump to the README.md of your target task 
     /libritts               # TTS Recipes for the LibriTTS dataset
         /train-clean-100        # Labeled data: train-clean-100
             /data_cfg               # Data loading configuration files that are shared by different models
-            /exp_cfg                # Experimental environment configuration files
-            /train_cfg              # Model construction and optimization configuration files
+            /exp_cfg                # Experimental configuration files
         /train-clean-460        # Labeled data: train-clean-460 (train-clean-100 + train-clean-360)
             ...
         /train-960              # Labeled data: train-960 (train-clean-460 + train-other-500)
@@ -109,9 +107,8 @@ Please press the hyperlinks below and jump to the README.md of your target task 
 /offline_tts2asr
     /libritts_librispeech   # TTS model is trained on 16khz-LibriTTS and ASR model is trained on LibriSpeech
         /train-clean-100-360    # Labeled data: LibriSpeech_train-clean-100 (ASR) & 16khz-LibriTTS_train-clean-100 (TTS); Unlabeled data: 16khz-LibriTTS_train-clean-360
-            /data_cfg               # Data loading configuration files that are shared by different models
-            /exp_cfg                # Experimental environment configuration files
-            /train_cfg              # Model construction and optimization configuration files
+            /data_cfg               # Data loading configuration files
+            /exp_cfg                # Experimental configuration files
         /train-100-860          # Labeled data: LibriSpeech_train-clean-100 (ASR) & 16khz-LibriTTS_train-clean-100 (TTS); Unlabeled data: 16khz-LibriTTS_train-clean-360 & 16khz-LibriTTS_train-other-500
             ...
 ```
@@ -126,28 +123,16 @@ Please press the hyperlinks below and jump to the README.md of your target task 
 	    <th>WER w. Transformer LM</th>  
 	</tr>
 	<tr>
-	    <td rowspan="4">16khz-LibriTTS to LibriSpeech (test-clean / test-other)</td>
-	    <td rowspan="4">Transformer-TTS</td>
-	    <td rowspan="1">One-hot Embedding</td>
-	    <td rowspan="4">Speech-Transformer</td>
+	    <td rowspan="2">16khz-LibriTTS to LibriSpeech (test-clean / test-other)</td>
+	    <td rowspan="2">Transformer-TTS (HifiGAN)</td>
+	    <td rowspan="2">ECAPA-TDNN</td>
+	    <td rowspan="2">Speech-Transformer</td>
 	    <td>train-clean-100-360</td>
 	    <td></td>
 	    <td>coming soon~~~</td>
 	</tr>
 	<tr>
-	    <td>Xvector</td>
-        <td>train-clean-100-360</td>
-	    <td></td>
-	    <td>coming soon~~~</td>
-	</tr>
-	<tr>
-        <td rowspan="3">ECAPA</td>
-	    <td>train-clean-100-360</td>
-	    <td></td>
-	    <td>coming soon~~~</td>
-	</tr>
-    <tr>
-	    <td>train-100-860</td>
+        <td>train-100-860</td>
 	    <td></td>
 	    <td>coming soon~~~</td>
 	</tr>
