@@ -347,6 +347,7 @@ Suppose that we want to train an TTS model by the configuration `${SPEECHAIN_ROO
       --refer_idx2wav datasets/speech_text/libritts/data/wav16000/test-clean/idx2wav \
       (--ncpu x)  
    ```
+   
    A metadata file named `idx2{xxx}` and a .md report file named `hifigan_{xxx}_reports.md` will be crated in `${SPEECHAIN_ROOT}/recipes/tts/libritts/train-clean-100/exp_cfg/16khz_ecapa_g2p_transformer_accum1_20gb/default_inference/10_train_loss_average/test-clean`. 
    `xxx` is the name of an objective metric. Currently, `mcd` and `wav_len_ratio` are supported.  
    **Note:** If you want to change the number of processes for `tts_evaluation.py`, please give `--ngpu x` in your terminal.
