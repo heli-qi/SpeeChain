@@ -703,7 +703,7 @@ class ARASR(Model):
             infer_results = self.module_forward(feat=feat, feat_len=feat_len,
                                                 text=text if teacher_forcing else hypo_text,
                                                 text_len=text_len if teacher_forcing else hypo_text_len,
-                                                return_att=return_att)
+                                                return_att=return_att, domain=domain)
             # return the attention matrices
             if return_att:
                 hypo_att = infer_results['att']

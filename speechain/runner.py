@@ -965,11 +965,11 @@ class Runner(object):
                     if not isinstance(visual_iterator, Dict):
                         visual_domain = None
                         visual_dataloader = visual_iterator.build_loader()
+                        visual_indices = visual_iterator.get_batch_indices()
                     else:
                         visual_domain = list(visual_iterator.keys())[0]
                         visual_dataloader = visual_iterator[visual_domain].build_loader()
-
-                    visual_indices = visual_iterator.get_batch_indices()
+                        visual_indices = visual_iterator[visual_domain].get_batch_indices()
 
                     # make sure that no gradient appears during validation
                     model.eval()
