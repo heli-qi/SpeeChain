@@ -47,8 +47,8 @@ Please refer to [**here**](https://github.com/ahclab/SpeeChain/tree/main/dataset
 Please refer to [**here**](https://github.com/ahclab/SpeeChain/tree/main/recipes#recipes-folder-of-the-speechain-toolkit) for some configuration templates in those `exp_cfg` folders.
 
 
-In order to avoid messy and unreadable configuration setting in the terminal, SpeeChain provides the following services to simplify the configuration setting.
-(The following contents are not urgent for you to learn. If you don't want to jump into details too much right now, please go to the [**next step**](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#how-to-train-and-evaluate-a-model))
+In order to avoid messy and unreadable configuration setting in the terminal, SpeeChain provides some advanced services to simplify the configuration setting.  
+**PS:** The following contents are not urgent for you to learn. If you don't want to jump into details too much right now, please go to the [**next step**](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#how-to-train-and-evaluate-a-model)
 
 #### Flexible Path Parsing Services
 In SpeeChain, the path arguments can be given in 3 ways:
