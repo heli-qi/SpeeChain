@@ -1,5 +1,7 @@
 ##############################################################################
-# Testing: dev of LibriSpeech
+# Tokens: Phoneme by G2P
+# Training: train-clean-460 of 16khz-downsampled LibriTTS
+# Testing: dev-clean of 16khz-downsampled LibriTTS
 # Authors: Heli Qi
 # Description: This configuration is used to replace data_cfg in exp_cfg for tuning the inference hyperparamters on validation set
 # ############################################################################
@@ -10,12 +12,14 @@
 ###################################
 # if your dumped dataset is outside the toolkit folder, please change dataset_path. There should be a folder named 'libritts' in dataset_path
 dataset_path: datasets/
-dataset: librispeech
-valid_dset: &valid_dset dev
+dataset: libritts
+train_set: train-clean-460
+valid_dset: &valid_dset dev-clean
 
-twav_format: wav
-txt_format: librispeech
+wav_format: wav
+txt_format: normal
 token_num: full_tokens
+spk_emb_model: ecapa
 
 
 
@@ -28,14 +32,11 @@ test:
     *valid_dset :
         type: abs.Iterator
         conf:
-            dataset_type: speech_text.SpeechTextDataset
+            dataset_type: speech_text.RandomSpkFeatDataset
             dataset_conf:
                 main_data:
-                    feat: !ref <data_root>/<wav_format>/<valid_dset>/idx2wav
-                    text: !ref <data_root>/<wav_format>/<valid_dset>/idx2<txt_format>_text
+                    text: !ref <data_root>/g2p/<valid_dset>/<token_num>/<txt_format>/idx2text
+                spk_feat: !ref <data_root>/<wav_format>/<train_set>/idx2<spk_emb_model>_spk_feat
 
             shuffle: False
             data_len: !ref <data_root>/<wav_format>/<valid_dset>/idx2wav_len
-            group_info:
-                speaker: !ref <data_root>/<wav_format>/<valid_dset>/idx2spk
-                gender: !ref <data_root>/<wav_format>/<valid_dset>/idx2gen

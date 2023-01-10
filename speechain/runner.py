@@ -82,7 +82,7 @@ class Runner(object):
             "--config",
             type=str,
             # default=None,
-            default="recipes/offline_tts2asr/libritts_librispeech/train-clean-100-360/exp_cfg/ecapa-wav_ratio-filter-v3_transformer-wide_v1_accum1_40gb.yaml",
+            default="recipes/offline_tts2asr/libritts_librispeech/train-100-860/exp_cfg/ecapa_transformer-wide_global.yaml",
             help="The path of the all-in-one experiment configuration file. You can write all the arguments in this "
                  "all-in-one file instead of giving them to `runner.py` by command lines."
         )
@@ -1357,7 +1357,7 @@ class Runner(object):
             assert args.data_cfg is not None and args.train_cfg is not None, \
                 "Please specify a data configuration file and a train configuration file!"
             data_cfg = load_yaml(open(args.data_cfg)) if isinstance(args.data_cfg, str) else args.data_cfg
-            train_cfg = load_yaml(open(args.train_cfg))
+            train_cfg = load_yaml(open(args.train_cfg)) if isinstance(args.train_cfg, str) else args.train_cfg
 
         # --- 5. Data Iterator Initialization --- #
         iterators = cls.build_iterators(data_cfg=data_cfg, args=args)
@@ -1647,7 +1647,7 @@ class Runner(object):
             args.test_result_path = parse_path_args(args.test_result_path)
         if args.data_cfg is not None and not isinstance(args.data_cfg, Dict):
             args.data_cfg = parse_path_args(args.data_cfg)
-        if args.train_cfg is not None:
+        if args.train_cfg is not None and not isinstance(args.train_cfg, Dict):
             args.train_cfg = parse_path_args(args.train_cfg)
         if args.infer_cfg is not None:
             if isinstance(args.infer_cfg, str):

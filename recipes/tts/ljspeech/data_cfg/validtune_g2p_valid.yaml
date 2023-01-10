@@ -1,5 +1,6 @@
 ##############################################################################
-# Testing: dev of LibriSpeech
+# Tokens: Phoneme by G2P
+# Testing: valid of LJSpeech
 # Authors: Heli Qi
 # Description: This configuration is used to replace data_cfg in exp_cfg for tuning the inference hyperparamters on validation set
 # ############################################################################
@@ -10,32 +11,26 @@
 ###################################
 # if your dumped dataset is outside the toolkit folder, please change dataset_path. There should be a folder named 'libritts' in dataset_path
 dataset_path: datasets/
-dataset: librispeech
-valid_dset: &valid_dset dev
+dataset: ljspeech
 
-twav_format: wav
-txt_format: librispeech
+wav_format: wav
+txt_format: normal
 token_num: full_tokens
-
+### ------------------------ ###
 
 
 ##############################
 # Data Loading Configuration #
 ##############################
 data_root: !ref <dataset_path>/<dataset>/data
-# Note: there must be a blank between the anchor '*valid_dset' and the colon ':'
 test:
-    *valid_dset :
+    dev-clean:
         type: abs.Iterator
         conf:
             dataset_type: speech_text.SpeechTextDataset
             dataset_conf:
                 main_data:
-                    feat: !ref <data_root>/<wav_format>/<valid_dset>/idx2wav
-                    text: !ref <data_root>/<wav_format>/<valid_dset>/idx2<txt_format>_text
+                    text: !ref <data_root>/g2p/dev-clean/<token_num>/<txt_format>/idx2text
 
             shuffle: False
-            data_len: !ref <data_root>/<wav_format>/<valid_dset>/idx2wav_len
-            group_info:
-                speaker: !ref <data_root>/<wav_format>/<valid_dset>/idx2spk
-                gender: !ref <data_root>/<wav_format>/<valid_dset>/idx2gen
+            data_len: !ref <data_root>/<wav_format>/dev-clean/idx2wav_len

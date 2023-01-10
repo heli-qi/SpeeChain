@@ -2,7 +2,7 @@
 Our documentation is organized by different roles in this toolkit. 
 You can start the journey of SpeeChain by your current position.
 
-👆[Back to the toolkit README.md](https://github.com/ahclab/SpeeChain#speechain-a-pytorch-based-speechlanguage-processing-toolkit-for-the-machine-speech-chain)
+👆[Back to the home page](https://github.com/ahclab/SpeeChain#speechain-a-pytorch-based-speechlanguage-processing-toolkit-for-the-machine-speech-chain)
 
 ## Table of Contents
 1. [**For those who just discovered SpeeChain**](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#for-those-who-just-discovered-speechain)
@@ -23,7 +23,7 @@ You can start the journey of SpeeChain by your current position.
 In SpeeChain toolkit, a basic research pipeline has 5 steps:
 1. Dump a dataset from the Internet to your disk.
 2. Prepare experimental configuration files.
-3. Train your model.
+3. Train a model.
 4. Evaluate the trained model.
 5. Analyse the evaluation results.
 
@@ -33,19 +33,13 @@ The following subsections will explain how to execute the steps above one by one
 
 ### How to dump a dataset to your machine
 In our toolkit, the datasets are grouped by their data types. 
-Each data type corresponds a sub-folder in `/datasets`. 
-In the sub-folder of each data type, each dataset has a second-level sub-folder.
+Each available dataset corresponds a specific folder in `${SPEECHAIN_ROOT}/datasets`:
 
-SpeeChain follows the all-in-one dumping style by a bash script named `data_dumping.sh` where the procedure of dataset dumping is divided into individual steps and each step is executed by a specific script file.
-We provide several dumping templates named `run.sh` under the second-level sub-folder of each dataset in `/datasets`. 
-The dumping procedure is slightly different for each data type, so please refer to the **README.md** in the sub-folder of each data type before starting the dumping pipeline.
+SpeeChain follows the all-in-one dumping style by a bash script named `data_dumping.sh` where the procedure of dataset dumping is divided into individual steps and each step is executed by a specific script.
 
-Current available datasets:
-1. LJSpeech
-2. LibriSpeech
-3. LibriTTS
+We provide an executable script named `run.sh` in each dataset folder under `${SPEECHAIN_ROOT}/datasets`. 
+Please refer to [**here**](https://github.com/ahclab/SpeeChain/tree/main/datasets#how-to-dump-a-dataset-on-your-machine) before starting the dumping pipeline.
 
-👉[Go to the README.md of datasets](https://github.com/ahclab/SpeeChain/tree/main/datasets#datasets)  
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#table-of-contents)
 
 
@@ -190,189 +184,7 @@ The configuration files in this toolkit are divided into the following 4 parts t
     These configuration files are placed in the same folder as `data_cfg`, i.e., `SPEECHAIN_ROOT/recipes/{dataset_name}/{setting_name}/train_cfg`. 
     This configuration is made up of two parts: `model` for model construction configuration and `optim_sche` for model optimization configuration.  
     For more details about the arguments, please refer to the [_Model_ README.md](https://github.com/ahclab/SpeeChain/tree/main/speechain/model#configuration-file-format) and [_OptimScheduler_ README.md](https://github.com/ahclab/SpeeChain/tree/main/speechain/optim_sche#configuration-file-format).
-3. **Model inference configuration** `infer_cfg`:  
-    The arguments in the inference configuration are different for different models. 
-    For more details, please refer to the docstring of `self.inference()` of each _Model_ subclass.
-4. **Experimental environment configuration** `exp_cfg`:  
-    `exp_cfg` is the high-level configuration given to `SPEECHAIN_ROOT/speechain/runner.py` for experimental environment initialization. 
-    In `exp_cfg`, all the low-level configurations `data_cfg`, `train_cfg`, and `infer_cfg` need to be specified for model training and testing. 
-    These configuration files are placed in the same folder as `data_cfg` and `train_cfg`, i.e., `SPEECHAIN_ROOT/recipes/{dataset_name}/{setting_name}/exp_cfg`.  
-    The arguments that can be given in `exp_cfg` are introduced below: (The same information can also be learned by `${SPEECHAIN_PYTHON} ${SPEECHAIN_ROOT}/speechain/runner.py --help`).  
-    _Group 0: Summary Configuration_
-    * _**config:**_ str = None  
-    The path of the all-in-one experiment configuration file. 
-    You can write all the arguments in this all-in-one file instead of giving them to `{SPEECHAIN_ROOT}/speechain/runner.py` by command lines.
-   
-    _Group 1: Calculation and System Backend_
-    * _**seed:**_ int = 0  
-    Initial random seed for the experiment.
-    * _**cudnn_enabled:**_ bool = True  
-    Whether to activate `torch.backends.cudnn`.
-    * _**cudnn_benchmark:**_ bool = False  
-    Whether to activate `torch.backends.cudnn.benchmark`. 
-    If True, the process of model training will be speed up and the model performance may improve somewhat.
-    But your results will become less reproducible.
-    * _**cudnn_deterministic:**_ bool = True  
-    Whether to activate `torch.backends.cudnn.deterministic`.
-    If True, it will improve the reproducibility of your experiment.
-    * _**num_workers:**_ int = 1  
-    The number of worker processes in the `torch.utils.data.DataLoader` of each epoch.  
-    If you have complicated logic of data loading and data augmentation in the memory before passing the data to the model (e.g., speech speed perturbation, environmental noise addition, ...), 
-    raising this argument may improve the speed of data loading and pre-augmentation. 
-    But the choice of the argument value should be within your machine capability (i.e., the number of CPU cores).  
-    If you want to debug your programs, we recommend you to set this argument to 0.
-    * _**pin_memory:**_ bool = False  
-    Whether to activate `pin_memory` for the Dataloader of each epoch. 
-    If True, the pinned memory in the dataloaders will be activated and the data loading will be further speed up. 
-    `pin_memory=True` is often used together with `non_blocking=True`. **Note** that this combination requires a large amount of memory and CPU cores.
-    * _**non_blocking:**_ bool = False  
-    Whether to activate `non_blocking` when transferring data from the memory to GPUs. 
-    If True, the process of model training will be speed up. 
-    `non_blocking=True` is often used together with `pin_memory=True`. 
-    **Note** that this combination requires a large amount of memory and CPU cores.
-   
-    _Group 2: Gradient Calculation and Back-Propagation_
-    * _**use_amp:**_ bool = True  
-    Whether activate AMP (Automatic Mixed Precision) during the back-propagation. 
-    If True, the GPU consumption of your model will be smaller so that you can include more data instances in a single batch.
-    * _**grad_clip:**_ float = 5.0  
-    Gradient clipping threshold during the back-propagation.
-    * _**grad_norm_type:**_ float = 2.0  
-    Normalization type used when clipping the gradients.
-    * _**accum_grad:**_ int = 1  
-    The number of gradient accumulation steps.  
-    To mimic the gradients calculated by large batches with only a small amount of GPUs, please raise this argument. 
-    The virtual batch size will become (accum_grad * the actual batch size).  
-    **Note** that the model trained by accum_grad is not identical to the one actually trained by large batches because of the different randomness in each training step and the existence of BatchNorm.
-    * _**ft_factor:**_ float = 1.0  
-    The finetuing factor used to scale down learning rates during the parameter optimization. 
-    If `ft_factor` is smaller than 1.0, the learning rates will be proportionally decreased without changing its scheduling strategy. 
-    Usually, ft_factor could be set from 0.1 to 0.5 depending on your finetuning scenarios.
-   
-    _Group 3: Multi-GPU Distribution_
-    * _**dist_backend:**_ str = 'nccl'  
-    Communication backend for multi-GPU distribution. 
-    If you are using NVIDIA GPUs, we recommend you set this argument to 'nccl'.
-    * _**dist_url:**_ str = 'tcp://127.0.0.1'  
-    Communication URL for multi-GPU distribution. 
-    The default value is `tcp://127.0.0.1` for single-node distributed training and an idle port will be "automatically selected. 
-    The port number cannot be set manually, which means that the argument `tcp://127.0.0.1:xxxxx` will have the same effect with `tcp://127.0.0.1`.  
-    If you want to train your model on multiple nodes, please set `dist_url=env://` (**Note:** multi-node model distribution is still in beta). "
-    In this case, env values of `MASTER_PORT`, `MASTER_ADDR`, `WORLD_SIZE`, and `RANK` are referred in the environment of your terminal.
-    * _**world_size:**_ int = 1  
-    The number of nodes for model distribution. 
-    This argument is fixed to 1. Currently, we don't recommend you to modify its value. 
-    If you want to conduct multi-node model distribution, please give `world_size` by `WORLD_SIZE=XXX` in your terminal 
-    (**Note:** multi-node model distribution is still in beta).
-    * _**rank:**_ int = 0  
-    The global rank of the current node for model distribution. 
-    This argument is fixed to 0. Currently, we don't recommend you to modify its value. 
-    If you want to conduct multi-node model distribution, please give `rank` by `RANK=XXX` in your terminal 
-    (**Note:** multi-node model distribution is still in beta)."
-    * _**ngpu:**_ int = 1  
-    The number of GPUs used to run your experiment. 
-    If `ngpu` is larger than 1, multi-GPU model distribution will be activated.
-    * _**gpus:**_ str = None  
-    This argument specifies the GPUs used to run your experiment. 
-    If you want to specify multiple GPUs, please give this argument in the form of 'x,x,x' where different GPUs are separated by a comma (please don't end this argument with ','). 
-    Of course, you could also specify your target GPUs by `CUDA_VISIBLE_DEVICES` in the terminal.  
-    If this argument is not given, the framework will automatically select `ngpu` idle GPUs. 
-    * _**same_proc_seed:**_ bool = False  
-    Whether to set the same initial random seed for all the GPU processes in DDP mode. 
-    The different random seeds can prevent model distribution from the process homogeneity, 
-    e.g., different GPU processes may have the same on-the-fly data augmentation strategy (noise addition, SpecAugment, ...) if they have the same initial random seed.  
-    **Note:** please set this argument to True if you want to use random data selection for your dataloaders in the DDP mode.
-   
-    _Group 4: Model Training_    
-    * _**train_result_path:**_ str = None  
-    Where to place all the result files generated during model training. 
-    If not given, `train_result_path` wil be automatically initialized to the same directory with your input `config`.  
-    For example, if your input `config` is `{SPEECHAIN_ROOT}/recipes/asr/librispeech/train-960/exp_cfg/XXXXX.yaml`, 
-    your `train_result_path` will be automatically initialized to `{SPEECHAIN_ROOT}/recipes/asr/librispeech/train-960/exp/XXXXX`.
-    * _**train:**_ bool = False  
-    Whether to go through the model training branch. 
-    * _**dry_run:**_ bool = False  
-    Whether to turn on the dry-running mode. 
-    In this mode, only the data loading will be done to see its speed and robustness. 
-    Model calculation and parameter optimization will be skipped.   
-    * _**no_optim:**_ bool = False  
-    Whether to turn on the no-optimization mode. 
-    In this mode, only the data loading and model calculation will be done to see their speed, robustness, and memory consumption. 
-    **Note:** `dry_run` has the higher priority than `no_optim`. It means that the model calculation will be skipped if you give both `--dry_run True` and `--no_optim True` in the terminal.
-    * _**resume:**_ bool = False  
-    Whether to resume your model training or testing experiment from the checkpoints. 
-    If True, there must be .pth checkpoint files of your existing experiment in `train_result_path` or `test_result_path`. 
-    This argument is shared by the training and testing branches.  
-    * _**start_epoch:**_ int = 1  
-    The starting epoch of your experiments. This argument will be automatically initialized by your checkpoint files if `--resume` is given. 
-    * _**num_epochs:**_ int = 1000  
-    The maximum number of training epochs of your experiments.
-    * _**valid_per_epochs:**_ int = 1  
-    The interval of going through the validation phase during training. 
-    If not given, validation will be done right after parameter optimization in each epoch.
-    * _**report_per_steps:**_ int = 0  
-    The interval of reporting step information logs during model training or testing.  
-    Positive integers mean the absolute reporting intervals that a step report will be made after each `report_per_steps` steps.  
-    Negative integers mean the relative reporting intervals that there will be `-report_per_steps` reports in each epoch.  
-    If not given, there will be default 10 reports in each epoch. 
-    * _**best_model_selection:**_ List = None  
-    The ways of selecting the best models. This argument should be given as a list of quad-tuples, i.e., (`metric_group`, `metric_name`, `metric_mode`, `model_number`).  
-    `metric_group` can be either _'train'_ or _'valid'_ which indicates the group the metric belongs to;  
-    `metric_name` is the name of the metric you select; 
-    `metric_mode` can be either _'min'_ or _'max'_ which indicates how to select the models by this metric;  
-    `model_number` indicates how many best models will be saved by this metric.   
-    **Note:** the metric of the first tuple in the list will be used to do early-stopping for model training."
-    * _**early_stopping_patience:**_ int = 10  
-    The maximum number of epochs when the model doesn't improve its performance before stopping the model training.
-    * _**early_stopping_threshold:**_ float = 0.005  
-    The threshold to refresh the early-stopping status in the monitor during model training.  
-    Positive float numbers in (0.0, 1.0) mean the relative threshold over the current best performance.  
-    Negative float numbers main the absolute threshold over the current best performance.  
-    `early_stopping_threshold=0` means no early-stopping threshold is applied to the current best performance when deciding whether to refresh the status.
-    * _**last_model_number:**_ int = 10  
-    The number of models saved for the last several epochs. 
-    Usually, it's better to set this argument to the same value with `early_stopping_patience`.
-   
-    _Group 5: Real-time Model Visualization Snapshotting_
-    * _**monitor_snapshot_conf:**_ Dict = {} (emtpy dictionary)  
-    The configuration given to `matploblib.plot()` in `{SPEECHAIN_ROOT/speechain/snapshooter.py}` to plot curve figures for real-time model visualization during model training. 
-    This argument should be given in the form of a _Dict_.
-    * _**visual_snapshot_number:**_ int = 0  
-    The number of the validation data instances used to make snapshots made during model visualization. 
-    This argument should be smaller than the number of your validation data instances.
-    * _**visual_snapshot_interval:**_ int = 5  
-    The snapshotting interval of model visualization during model training. 
-    This argument should be a positive integer which means that model visualization will be done once in every `visual_snapshot_interval` epochs.
-   
-    _Group 6: Model Testing_
-    * _**test_result_path:**_ str = None  
-    Where to place all the result files generated during model testing. 
-    If not given, `train_result_path` wil be automatically initialized by your input `train_result_path` and `test_model`.  
-    For example, if your `train_result_path` is `{SPEECHAIN_ROOT}/recipes/asr/librispeech/train-960/exp/XXXXX`, and `test_model` is `MMMMM`, 
-    then your `test_result_path` will be automatically initialized to `{SPEECHAIN_ROOT}/recipes/asr/librispeech/train-960/exp/XXXXX/MMMMM/`.
-    * _**test:**_ bool = False  
-    Whether to go through the model testing branch.  
-    * _**test_model:**_ str = None  
-    The names of the model you want to evaluate during model testing. 
-    If not given, `{train_result_path}/model/{test_model}.pth` will be used to initialize the parameters of the _Model_ object.  
-    If you want to evaluate multiple models in one job, please give the strings of their names in a List.
-    * _**test_model_mapping:**_ Dict = None  
-    The mapping between the model to be tested and the model constructed by `train_cfg`. 
-    This argument is used to deal with the name mismatch between the model parameters.
-    * _**bad_cases_selection:**_ List = None  
-    The selection methods of the top-N bad cases during model testing. 
-    This argument should be given as a list of tri-tuples (`selection_metric`, `selection_mode`, `case_number`).  
-    For example, ('wer', 'max', 50) means 50 testing waveforms with the largest WER will be selected. 
-    Multiple tuples can be given to present different sets of top-N bad cases.  
-    If not given, the default value of your selected _Model_ subclass will be used to present top-N bad cases.
-   
-    _Group 7: Experiment .yaml Configuration File_
-    * _**data_cfg:**_ str = None  
-    The path of the configuration file for data loading and batching.  
-    This argument is required for both model training and testing.
-    * _**train_cfg:**_ str = None  
-    The path of the configuration file for model construction and parameter optimization.  
-    This argument is required for both model training (both `model` and `optim_sche` need to be given) and testing (only `model` needs to be given)."
+
     * _**infer_cfg:**_ str = None  
     The configuration for model inference during model testing. This argument is required for model testing.  
     There could be only one inference configuration or multiple configurations in *infer_cfg*:  

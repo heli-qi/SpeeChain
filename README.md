@@ -9,91 +9,39 @@ If you find our toolkit helpful for your research, we sincerely hope that you ca
 Anytime when you encounter problems when using our toolkit, please don't hesitate to leave us an issue!
 
 ## Table of Contents
-1. [**What is Machine Speech Chain?**](https://github.com/ahclab/SpeeChain#what-is-machine-speech-chain)
-2. [**Toolkit Overview**](https://github.com/ahclab/SpeeChain#toolkit-overview)
+1. [**Machine Speech Chain**](https://github.com/ahclab/SpeeChain#machine-speech-chain)
+2. [**Toolkit Characteristics**](https://github.com/ahclab/SpeeChain#toolkit-characteristics)
 3. [**Get a Quick Start**](https://github.com/ahclab/SpeeChain#get-a-quick-start)
-4. [**Documentation**](https://github.com/ahclab/SpeeChain#documentation)
-5. [**Contribution**](https://github.com/ahclab/SpeeChain#contribution)
+4. [**Contribution**](https://github.com/ahclab/SpeeChain#contribution)
 
 
-## What is Machine Speech Chain?
+## Machine Speech Chain
+* Offline TTS→ASR Chain
 
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain#table-of-contents)
 
 
-## Toolkit Overview
-### On-the-fly Data Processing
-* **On-the-fly Feature Extraction:**
-  * Acoustic features:
-      * Linear Spectrogram
-      * Log-Mel Spectrogram
-      * MFCC (_under development_)
-  * Self-supervised representations:
-      * Wav2Vec2 (_under development_)
-      * HuBERT (_under development_)
-* **On-the-fly Data Augmentation:**
-  * Time-domain speech augmentations:
-      * Speed perturbation (_under development_)
-      * Environmental noise addition (_under development_)
-      * Reverberation addition (_under development_)
-  * Frequency-domain speech augmentations:
-      * SpecAugment
-* **On-the-fly Data Pre-processing:**
-  * Speech downsampling (_under development_)
-  * Text normalization (_under development_)
-    * Letter case handling
-    * Punctuation Restoration
-  * Per-channel feature normalization
-
-### **Efficient and Transparent Training:**
-* Multi-GPU model distribution based on DDP (Distributed Data Parallel) for both training and inference.
-* Real-time status reporting by online _Tensorboard_ and offline _Matplotlib_.
-* Real-time learning dynamics visualization by interpretability tools. Currently available interpretability tools:
-  * Attention visualization
-  * Integrated gradients (_under development_) 
-
-### **Detailed and Informative Model Evaluation:**
-* Multi-level _.md_ evaluation reports (overall-level, group-level model, and sample-level) without any layout misplacement. 
-* Statistical distribution visualization of evaluation metrics
-* TopN bad case analysis for better model diagnosis and adjustment.
-
-### **Easy-to-use Interfaces and Configuration:**
-* Customizable pipeline with abundant interface functions and detailed documents. 
-* Reusable and user-friendly configuration files that support dynamic class importing, dynamic datatype specification, and dynamic value reference. 
-
-### **Flexible Data Loading:**
-* Free combinations of training, validation, and testing sets from different corpora.
-* On-the-fly dataset mixture for a single dataloader to uniformly fetch data samples from multiple corpora.
-* On-the-fly data selection that changes the accessible data indices of a dataloader to filter the undesired data samples.
-* Multi-dataloader batch generation to form training batches with static data composition. 
-Different dataloaders can have different source datasets, augmentation functions, and data fetching strategies.
-
-### **Off-the-shelf Pseudo Data Calibrations for Semi-supervised Learning:**
-* ASR hypothesis transcript calibrations:
-    * Joint decoding by CTC & language model (_under development_)
-    * Hypothesis rescoring by CTC & language model (_under development_)
-    * lexicon-restricted decoding (_under development_)
-    * Controllable beam searching:
-        * Hypothesis length penalty
-        * Early-stopping hypothesis prevention
-        * Softmax temperature adjustment
-    * Criterion filtering:
-        * Hypothesis confidence
-        * Dropout-based uncertainty (_under development_)
-    * Heuristic methods:
-        * Repeating n-gram phrase removal (_under development_)
-        * Lexicon calibration for out-of-vocabulary words (_under development_)
-* TTS Synthesis utterance calibrations:
-    * ASR evaluation
-    * In-utterance silence removal (_under development_)
-    * Repeating n-gram phrase removal (_under development_)
-    * Non-speech sound removal (_under development_)
-
-### **Convenient Model Optimization:**
-* Model training can be done by multiple optimizers.
-Each optimizer has a specific training loss, model parameters, learning rate scheduling strategy, and optimization interval. 
-* Gradient accumulation for mimicking the large-batch gradients by the ones on several small batches.
-* Easy-to-set finetuning factor to scale down the learning rates without any modification of the scheduler configuration. 
+## Toolkit Characteristics
+* **Data Processing:**
+  * On-the-fly Log-Mel Spectrogram Extraction
+  * On-the-fly SpecAugment
+  * On-the-fly Feature Normalization
+* **Model Training:**
+  * Multi-GPU Model Distribution based on _torch.nn.parallel.DistributedDataParallel_
+  * Real-time status reporting by online _Tensorboard_ and offline _Matplotlib_
+  * Real-time learning dynamics visualization (attention visualization, spectrogram visualization)
+* **Data Loading:**
+  * On-the-fly mixture of multiple datasets in a single dataloader
+  * On-the-fly data selection for each dataloader to filter the undesired data samples.
+  * Multi-dataloader batch generation to form training batches by multiple datasets. 
+* **Optimization:**
+  * Model training can be done by multiple optimizers. Each optimizer is responsible for a specific part of model parameters.
+  * Gradient accumulation for mimicking the large-batch gradients by the ones on several small batches.
+  * Easy-to-set finetuning factor to scale down the learning rates without any modification of the scheduler configuration. 
+* **Model Evaluation:**
+  * Multi-level _.md_ evaluation reports (overall-level, group-level model, and sample-level) without any layout misplacement. 
+  * Histogram visualization for the distribution of evaluation metrics
+  * TopN bad case analysis for better model diagnosis.
 
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain#table-of-contents)
 
@@ -101,7 +49,7 @@ Each optimizer has a specific training loss, model parameters, learning rate sch
 ## Get a Quick Start
 We recommend you first install *Anaconda* into your machine before using our toolkit. 
 After the installation of *Anaconda*, please follow the steps below to deploy our toolkit on your machine:
-1. Find a path with enough disk memory space.
+1. Find a path with enough disk memory space. (e.g. at least 500GB if you want to use _LibriSpeech_ or _LibriTTS_ datasets).
 2. Clone our toolkit by `git clone https://github.com/ahclab/SpeeChain.git`.
 3. Go to the root path of our toolkit by `cd SpeeChain`.
 4. Run `source envir_preparation.sh` to build the environment for SpeeChain toolkit. 
@@ -109,35 +57,13 @@ After execution, a virtual environment named `speechain` will be created and two
 **Note:** It must be executed in the root path `SpeeChain` and by the command `source` rather than `./envir_preparation.sh`.
 5. Run `conda activate speechain` in your terminal to examine the installation of Conda environment. 
 If the environment `speechain` is not successfully activated, please run `conda env create -f environment.yaml` to manually install it.
-6. Run `echo ${SPEECHAIN_ROOT}`, and `echo ${SPEECHAIN_PYTHON}` in your terminal to examine the environmental variables. 
-If either one is empty, please manually add them into your `~/.bashrc` by `export SPEECHAIN_ROOT=xxx` or `export SPEECHAIN_PYTHON=xxx` and then `source ~/.bashrc`.  
-   1. `${SPEECHAIN_ROOT}` should be the absolute path of the `SpeeChain` folder you have just downloaded (i.e. `/xxx/SpeeChain` where `/xxx/` is the parent directory);  
+6. Run `echo ${SPEECHAIN_ROOT}` and `echo ${SPEECHAIN_PYTHON}` in your terminal to examine the environmental variables. 
+If either one is empty, please manually add them into your `~/.bashrc` by `export SPEECHAIN_ROOT=xxx` or `export SPEECHAIN_PYTHON=xxx` and then activate them by `source ~/.bashrc`.  
+   1. `${SPEECHAIN_ROOT}` should be the absolute path of the `SpeeChain` folder you have just cloned (i.e. `/xxx/SpeeChain` where `/xxx/` is the parent directory);  
    2. `${SPEECHAIN_PYTHON}` should be the absolute path of the python compiler in the folder of `speechain` environment (i.e. `/xxx/anaconda3/envs/speechain/bin/python3.X` where `/xxx/` is where your `anaconda3` is placed and `X` depends on `environment.yaml`).
-8. Read the [handbook](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#speechain-handbook) and start your journey in SpeeChain!
+7. Read the [handbook](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#speechain-handbook) and start your journey in SpeeChain!
 
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain#table-of-contents)
-
-
-## Documentation
-There are 4 types of documents in our toolkit:
-1. [**SpeeChain Handbook**](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#speechain-handbook):   
-We provide a _handbook.md_ at the root path to present an overview of our toolkit to our users. 
-This handbook will tell you the detailed learning path from a beginner to a contributor.
-2. **Multi-level README.md**:  
-Apart from the _README.md_ in the root path, we also provide a _README.md_ in each sub-folder where we think it's necessary to explain the usage such as interfaces, configuration formats, and so on.
-We provide enough hyperlinks for you to easily jump between different README.md levels.
-3. **Docstrings**:  
-We provide detailed docstrings for the classes or functions that we think should be detailed-ly explained such as input arguments, returned results, and so on. 
-For better readability, we follow the Google Docstring format.
-4. **In-line comments**:  
-Our codes are grouped by their functions to improve the readability. 
-For each functional code block, we provide some in-line comments to explain the block such as its working flow and data shape transformation.
-
-**Note:** If there is a mismatch between codes and documents, the code shall prevail. 
-We would appreciate it if you could report any documents that are not updated to us.
-
-👆[Back to the table of contents](https://github.com/ahclab/SpeeChain#table-of-contents)
-
 
 ## Contribution
 * Previous Contributors

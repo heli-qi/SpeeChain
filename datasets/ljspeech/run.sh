@@ -14,11 +14,11 @@ function print_help_message {
   $0 \\ (The arguments in [] are optional while other arguments must be given by your run.sh.)
       [--start_step START_STEP] \\                          # Which step you would like to start from. (default: 1)
       [--stop_step STOP_STEP] \\                            # Which step you would like to end at. (default: 10000)
-      [--src_path SRC_PATH] \\                              # The path of the existing LJSpeech dataset on your disk. If you have already downloaded the dataset, please give its absolute path (starting by a slash '/') by this argument. (default: none)
+      [--src_path SRC_PATH] \\                              # If you already have the decompressed folder 'LJSpeech-1.1' downloaded from https://data.keithito.com/data/speech/LJSpeech-1.1.tar.bz2, you can give its absolute path (starting by a slash '/', i.e. /xxx/xxx/LJSpeech-1.1) to this argument so that the data downloading step will be skipped. (default: none)
       [--tgt_path TGT_PATH] \\                              # The metadata files will be generated to {tgt_path}/ljspeech. If tgt_path is not given, metadata files will be saved to ${SPEECHAIN_ROOT}/datasets/ljspeech. If you want to save metadata files elsewhere, please give its absolute path (starting by a slash '/') by this argument. (default: none)
       [--feat_type FEAT_TYPE] \\                            # The type of the feature you would like to dump. (default: wav)
       [--feat_config FEAT_CONFIG] \\                        # The name of acoustic feature extraction configuration file. (default: none)
-      [--sample_rate SAMPLE_RATE] \\                        # The sampling rate you want the waveforms to have. (default: none)
+      [--sample_rate SAMPLE_RATE] \\                        # The sampling rate you want the waveforms to have. If not given, the original sampling rate of LJSpeech (22.05kHz) will be used for the folder 'ljspeech/data/wav' (default: none)
       [--comp_chunk_ext COMP_CHUNK_EXT] \\                  # The file extension of the compressed chunk files. (default: none)
       [--token_type TOKEN_TYPE] \\                          # The type of the token you want your tokenizer to have. (default: g2p)
       [--txt_format TXT_FORMAT] \\                          # The text processing format for the transcripts in the dataset. (default: normal)
@@ -28,7 +28,6 @@ function print_help_message {
       [--character_coverage CHARACTER_COVERAGE] \\          # The character_coverage argument for building sp tokenizer model. (default: 1.0)
       [--split_by_whitespace SPLIT_BY_WHITESPACE] \\        # The split_by_whitespace argument for building sp tokenizer model. (default: true)
       [--separator SEPARATOR] \\                            # The separator used to separate the 'subsets' arguments from a string into an array of string. (default: ',')
-      [--package_removal PACKAGE_REMOVAL] \\                # Whether to remove the downloaded data package after unzipping. (default: false)
       [--valid_section VALID_SECTION] \\                    # Which section of LJSpeech you want to use as the validation set. Each digit represent a section in LJSpeech (i.e., LJ0XX). Two consecutive digits are separated by a comma。 (default: '3')
       [--test_section TEST_SECTION]                        # Which section of LJSpeech you want to use as the test set. Each digit represent a section in LJSpeech (i.e., LJ0XX). Two consecutive digits are separated by a comma。 (default: '1,2')" >&2
   exit 1
@@ -61,8 +60,6 @@ vocab_size=
 model_type=bpe
 character_coverage=1.0
 split_by_whitespace=true
-# arguments used by data_download.sh
-package_removal=false
 # arguments used by stat_info_generator.py
 separator=','
 txt_format=normal
@@ -145,10 +142,6 @@ while getopts ":h-:" optchar; do
           val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
           separator=${val}
           ;;
-        package_removal)
-          val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
-          package_removal=${val}
-          ;;
         txt_format)
           val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
           txt_format=${val}
@@ -206,7 +199,6 @@ fi
   --token_type "${token_type}" \
   --txt_format "${txt_format}" \
   --dataset_name "ljspeech" \
-  --download_args " --package_removal ${package_removal}" \
   --meta_generate_args "--valid_section ${valid_section} --test_section ${test_section} --separator ${separator}" \
   --subsets "${subsets}" \
   --vocab_src_subsets "train valid test" \

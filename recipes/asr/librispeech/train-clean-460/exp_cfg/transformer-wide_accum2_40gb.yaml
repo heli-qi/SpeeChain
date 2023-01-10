@@ -1,0 +1,249 @@
+##############################################################################
+# Model: Transformer-ASR
+# Tokens: BPE 5k
+# losses: 0.2 Label Smooth
+# Training: train-clean-460 of LibriSpeech
+# Validation: dev-clean of LibriSpeech
+# Testing: test-clean & test-other of LibriSpeech
+# Authors: Heli Qi
+# Required GPUs: 4 × GeForce GTX 1080 Ti(11GB)
+# Required Time: up to 16 hours
+# ############################################################################
+
+
+###################################
+# Experiment Parameters and setup #
+###################################
+# dataset-related
+# if your dumped dataset is outside the toolkit folder, please change dataset_path. There should be a folder named 'libritts' in dataset_path
+dataset_path: datasets/
+dataset: librispeech
+train_set: train-clean-460
+valid_set: dev-clean
+
+# waveform-related
+wav_format: wav
+sample_rate: 16000
+
+# tokenizer-related
+txt_format: librispeech
+token_type: sentencepiece
+token_num: bpe5k
+
+# batch-related
+batch_len: 1.2e7
+
+# model-related
+label_smoothing: 0.2
+d_model: 512
+num_heads: 8
+fdfwd_dim: 2048
+dropout: 0.1
+
+# optimizer-related
+warmup_steps: 16000
+
+# running-related
+seed: 0
+num_workers: 1
+pin_memory: False
+non_blocking: False
+
+# gradient-related
+accum_grad: 2
+ft_factor: 1.0
+grad_clip: 5.0
+
+# multi-GPU-related
+ngpu: 4 # please change ngpu based on the situation of your machine
+gpus: null # null means the GPUs with the largest free memory will be used
+
+# training-related
+train: True
+best_model_selection: !tuple (valid, accuracy, max, 10)
+early_stopping_patience: 10
+last_model_number: !ref <early_stopping_patience>
+
+# snapshot-related
+visual_snapshot_number: 3
+visual_snapshot_interval: 5
+
+# testing-related
+test: False
+test_model: 10_valid_accuracy_average
+
+# This argument is shared by data_cfg and train_cfg
+data_root: !ref <dataset_path>/<dataset>/data
+
+
+
+#################################
+# Model Inference Configuration #
+#################################
+# Before evaluating the trained model on test-clean and test-other, we need to find the best softmax temperature on dev-clean.
+# Here the searching range is all the odd number from 1.1 to 1.9, and we found 1.5 gives the best performance.
+infer_cfg:
+  shared_args:
+    beam_size: 16
+  exclu_args:
+#    - asr_temperature: 1.1
+#    - asr_temperature: 1.3
+    - asr_temperature: 1.5
+#    - asr_temperature: 1.7
+#    - asr_temperature: 1.9
+
+
+
+##############################
+# Data Loading Configuration #
+##############################
+data_cfg:
+  train:
+    type: block.BlockIterator
+    conf:
+      dataset_type: speech_text.SpeechTextDataset
+      dataset_conf:
+        main_data:
+          feat: !ref <data_root>/<wav_format>/<train_set>/idx2wav
+          text: !ref <data_root>/<wav_format>/<train_set>/idx2<txt_format>_text
+
+      data_len: !ref <data_root>/<wav_format>/<train_set>/idx2wav_len
+      shuffle: True
+      is_descending: True
+      batch_len: !ref <batch_len>
+
+  valid:
+    type: abs.Iterator
+    conf:
+      dataset_type: speech_text.SpeechTextDataset
+      dataset_conf:
+        main_data:
+          feat: !ref <data_root>/<wav_format>/<valid_set>/idx2wav
+          text: !ref <data_root>/<wav_format>/<valid_set>/idx2<txt_format>_text
+
+      shuffle: False
+      data_len: !ref <data_root>/<wav_format>/<valid_set>/idx2wav_len
+
+  test:
+    test-clean:
+      type: abs.Iterator
+      conf:
+        dataset_type: speech_text.SpeechTextDataset
+        dataset_conf:
+          main_data:
+            feat: !ref <data_root>/<wav_format>/test-clean/idx2wav
+            text: !ref <data_root>/<wav_format>/test-clean/idx2<txt_format>_text
+
+        data_len: !ref <data_root>/<wav_format>/test-clean/idx2wav_len
+        shuffle: False
+        group_info:
+          speaker: !ref <data_root>/<wav_format>/test-clean/idx2spk
+          gender: !ref <data_root>/<wav_format>/test-clean/idx2gen
+
+    test-other:
+      type: abs.Iterator
+      conf:
+        dataset_type: speech_text.SpeechTextDataset
+        dataset_conf:
+          main_data:
+            feat: !ref <data_root>/<wav_format>/test-other/idx2wav
+            text: !ref <data_root>/<wav_format>/test-other/idx2<txt_format>_text
+
+        data_len: !ref <data_root>/<wav_format>/test-other/idx2wav_len
+        shuffle: False
+        group_info:
+          speaker: !ref <data_root>/<wav_format>/test-other/idx2spk
+          gender: !ref <data_root>/<wav_format>/test-other/idx2gen
+
+
+
+####################################
+# Model Construction Configuration #
+####################################
+train_cfg:
+  model:
+    model_type: ar_asr.ARASR
+    model_conf:
+      customize_conf:
+        token_type: !ref <token_type>
+        token_vocab: !ref <data_root>/<token_type>/<train_set>/<token_num>/<txt_format>/vocab
+
+    module_conf:
+      frontend:
+        type: mel_fbank
+        conf:
+          sr: !ref <sample_rate>
+          preemphasis: 0.97
+          hop_length: 0.010
+          win_length: 0.025
+          n_mels: 80
+
+      normalize: True
+
+      specaug:
+        freq_mask_width: 15
+        freq_mask_num: 4
+        time_mask_width: 20
+        time_mask_num: 4
+
+      enc_prenet:
+        type: conv2d
+        conf:
+          conv_dims:
+            - 64
+            - 64
+          conv_kernel: 3
+          conv_stride: 2
+          conv_batchnorm: true
+          lnr_dims: !ref <d_model>
+
+      encoder:
+        type: transformer
+        conf:
+          posenc_dropout: !ref <dropout>
+          posenc_scale: false
+          emb_layernorm: true
+          emb_scale: false
+          d_model: !ref <d_model>
+          num_heads: !ref <num_heads>
+          num_layers: 12
+          att_dropout: !ref <dropout>
+          fdfwd_dim: !ref <fdfwd_dim>
+          fdfwd_dropout: !ref <dropout>
+          res_dropout: !ref <dropout>
+          layernorm_first: true
+
+      dec_emb:
+        type: embed
+        conf:
+          embedding_dim: !ref <d_model>
+
+      decoder:
+        type: transformer
+        conf:
+          posenc_dropout: !ref <dropout>
+          posenc_scale: false
+          emb_layernorm: true
+          emb_scale: false
+          d_model: !ref <d_model>
+          num_heads: !ref <num_heads>
+          num_layers: 6
+          att_dropout: !ref <dropout>
+          fdfwd_dim: !ref <fdfwd_dim>
+          fdfwd_dropout: !ref <dropout>
+          res_dropout: !ref <dropout>
+          layernorm_first: true
+
+    criterion_conf:
+      label_smoothing: !ref <label_smoothing>
+
+  optim_sches:
+    type: noam.Noamlr
+    conf:
+      optim_type: Adam
+      optim_conf:
+        betas:
+          - 0.9
+          - 0.98
+        eps: 1.0e-9
+      warmup_steps: !ref <warmup_steps>

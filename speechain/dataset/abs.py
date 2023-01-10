@@ -10,7 +10,7 @@ import numpy as np
 from typing import List, Dict, Any
 from abc import ABC
 
-from speechain.utilbox.data_loading_util import read_idx2data_file_to_dict, parse_path_args
+from speechain.utilbox.data_loading_util import load_idx2data_file, read_idx2data_file_to_dict, parse_path_args
 
 
 class Dataset(torch.utils.data.Dataset, ABC):
@@ -78,10 +78,8 @@ class Dataset(torch.utils.data.Dataset, ABC):
         # --- 2. Executing the Data Selection --- #
         # select a part of data instances to generate batches if specified
         if data_selection is not None:
-            if sum([isinstance(i, List) for i in data_selection]) == 0:
+            if sum([isinstance(i, List) for i in data_selection]) != len(data_selection):
                 data_selection = [data_selection]
-            elif sum([isinstance(i, List) for i in data_selection]) != len(data_selection):
-                raise RuntimeError
 
             # loop each data selection strategy in order of the input list
             for i in data_selection:
@@ -129,7 +127,7 @@ class Dataset(torch.utils.data.Dataset, ABC):
 
     @staticmethod
     def data_selection(data_index: List[str], selection_mode: str, selection_num: float or int or str,
-                       meta_info: str = None) -> List:
+                       meta_info: List[str] or str = None) -> List:
         """
         This function performs the data selection by the input selection strategy arguments.
         A new batching view of the selected data instances will be returned.
@@ -198,7 +196,10 @@ class Dataset(torch.utils.data.Dataset, ABC):
         # for meta-required selection strategies
         else:
             # read the metadata information for data selection
-            meta_info = np.loadtxt(parse_path_args(meta_info), dtype=str, delimiter=" ")
+            if isinstance(meta_info, str):
+                meta_info = [meta_info]
+            meta_info = [load_idx2data_file(file) for file in meta_info]
+            meta_info = np.array([[key, value] for m_i in meta_info for key, value in m_i.items()])
             # initialize the sorted indices and metadata values of the data instances
             meta_sorted_data = meta_info[:, 0][np.argsort(meta_info[:, 1].astype(float))]
             meta_sorted_value = np.sort(meta_info[:, 1].astype(float))

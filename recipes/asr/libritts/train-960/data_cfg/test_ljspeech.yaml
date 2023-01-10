@@ -1,32 +1,37 @@
-### Author: Heli Qi
-### Affiliation: NAIST
-### Date: 2022.09
-# This configuration is used to evaluate the final performance on test-clean and test-other
-# The testing is better to be done by abs.Iterator (one data instance at each testing step) for the accurate results.
-# block.BlockIterator can also be used to perform the batch-level evaluation, but the result is slightly different from the one obtained by abs.Iterator.
+##############################################################################
+# Testing: test of LJSpeech
+# Authors: Heli Qi
+# Description: This configuration is used to replace data_cfg in exp_cfg for evaluating ASR models on LJSpeech
+# ############################################################################
 
 
-### --- Reference Values --- ###
+###################################
+# Experiment Parameters and setup #
+###################################
+# if your dumped dataset is outside the toolkit folder, please change dataset_path. There should be a folder named 'libritts' in dataset_path
+dataset_path: datasets/
 dataset: ljspeech
-test_set: test
 
+wav_format: wav
 txt_format: librispeech
 token_num: full_tokens
-wav_format: wav
-
-data_root: !ref datasets/<dataset>/data/<wav_format>
-### ------------------------ ###
 
 
+
+##############################
+# Data Loading Configuration #
+##############################
+data_root: !ref <dataset_path>/<dataset>/data
+# Note: there must be a blank between the anchor '*valid_dset' and the colon ':'
 test:
-    test-ljspeech:
+    ljspeech-test:
         type: abs.Iterator
         conf:
             dataset_type: speech_text.SpeechTextDataset
             dataset_conf:
                 main_data:
-                    feat: !ref <data_root>/<test_set>/idx2wav
-                    text: !ref <data_root>/<test_set>/idx2<txt_format>_text
+                    feat: !ref <data_root>/<wav_format>/test/idx2wav
+                    text: !ref <data_root>/<wav_format>/test/idx2<txt_format>_text
 
-            data_len: !ref <data_root>/<test_set>/idx2wav_len
+            data_len: !ref <data_root>/<wav_format>/test/idx2wav_len
             shuffle: False

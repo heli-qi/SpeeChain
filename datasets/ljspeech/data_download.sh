@@ -5,14 +5,11 @@
 # --- Involved Arguments --- #
 # the path to place the downloaded dataset, default to the current path
 download_path=${PWD}
-# whether to remove the downloaded data package after unzipping, default to remain the packages
-package_removal=false
 
 function print_help_message {
   echo "usage:
   $0 \\ (The arguments in [] are optional while other arguments must be given by your run.sh.)
-    --download_path DOWNLOAD_PATH \\     # The path to place the downloaded dataset. (default: \$PWD)
-    [--package_removal PACKAGE_REMOVAL] # whether to remove the downloaded data package after unzipping. (default: false)" >&2
+    --download_path DOWNLOAD_PATH      # The path to place the downloaded dataset. (default: \$PWD)" >&2
   exit 1
 }
 
@@ -24,10 +21,6 @@ while getopts ":h-:" optchar; do
         download_path)
           val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
           download_path=${val}
-          ;;
-        package_removal)
-          val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
-          package_removal=${val}
           ;;
         help)
           print_help_message
@@ -63,7 +56,7 @@ if [ ! -d "${download_path}/data/wav" ]; then
   # unzip the downloaded data package
   if [ ! -d "${download_path}/data/LJSpeech-1.1" ]; then
     # for unzipping .tar.bz2, the arguments here need to be -xjf instead of -zxvf
-    echo "Unzip the downloaded data from ${download_path}/data to ${download_path}/data/wav"
+    echo "Unzip the downloaded data from ${download_path}/data/LJSpeech-1.1.tar.bz2 to ${download_path}/data/wav"
     tar -xjf ${download_path}/data/LJSpeech-1.1.tar.bz2 -C ${download_path}/data
     mv ${download_path}/data/LJSpeech-1.1 ${download_path}/data/wav
   fi
@@ -72,8 +65,11 @@ else
   echo "${download_path}/data/wav has already existed. Skipping data downloading and unzipping~~~"
 fi
 
-# remove the data package if specified (default not to remove)
-if ${package_removal}; then
-  echo "Remove the downloaded data ${download_path}/data/LJSpeech-1.1.tar.bz2"
-  rm ${download_path}/data/LJSpeech-1.1.tar.bz2
+# remove the compressed data package
+echo "Remove the downloaded data ${download_path}/data/LJSpeech-1.1.tar.bz2"
+rm ${download_path}/data/LJSpeech-1.1.tar.bz2
+
+# Finally, remove the folder named LJSpeech-1.1 if needed
+if [ -d "${download_path}/data/LJSpeech-1.1" ];then
+  rm -rf "${download_path}/data/LJSpeech-1.1"
 fi

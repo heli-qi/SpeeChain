@@ -19,8 +19,7 @@ If you want to contribute a new dataset, we would appreciate it if you could fol
     8. [spk_list](https://github.com/ahclab/SpeeChain/tree/main/datasets#spk_list)
     9. [idx2gen](https://github.com/ahclab/SpeeChain/tree/main/datasets#idx2gen)
 3. [**How to Dump a Dataset on your Machine**](https://github.com/ahclab/SpeeChain/tree/main/datasets#how-to-dump-a-dataset-on-your-machine)
-4. [**How to Use the Existing Dataset on my Disk**](https://github.com/ahclab/SpeeChain/tree/main/datasets#how-to-use-the-existing-dataset-on-my-disk)
-5. [**How to Extract Speaker Embedding by my own model**](https://github.com/ahclab/SpeeChain/tree/main/datasets#how-to-extract-speaker-embedding-by-my-own-model)
+4. [**How to Extract Speaker Embedding by my own model**](https://github.com/ahclab/SpeeChain/tree/main/datasets#how-to-extract-speaker-embedding-by-my-own-model)
 6. [**How to Contribute a New Dataset**](https://github.com/ahclab/SpeeChain/tree/main/datasets#how-to-contribute-a-new-dataset)
 
 ## File System
@@ -230,77 +229,24 @@ For example,
 
 ## How to Dump a Dataset on your Machine
 For dumping an existing dataset, 
-1. Change the absolute paths at the top of `${SPEECHAIN_ROOT}/datasets/data_dumping.sh` to the corresponding places on your machine.
-2. Go to the folder of your target dataset `${SPEECHAIN_ROOT}/datasets/{dataset_name}`
-3. Change the absolute paths at the top of `${SPEECHAIN_ROOT}/datasets/{dataset_name}/run.sh` to the corresponding places on your machine.
-4. Run `./run.sh -h` to familiarize yourself with the involved arguments.
-5. Run `./run.sh` to dump your target dataset (add some arguments if needed).
+   1. Go to the folder of your target dataset `${SPEECHAIN_ROOT}/datasets/{dataset_name}` (e.g. if you want to dump LibriTTS, please go to `${SPEECHAIN_ROOT}/datasets/libritts`)
+   2. Run `bash run.sh --help` to familiarize yourself with the involved arguments.
+   3. Run `bash run.sh` to dump your target dataset (add some arguments if needed).
 
-In `${SPEECHAIN_ROOT}/datasets/data_dumping.sh`, there are 8 steps to dump your target dataset from the internet to your local machine:
-1. **(Mandatory) Data downloading**:  
-    In this step, the raw data of your target dataset is downloaded from the internet to `${SPEECHAIN_ROOT}/datasets/{dataset_name}/wav` by `${SPEECHAIN_ROOT}/datasets/{dataset_name}/data_download.sh`.
-2. **(Mandatory) Metadata generation**:  
-    In this step, the metadata files of your target dataset is generated in `${SPEECHAIN_ROOT}/datasets/dataset_name/wav` by `${SPEECHAIN_ROOT}/datasets/dataset_name/meta_generator.py`. 
-    The metadata files will be saved to `${SPEECHAIN_ROOT}/datasets/{dataset_name}/wav/{subset_name}/`.
-3. **(Optional) Waveform downsampling**:  
-    In this step, the original waveform files are downsampled to your specified sampling rate. 
-    This step is not mandatory if the sampling rate of the original files is OK for your experiments.
-    The downsampled waveform files will be saved to `${SPEECHAIN_ROOT}/datasets/{dataset_name}/wav{sample_rate}` where _sample_rate_ is your target sampling rate.
-4. **(Optional) Acoustic feature extraction**:  
-    In this step, the acoustic features are extracted by your given configuration file in `${SPEECHAIN_ROOT}/speechain/config/feat/`.
-    This step is not mandatory since our toolkit supports on-the-fly acoustic feature extraction during training.
-    The extracted acoustic features will be saved to `${SPEECHAIN_ROOT}/datasets/{dataset_name}/{feat_config}` where _feat_config_ is the name of your given configuration file.
-5. **(Mandatory) Data length generation**:  
-    In this step, the file length will be extracted. 
-    If the source data is waveform, the number of sampling points of each waveform will be recorded.
-    If the source data is acoustic features, the number of time frames of each feature will be recorded.
-    The extracted data length will be saved to `${SPEECHAIN_ROOT}/datasets/{dataset_name}/wav/idx2wav_len` for waveforms or `${SPEECHAIN_ROOT}/datasets/dataset_name/{feat_config}/idx2feat_len` for acoustic features.
-6. **(Optional) Speaker Embedding Extraction**:  
-    In this step, the speaker embeddings of the given waveforms will be extracted. 
-    The extracted speaker embeddings will be saved to `${SPEECHAIN_ROOT}/datasets/{dataset_name}/wav/idx2{spk_emb_model}_spk_len` where `spk_emb_model` is either `xvector` or `ecapa`.  
-    
-    **Note:** This step can only process the waveform files.  
-8. **(Optional) Data Package**:  
-    In this step, all the individual data files (waveform files or acoustic feature files) will be packaged into several compressed binary chunk files.
-    Those chunk packages will make the subsequent model training smoother and more efficient. 
-    This step works better for large-scale datasets, so if your target dataset is not so large, you can simply skip this step.
-    The packaged chunk files will be save to `${SPEECHAIN_ROOT}/datasets/{dataset_name}/wav/wav_{comp_chunk_ext}` and `${SPEECHAIN_ROOT}/datasets/{dataset_name}/wav/idx2wav_{comp_chunk_ext}`.
-9. **(Optional) Metadata post-processing**:  
-    In this step, all the metadata files generated in the above steps (not only the ones in the step 2) are post-processed by `${SPEECHAIN_ROOT}/datasets/dataset_name/meta_post_processor.py`.
-    If there is no _meta_post_processor.py_ in `${SPEECHAIN_ROOT}/datasets/{dataset_name}/`, this step will be skipped.
-10. **(Mandatory) Vocabulary generation**:  
-     In this step, the token vocabulary and text length will be extracted based on `${SPEECHAIN_ROOT}/datasets/dataset_name/wav/{src_subset}/text` and `${SPEECHAIN_ROOT}/datasets/dataset_name/wav/{tgt_subset}/idx2text`.
-     The extracted token vocabulary will be saved to `${SPEECHAIN_ROOT}/datasets/{dataset_name}/token_type/{src_subset}/{token_config}/{txt_format}/vocab`. 
-     The extracted text lengths will be saved to `${SPEECHAIN_ROOT}/datasets/{dataset_name}/token_type/{src_subset}/{token_config}/{txt_format}/{tgt_subset}/idx2text_len`.
-    
-     **Note**: For subword tokenizers, there will be an additional file named `model` in `${SPEECHAIN_ROOT}/datasets/{dataset_name}/token_type/{src_subset}/{token_config}/{txt_format}` because the subword tokenization is done by third-party packages in this toolkit.
-
-👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/datasets#table-of-contents)
-
-## How to Use the Existing Dataset on my Disk
-1. **If your dataset is one of the supported datasets in this toolkit:**
-   1. Go to the specific folder of your target dataset in `${SPEECHAIN_ROOT}/datasets/` (e.g. if you want to dump LibriTTS, please go to `${SPEECHAIN_ROOT}/datasets/libritts`)
-   2. Run `bash run.sh --help` to familiarize yourself with the arguments
-   3. Run `bash run.sh --src_path {the-path-of-your-existing-dataset}` with your personal argument setting.  
-      **Note:** 
-      1. `src_path` should be an absolute path starting by a slash '/'.
-      2. The content of `src_path` should be exactly the same with the one downloaded from the internet. (e.g. the folder `LibriTTS` for the data downloaded from `https://www.openslr.org/resources/60`)
-2. **If your dataset is not supported by this toolkit:**  
-   
-**PS:** 
-If you want to save the generated metadata files outside the toolkit folder, please attach the argument `--tgt_path {the-path-you-want-to-save-files}` to `bash run.sh`. 
-Please make sure that `tgt_path` is an absolute path starting with a slash '/'.
+**Note:**  
+   1. **If you already have the _decompressed_ dataset on your disk**, please attach the argument `--src_path {the-path-of-your-existing-dataset}` to the command `bash run.sh` in the no.3 step above.
+   Please make sure that `src_path` is an absolute path starting with a slash '/' and the content of `src_path` should be exactly the same with the one downloaded from the internet (please see the help message of `--src_path` in each `run.sh`).
+   2. **If you want to save the dumped data and metadata files outside the toolkit folder (`${SPEECHAIN_ROOT}`)**, please attach the argument `--tgt_path {the-path-you-want-to-save-files}` to the command `bash run.sh` in the no.3 step above.
+   Please make sure that `tgt_path` is an absolute path starting with a slash '/'.
 
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/datasets#table-of-contents)
 
 ## How to Extract Speaker Embedding by my own model
 If you want to use the pretrained speaker embedding model on your machine, please
-1. Go to the specific folder of your target dataset in `${SPEECHAIN_ROOT}/datasets/`
-2. Run `bash run.sh` with your personal argument setting.  
-    **Note:** don't give the argument `--spk_emb_model`
+1. Don't give the argument `--spk_emb_model` when running the command `bash run.sh`
 3. Write your own extraction script. You can use the metadata files `idx2wav` and `idx2wav_len` to read and organize the audio files. 
-Please save all the speaker embedding vectors in a specific folder under the directory of `idx2wav` and give a metadata file named `idx2spk_feat` for data reference.  
-    **Note:** 
+Please save all the speaker embedding vectors to a specific folder in the same directory of `idx2wav` and give a metadata file named `idx2spk_feat` for data reference.  
+**Note:** 
    1. For the file format of `idx2spk_feat`, please click [here](https://github.com/ahclab/SpeeChain/tree/main/datasets#idx2spk_feat) for reference.
    2. Please keep the same data index with `idx2wav` in your `idx2spk_feat`.
    3. Each speaker embedding vector should be in the shape of `[1, spk_feat_dim]`.
@@ -314,18 +260,18 @@ Please save all the speaker embedding vectors in a specific folder under the dir
 If the dataset that you want to use for your experiments is not included here, 
 you could make the dumping pipeline of your target dataset by the following instructions:
 1. Go to `${SPEECHAIN_ROOT}/datasets/`.
-2. Run `./data_dumping.sh -h` to familiarize yourself with the involved arguments.
-3. Make a new sub-folder in `${SPEECHAIN_ROOT}/datasets/` with the folder name as the name of your target dataset.
+2. Run `bash data_dumping.sh --help` to familiarize yourself with the involved arguments.
+3. Make a new folder in `${SPEECHAIN_ROOT}/datasets/` with the name as your target dataset.
 4. Make a new ***data_download.sh*** in `${SPEECHAIN_ROOT}/datasets/{dataset_name}` to download your target dataset from the internet.
-You could refer to the ones in the existing dataset sub-folders as a template.
+Please download the dataset into `${SPEECHAIN_ROOT}/datasets/{dataset_name}/data/wav`.
 5. Make a new ***meta_generator.py*** in `${SPEECHAIN_ROOT}/datasets/{dataset_name}` to extract the metadata files of your target dataset. 
-You could refer to `${SPEECHAIN_ROOT}/datasets/meta_generator.py` for instructions.
-6. If needed, make a new ***meta_post_processor.py*** in `${SPEECHAIN_ROOT}/datasets/{dataset_name}` to post-process all the extracted metadata files of your target dataset. 
-You could refer to `${SPEECHAIN_ROOT}/datasets/meta_post_processor.py` for instructions.
+Please refer to `${SPEECHAIN_ROOT}/datasets/meta_generator.py` for instructions of how to override the pipeline of metadata generation.
+6. If needed, make a new ***meta_post_processor.py*** in `${SPEECHAIN_ROOT}/datasets/{dataset_name}` to post-process the extracted metadata files of all the subsets. 
+(e.g. combine _train-clean-100_ and _train-clean-360_ of _LibriSpeech_ into _train-clean-460_)
+Please refer to `${SPEECHAIN_ROOT}/datasets/meta_post_processor.py` for instructions of how to override the pipeline of metadata post-processing.
 7. Make a new ***run.sh*** in `${SPEECHAIN_ROOT}/datasets/{dataset_name}` to manipulate the dumping pipeline of your target dataset. 
-You could refer to the ones in the existing dataset sub-folders as a template.
-8. Run **_run.sh_** in the terminal by `./run.sh` with your specified arguments. 
+You could refer to the ones in the existing dataset folders as a template.
 
-**Note**: You should keep the same script names (i.e., `data_download.sh`, `meta_generator.py`, and `meta_post_processor.py`) for the compatibility with `data_dumping.sh`.
+**Note**: Please keep the same script names (i.e., `data_download.sh`, `meta_generator.py`, and `meta_post_processor.py`) for the compatibility with `data_dumping.sh`.
 
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/datasets#table-of-contents)

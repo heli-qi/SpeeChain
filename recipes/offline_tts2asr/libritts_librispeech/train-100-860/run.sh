@@ -138,7 +138,7 @@ done
 args="
   --task offline_tts2asr \
   --dataset libritts_librispeech \
-  --subset train-clean-100-360 \
+  --subset train-100-860 \
   --dry_run ${dry_run} \
   --no_optim ${no_optim} \
   --resume ${resume} \

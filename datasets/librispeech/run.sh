@@ -14,11 +14,11 @@ function print_help_message {
   $0 \\ (The arguments in [] are optional while other arguments must be given by your run.sh.)
     [--start_step START_STEP] \\                          # Which step you would like to start from. (default: 1)
     [--stop_step STOP_STEP] \\                            # Which step you would like to end at. (default: 10000)
-    [--src_path SRC_PATH] \\                              # The path of the existing LibriSpeech dataset on your disk. If you have already downloaded the dataset, please give its absolute path (starting by a slash '/') by this argument. (default: none)
-    [--tgt_path TGT_PATH] \\                              # The metadata files will be generated to {tgt_path}/librispeech. If tgt_path is not given, metadata files will be saved to ${SPEECHAIN_ROOT}/datasets/librispeech. If you want to save metadata files elsewhere, please give its absolute path (starting by a slash '/') by this argument. (default: none)
+    [--src_path SRC_PATH] \\                              # If you already have the decompressed folder 'LibriSpeech' downloaded from https://www.openslr.org/resources/12, you can give its absolute path (starting by a slash '/', i.e. /xxx/xxx/LibriSpeech) to this argument so that the data downloading step will be skipped. (default: none)
+    [--tgt_path TGT_PATH] \\                              # The dumped data and metadata files will be generated to {tgt_path}/librispeech. If tgt_path is not given, those files will be saved to ${SPEECHAIN_ROOT}/datasets/librispeech. If you want to save metadata files elsewhere, please give its absolute path (starting by a slash '/') by this argument. (default: none)
     [--feat_type FEAT_TYPE] \\                            # The type of the feature you would like to dump. (default: wav)
     [--feat_config FEAT_CONFIG] \\                        # The name of acoustic feature extraction configuration file. (default: none)
-    [--sample_rate SAMPLE_RATE] \\                        # The sampling rate you want the waveforms to have. (default: none)
+    [--sample_rate SAMPLE_RATE] \\                        # The sampling rate you want the waveforms to have. If not given, the original sampling rate of LibriSpeech (16kHz) will be used for the folder 'librispeech/data/wav' (default: none)
     [--spk_emb_model SPK_EMB_MODEL] \\                    # The speaker recognition model you want to use to extract the speaker embeddings. If given, this argument must be either 'xvector' or 'ecapa'. (default: none)
     [--comp_chunk_ext COMP_CHUNK_EXT] \\                  # The file extension of the compressed chunk files. (default: none)
     [--token_type TOKEN_TYPE] \\                          # The type of the token you want your tokenizer to have. (default: sentencepiece)
@@ -30,7 +30,6 @@ function print_help_message {
     [--character_coverage CHARACTER_COVERAGE] \\          # The character_coverage argument for building sentencepiece tokenizer model. (default: 1.0)
     [--split_by_whitespace SPLIT_BY_WHITESPACE] \\        # The split_by_whitespace argument for building sentencepiece tokenizer model. (default: true)
     [--separator SEPARATOR] \\                            # The separator used to separate the 'subsets' arguments from a string into an array of string. (default: ',')
-    [--package_removal PACKAGE_REMOVAL] \\                # Whether to remove the downloaded data package after unzipping. (default: false)
     [--dump_part DUMP_PART]                              # Which part of LibriSpeech you would like to dump. '100' means 'train-clean-100'; '460' means 'train-clean-100' + 'train-clean-360'; '960' means 'train-clean-100' + 'train-clean-360' + 'train-other-500'. 'dev-clean', 'dev-other', 'test-clean', 'test-other' will be dumped for all options. (default: '960')" >&2
   exit 1
 }
@@ -68,7 +67,6 @@ character_coverage=1.0
 split_by_whitespace=true
 # arguments used by data_download.sh
 separator=','
-package_removal=false
 # text format for LibriSpeech is default to be librispeech
 txt_format=librispeech
 
@@ -156,10 +154,6 @@ while getopts ":h-:" optchar; do
         separator)
           val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
           separator=${val}
-          ;;
-        package_removal)
-          val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
-          package_removal=${val}
           ;;
         txt_format)
           val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
@@ -261,7 +255,7 @@ fi
   --token_type "${token_type}" \
   --txt_format "${txt_format}" \
   --dataset_name "librispeech" \
-  --download_args "--subset ${subsets_args} --separator ${separator} --package_removal ${package_removal}" \
+  --download_args "--subset ${subsets_args} --separator ${separator}" \
   --meta_generate_args "--subset ${subsets_args} --separator ${separator} --ncpu ${ncpu}" \
   --subsets "${subsets}" \
   --vocab_src_subsets "${vocab_src_subsets}" \
