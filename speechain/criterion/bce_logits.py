@@ -22,8 +22,10 @@ class BCELogits(Criterion):
         """
 
         Args:
-            pos_weight:
-            is_normalized:
+            pos_weight: float = 5.0
+                The weight putted on stop points for stop loss calculation.
+            is_normalized: bool = True
+                Controls whether the sentence normalization is performed for stop loss calculation.
 
         """
         self.bce_loss = torch.nn.BCEWithLogitsLoss(reduction='none', pos_weight=torch.Tensor([pos_weight]))

@@ -152,7 +152,7 @@ class ARASR(Model):
             self.tokenizer = SentencePieceTokenizer(token_vocab, copy_path=self.result_path)
         else:
             raise ValueError(f"Unknown token_type {token_type}. "
-                             f"Your input token_type should be one of ['char', 'sentencepiece'].")
+                             f"Currently, {self.__class__.__name__} supports one of ['char', 'sentencepiece'].")
 
         # initialize the sampling rate, mainly used for visualizing the input audio during training
         self.sample_rate = sample_rate
@@ -202,9 +202,9 @@ class ARASR(Model):
         )
 
     def criterion_init(self,
-                       ce_normalized: bool = False, label_smoothing: float = 0.0,
-                       ctc_weight: float = 0.0, ctc_zero_infinity: bool = True,
-                       att_guid_sigma: float = 0.0):
+                       ce_loss: Dict[str, Any] = None,
+                       ctc_loss: Dict[str, Any] or bool = None,
+                       att_guid_loss: Dict[str, Any] or bool = None):
         """
         This function initializes all the necessary _Criterion_ members:
             1. `speechain.criterion.cross_entropy.CrossEntropy` for training loss calculation.
@@ -213,45 +213,56 @@ class ARASR(Model):
             4. `speechain.criterion.error_rate.ErrorRate` for evaluation CER & WER calculation.
 
         Args:
-            ce_normalized: bool = False
-                Controls whether the sentence normalization is performed for cross-entropy loss.
-                For more details, please refer to speechain.criterion.cross_entropy.CrossEntropy
-            label_smoothing: float = 0.0
-                Controls the scale of label smoothing. 0 means no smoothing.
-                For more details, please refer to speechain.criterion.cross_entropy.CrossEntropy
-            ctc_weight: float = 0.0
-                The weight on the CTC loss for training the ASR model. If ctc_weight == 0, the CTC layer won't be
-                created and the ASR model is trained only by the cross-entropy loss.
-            ctc_zero_infinity: bool = True
-                Whether to zero infinite losses and the associated gradients when calculating the CTC loss.
-            att_guid_sigma: float = 0.0
-                The value of the sigma used to calculate the attention guidance loss.
-                If this argument is set to 0.0, the attention guidance will be disabled.
+            ce_loss: Dict[str, Any]
+                The arguments for CrossEntropy(). If not given, the default setting of CrossEntropy() will be used.
+                Please refer to speechain.criterion.cross_entropy.CrossEntropy for more details.
+            ctc_loss: Dict[str, Any] or bool
+                The arguments for CTCLoss(). If not given, self.ctc_loss won't be initialized.
+                This argument can also be set to a bool value 'True'. If True, the default setting of CTCLoss()
+                will be used.
+                Please refer to speechain.criterion.ctc.CTCLoss for more details.
+            att_guid_loss: Dict[str, Any] or bool
+                The arguments for AttentionGuidance(). If not given, self.att_guid_loss won't be initialized.
+                This argument can also be set to a bool value 'True'. If True, the default setting of AttentionGuidance()
+                will be used.
+                Please refer to speechain.criterion.att_guid.AttentionGuidance for more details.
 
         """
-        # arguments checking
-        assert 0 <= ctc_weight < 1, \
-            f"Your input ctc_weight must be a float number in [0, 1)! (got {ctc_weight}) " \
-            f"{self.__class__.__name__} doesn't support pure CTC training."
 
         # initialize cross-entropy loss
-        self.ce_loss = CrossEntropy(is_normalized=ce_normalized, label_smoothing=label_smoothing)
+        if ce_loss is None:
+            ce_loss = {}
+        self.ce_loss = CrossEntropy(**ce_loss)
 
         # initialize ctc loss
-        if ctc_weight > 0:
+        if ctc_loss is not None:
+            # if ctc_loss is given as True, the default arguments of CTCLoss will be used
+            if not isinstance(ctc_loss, Dict):
+                assert isinstance(ctc_loss, bool) and ctc_loss, \
+                    "If you want to use the default setting of CTCLoss, please give ctc_loss as True."
+                ctc_loss = {}
+
             if self.device != 'cpu' and self.tokenizer.ignore_idx != 0:
                 raise RuntimeError(f"For speeding up CTC calculation by CuDNN, "
                                    f"please set the blank id to 0 (got {self.tokenizer.ignore_idx}).")
             # construct the CTC layer lazily
             if not hasattr(self, 'ctc_layer'):
                 self.ctc_layer = TokenPostnet(input_size=self.encoder.output_size, vocab_size=self.tokenizer.vocab_size)
-            self.ctc_loss = CTCLoss(weight=ctc_weight, blank=self.tokenizer.ignore_idx, zero_infinity=ctc_zero_infinity)
+
+            ctc_loss['blank'] = self.tokenizer.ignore_idx
+            self.ctc_loss = CTCLoss(**ctc_loss)
 
         # initialize attention guidance loss
-        if att_guid_sigma != 0:
+        if att_guid_loss is not None:
+            # if att_guid_loss is given as True, the default arguments of AttentionGuidance will be used
+            if not isinstance(att_guid_loss, Dict):
+                assert isinstance(att_guid_loss, bool) and att_guid_loss, \
+                    "If you want to use the default setting of AttentionGuidance, please give att_guid_loss as True."
+                att_guid_loss = {}
+
             assert 'encdec' in self.return_att_type, \
                 "If you want to enable attention guidance for ASR training, please include 'encdec' in return_att_type."
-            self.att_guid_loss = AttentionGuidance(sigma=att_guid_sigma)
+            self.att_guid_loss = AttentionGuidance(**att_guid_loss)
 
         # initialize teacher-forcing accuracy for validation
         self.accuracy = Accuracy()
@@ -855,10 +866,15 @@ class MultiDomainARASR(ARASR):
                 return loss_class(**loss_dict)
             # no item in loss_dict is Dict mean that each dataloader has its own loss function
             elif leaf_num == 0:
+                if hasattr(self, 'loss_weights'):
+                    assert len(loss_dict) == len(self.loss_weights), \
+                        "The key number in the xxx_loss should match the one in the loss_weights"
+
                 nested_loss = dict()
-                assert len(loss_dict) == len(self.loss_weights), ""
                 for name, conf in loss_dict.items():
-                    assert name in self.loss_weights.keys()
+                    if hasattr(self, 'loss_weights'):
+                        assert name in self.loss_weights.keys(), \
+                            f"The key name {name} doesn't match anyone in the loss_weights!"
                     nested_loss[name] = loss_class(**conf)
                 return nested_loss
             else:

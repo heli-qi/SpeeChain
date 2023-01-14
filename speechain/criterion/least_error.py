@@ -25,9 +25,12 @@ class LeastError(Criterion):
         """
 
         Args:
-            loss_type:
-            is_normalized:
-            update_range:
+            loss_type: str = 'L2'
+                The type of acoustic feature prediction loss. Should be either 'L1', 'L2', and 'L1+L2'.
+            is_normalized: bool = True
+                Controls whether the sentence normalization is performed for feature loss calculation.
+            update_range: int or float = None
+                The updating range of the dimension of acoustic features for feature loss calculation.
 
         """
         assert loss_type in ['L1', 'L2', 'L1+L2'], \

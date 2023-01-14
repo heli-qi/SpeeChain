@@ -8,7 +8,7 @@ class CTCLoss(Criterion):
     The wrapper class for torch.nn.functional.ctc_loss
 
     """
-    def criterion_init(self, weight: float, blank: int = 0, zero_infinity: bool = True):
+    def criterion_init(self, weight: float = 0.3, blank: int = 0, zero_infinity: bool = True):
         """
 
         Args:
@@ -20,6 +20,11 @@ class CTCLoss(Criterion):
                 Whether to zero infinite losses and the associated gradients when calculating the CTC loss.
 
         """
+        # arguments checking
+        assert 0 <= weight < 1, \
+            f"Your input weight must be a float number in [0, 1)! (got {weight}) " \
+            f"Currently, we don't support pure CTC training."
+
         self.weight = weight
         self.blank = blank
         self.zero_infinity = zero_infinity

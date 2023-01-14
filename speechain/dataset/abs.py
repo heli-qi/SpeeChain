@@ -196,10 +196,8 @@ class Dataset(torch.utils.data.Dataset, ABC):
         # for meta-required selection strategies
         else:
             # read the metadata information for data selection
-            if isinstance(meta_info, str):
-                meta_info = [meta_info]
-            meta_info = [load_idx2data_file(file) for file in meta_info]
-            meta_info = np.array([[key, value] for m_i in meta_info for key, value in m_i.items()])
+            meta_info = load_idx2data_file(meta_info)
+            meta_info = np.array([[key, value] for key, value in meta_info.items()])
             # initialize the sorted indices and metadata values of the data instances
             meta_sorted_data = meta_info[:, 0][np.argsort(meta_info[:, 1].astype(float))]
             meta_sorted_value = np.sort(meta_info[:, 1].astype(float))

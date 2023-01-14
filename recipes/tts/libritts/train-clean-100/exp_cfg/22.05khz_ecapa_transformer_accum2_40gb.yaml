@@ -257,10 +257,11 @@ train_cfg:
           conv_dropout: !ref <dropout>
 
     criterion_conf:
-      feat_loss_type: L2
-      stop_pos_weight: 5.0
-      f_beta: 2.0
-      att_guid_sigma: 0.2
+      feat_loss:
+        loss_type: L2
+      stop_loss:
+        pos_weight: 5.0
+      att_guid_loss: True
 
   optim_sches:
     type: noam.Noamlr

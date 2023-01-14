@@ -82,7 +82,7 @@ class Runner(object):
             "--config",
             type=str,
             # default=None,
-            default="recipes/offline_tts2asr/libritts_librispeech/train-clean-100-360/exp_cfg/ecapa_transformer-wide_group.yaml",
+            default="recipes/asr/librispeech/train-clean-100/exp_cfg/transformer-narrow_temperature1.5_accum1_20gb.yaml",
             help="The path of the all-in-one experiment configuration file. You can write all the arguments in this "
                  "all-in-one file instead of giving them to `runner.py` by command lines."
         )
@@ -267,11 +267,11 @@ class Runner(object):
             '--train_result_path',
             type=str,
             default=None,
-            help="Where to place all the result files generated during model training. "
-                 "If not given, `train_result_path` wil be automatically initialized to the same directory with your "
-                 "input `config`. For example, if your input `config` is "
-                 "`{SPEECHAIN_ROOT}/recipes/asr/librispeech/train-960/exp_cfg/XXXXX.yaml`, your `train_result_path` "
-                 "will be automatically initialized to `{SPEECHAIN_ROOT}/recipes/asr/librispeech/train-960/exp/XXXXX`."
+            help="Where to place all the experiment folder that contains all the result files. "
+                 "If not given, `train_result_path` wil be automatically initialized by your input `config`. "
+                 "For example, if your input `config` is "
+                 "{SPEECHAIN_ROOT}/recipes/asr/librispeech/train-960/exp_cfg/XXXXX.yaml, your `train_result_path` "
+                 "will be automatically initialized to `{SPEECHAIN_ROOT}/recipes/asr/librispeech/train-960/exp/`."
                  "(default: None)")
         group.add_argument(
             '--train',
@@ -409,11 +409,12 @@ class Runner(object):
             type=str,
             default=None,
             help="Where to place all the result files generated during model testing. "
-                 "If not given, `train_result_path` wil be automatically initialized by your input `train_result_path` "
+                 "If not given, `test_result_path` wil be automatically initialized by your input `train_result_path` "
                  "and `test_model`. For example, if your `train_result_path` is "
-                 "`{SPEECHAIN_ROOT}/recipes/asr/librispeech/train-960/exp/XXXXX`, and `test_model` is `MMMMM`, "
+                 "`{SPEECHAIN_ROOT}/recipes/asr/librispeech/train-960/exp`, and `test_model` is `MMMMM`, "
                  "then your `test_result_path` will be automatically initialized to "
-                 "`{SPEECHAIN_ROOT}/recipes/asr/librispeech/train-960/exp/XXXXX/MMMMM/`."
+                 "`{SPEECHAIN_ROOT}/recipes/asr/librispeech/train-960/exp/XXXXX/MMMMM/` where 'XXXXX' is the name of "
+                 "your configuration file given by `--config`."
         )
         group.add_argument(
             '--test',
@@ -426,7 +427,7 @@ class Runner(object):
             type=str,
             default=None,
             help="The names of the model you want to evaluate during model testing. "
-                 "If not given, `{train_result_path}/model/{test_model}.pth` will be used to initialize the parameters "
+                 "If given, `{train_result_path}/XXXXX/model/{test_model}.pth` will be used to initialize the parameters "
                  "of the Model object. If you only want to evaluate multiple models in one job, please give the "
                  "strings of their names in a List. (default: None)"
         )
@@ -1304,12 +1305,21 @@ class Runner(object):
                                     world_size=args.world_size, rank=args.rank)
 
         # --- 3. Experimental Environment Logging --- #
+        if args.config is not None:
+            _config_split = args.config.split('/')
+        else:
+            _config_split = None
         # automatically decide the result path if not given
         if args.train_result_path is None:
-            assert args.config is not None, \
+            assert _config_split is not None, \
                 "If you want to automatically generate train_result_path, please give the configuration by '--config'."
-            _config_split = args.config.split('/')
             args.train_result_path = '/'.join(_config_split[:-2] + ['exp', '.'.join(_config_split[-1].split('.')[:-1])])
+        # decide by the given result path
+        else:
+            # if `--config` is given, attach the name of exp_cfg to the end of train_result_path
+            if _config_split is not None:
+                args.train_result_path = os.path.join(
+                    args.train_result_path, '.'.join(_config_split[-1].split('.')[:-1]))
 
         # initialize the logger and save current script command
         logger = logger_stdout_file(args.train_result_path,

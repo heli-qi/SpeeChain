@@ -244,7 +244,8 @@ train_cfg:
           layernorm_first: true
 
     criterion_conf:
-      label_smoothing: !ref <label_smoothing>
+      ce_loss:
+        label_smoothing: !ref <label_smoothing>
 
   optim_sches:
     type: noam.Noamlr

@@ -145,7 +145,8 @@ class ARTTS(Model):
         elif token_type == 'g2p':
             self.tokenizer = GraphemeToPhonemeTokenizer(token_vocab, copy_path=self.result_path)
         else:
-            raise ValueError
+            raise ValueError(f"Unknown token type {token_type}. "
+                             f"Currently, {self.__class__.__name__} supports one of ['char', 'g2p'].")
 
         # initialize the speaker list if given
         if spk_list is not None:
@@ -247,13 +248,9 @@ class ARTTS(Model):
         ]
 
     def criterion_init(self,
-                       feat_loss_type: str = 'L2',
-                       feat_loss_norm: bool = True,
-                       feat_update_range: int or float = None,
-                       stop_pos_weight: float = 5.0,
-                       stop_loss_norm: bool = True,
-                       f_beta: int = 2,
-                       att_guid_sigma: float = 0.2):
+                       feat_loss: Dict[str, Any] = None,
+                       stop_loss: Dict[str, Any] = None,
+                       att_guid_loss: Dict[str, Any] or bool = None):
         """
         This function initializes all the necessary Criterion members for an autoregressive TTS:
             1. `speechain.criterion.least_error.LeastError` for acoustic feature prediction loss calculation.
@@ -262,41 +259,43 @@ class ARTTS(Model):
             4. `speechain.criterion.fbeta_score.FBetaScore` for teacher-forcing stop flag prediction f-score calculation.
 
         Args:
-            feat_loss_type: str = 'L2'
-                The type of acoustic feature prediction loss. Should be either 'L1', 'L2', and 'L1+L2'.
-                For more details, please refer to speechain.criterion.least_error.LeastError.
-            feat_loss_norm: bool = True
-                Controls whether the sentence normalization is performed for feature loss calculation.
-                For more details, please refer to speechain.criterion.least_error.LeastError.
-            feat_update_range: int or float = None
-                The updating range of the dimension of acoustic features for feature loss calculation.
-                For more details, please refer to speechain.criterion.least_error.LeastError.
-            stop_pos_weight: float = 5.0
-                The weight putted on stop points for stop loss calculation.
-                For more details, please refer to speechain.criterion.bce_logits.BCELogits.
-            stop_loss_norm: bool = True
-                Controls whether the sentence normalization is performed for stop loss calculation.
-                For more details, please refer to speechain.criterion.bce_logits.BCELogits.
-            f_beta: int = 2
-                The value of beta for stop flag f-score calculation.
-                The larger beta is, the more f-score focuses on true positive stop flag prediction result.
-                For more details, please refer to speechain.criterion.fbeta_score.FBetaScore.
-            att_guid_sigma: float = 0.2
-                The value of the sigma used to calculate the attention guidance loss.
-                If this argument is given as 0, the attention guidance will be disabled.
+            feat_loss: Dict[str, Any]
+                The arguments for LeastError(). If not given, the default setting of LeastError() will be used.
+                Please refer to speechain.criterion.least_error.LeastError for more details.
+            stop_loss: Dict[str, Any]
+                The arguments for BCELogits(). If not given, the default setting of BCELogits() will be used.
+                Please refer to speechain.criterion.bce_logits.BCELogits for more details.
+            att_guid_loss: Dict[str, Any] or bool
+                The arguments for AttentionGuidance(). If not given, self.att_guid_loss won't be initialized.
+                This argument can also be set to a bool value 'True'. If True, the default setting of AttentionGuidance()
+                will be used.
+                Please refer to speechain.criterion.att_guid.AttentionGuidance for more details.
 
         """
         # --- Criterion Part Initialization --- #
-        # training loss
-        self.feat_loss = LeastError(loss_type=feat_loss_type, is_normalized=feat_loss_norm,
-                                    update_range=feat_update_range)
-        self.stop_loss = BCELogits(pos_weight=stop_pos_weight, is_normalized=stop_loss_norm)
-        if att_guid_sigma != 0:
-            assert 'encdec' in self.return_att_type
-            self.att_guid_loss = AttentionGuidance(sigma=att_guid_sigma)
+        # training losses
+        if feat_loss is None:
+            feat_loss = {}
+        self.feat_loss = LeastError(**feat_loss)
+
+        if stop_loss is None:
+            stop_loss = {}
+        self.stop_loss = BCELogits(**stop_loss)
+
+        if att_guid_loss is not None:
+            # if att_guid_loss is given as True, the default arguments of AttentionGuidance will be used
+            if not isinstance(att_guid_loss, Dict):
+                assert isinstance(att_guid_loss, bool) and att_guid_loss, \
+                    "If you want to use the default setting of AttentionGuidance, please give att_guid_loss as True."
+                att_guid_loss = {}
+
+            assert 'encdec' in self.return_att_type, \
+                "If you want to enable attention guidance for ASR training, please include 'encdec' in return_att_type."
+            self.att_guid_loss = AttentionGuidance(**att_guid_loss)
+
         # validation metrics
         self.stop_accuracy = Accuracy()
-        self.stop_fbeta = FBetaScore(beta=f_beta)
+        self.stop_fbeta = FBetaScore(beta=2)
 
     def batch_preprocess_fn(self, batch_data: Dict):
         """

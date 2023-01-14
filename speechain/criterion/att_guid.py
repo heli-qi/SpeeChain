@@ -15,9 +15,8 @@ class AttentionGuidance(Criterion):
         """
 
         Args:
-            sigma:
-
-        Returns:
+            sigma: float = 0.2
+                The value of the sigma used to calculate the attention guidance loss.
 
         """
         self.coeff = -1 / (2 * sigma ** 2)

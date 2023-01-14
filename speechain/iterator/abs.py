@@ -3,6 +3,8 @@
     Affiliation: NAIST
     Date: 2022.07
 """
+import warnings
+
 import numpy as np
 import random
 import torch
@@ -124,21 +126,25 @@ class Iterator(ABC):
         # --- 1. Loading the Data Length Information --- #
         # initialize the data lengths if given
         if data_len is not None:
-            data_len = [data_len] if isinstance(data_len, str) else data_len
             # remain the original order of the data indices if is_descending not specified
-            self.data_len = [load_idx2data_file(file, int) for file in data_len]
-            self.data_len = {key: value for d_len in self.data_len for key, value in d_len.items()}
+            self.data_len = load_idx2data_file(data_len, int)
 
             # check the data index in data_len and self.dataset
             data_len_keys, dataset_keys = set(self.data_len.keys()), set(self.dataset.get_data_index())
             # delete the redundant key-value pairs in data_len
             redundant_keys = data_len_keys.difference(dataset_keys)
             if len(redundant_keys) > 0:
+                warnings.warn(
+                    f"There are {len(redundant_keys)} redundant keys that exist in data_len but not in main_data! "
+                    f"If you are using data_selection in data_cfg, this may not be a problem.")
                 for redundant_key in redundant_keys:
                     self.data_len.pop(redundant_key)
             # delete the redundant key-value pairs in self.dataset
             redundant_keys = dataset_keys.difference(data_len_keys)
             if len(redundant_keys) > 0:
+                warnings.warn(
+                    f"There are {len(redundant_keys)} redundant keys that exist in main_data but not in data_len! "
+                    f"If you are using data_selection in data_cfg, this may not be a problem.")
                 for redundant_key in dataset_keys.difference(data_len_keys):
                     self.dataset.remove_data_by_index(redundant_key)
         else:
