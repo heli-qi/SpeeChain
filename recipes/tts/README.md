@@ -296,7 +296,7 @@ model:
 
 ## How to train an TTS model
 Suppose that we want to train an TTS model by the configuration `${SPEECHAIN_ROOT}/recipes/tts/libritts/train-clean-100/exp_cfg/16khz_ecapa_g2p_transformer_accum1_20gb.yaml`.
-1. Train the TTS model on your target training set
+1. **Train the TTS model** on your target training set
    ```
    cd ${SPEECHAIN_ROOT}/recipes/tts/libritts/train-clean-100
    bash run.sh --train true --exp_cfg 16khz_ecapa_g2p_transformer_accum1_20gb (--ngpu x --gpus x,x)
@@ -308,14 +308,14 @@ Suppose that we want to train an TTS model by the configuration `${SPEECHAIN_ROO
       please specify where you want to save the results by attaching `--train_result_path {your-target-path}` to `bash run.sh`.  
       In this example, if you give `bash run.sh --train true --exp_cfg 16khz_ecapa_g2p_transformer_accum1_20gb --train_result_path /a/b/c`, 
       the results will be saved to `/a/b/c/16khz_ecapa_g2p_transformer_accum1_20gb`.
-2. Tune the inference hyperparameters on the corresponding validation set
+2. **Tune the inference hyperparameters** on the corresponding validation set
    ```
    bash run.sh --test true --exp_cfg 16khz_ecapa_g2p_transformer_accum1_20gb --data_cfg validtune_ecapa_g2p_dev-clean
    ```
    **Note:** 
    1. `--data_cfg` is used to change the data loading configuration from the original one for training in `exp_cfg` to the one for validation tuning.
    2. If your experimental results are saved outside the toolkit, please attach `--train_result_path {your-target-path}` to `bash run.sh`.
-3. Generate the synthetic acoustic features by the trained TTS model on the official test sets
+3. **Generate the synthetic acoustic features** by the trained TTS model on the official test sets
    ```
    bash run.sh --test true --exp_cfg 16khz_ecapa_g2p_transformer_accum1_20gb --infer_cfg {the-best-configuration-you-get-during-validation-tuning}
    ```
@@ -324,7 +324,7 @@ Suppose that we want to train an TTS model by the configuration `${SPEECHAIN_ROO
    2. Give a parsable string as the value for `--infer_cfg` in the terminal. For example, `{beam_size:16,temperature:1.5}` can be converted into a dictionary with two key-value items (`beam_size:16` and `temperature:1.5`).  
    For more details about how to give the parsable string that can be converted into a dictionary, please refer to [**here**](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#convertable-arguments-in-the-terminal) for instructions.
    3. If your experimental results are saved outside the toolkit, please attach `--train_result_path {your-target-path}` to `bash run.sh`.
-4. Convert the acoustic features into waveforms by a chosen vocoder.
+4. **Convert the acoustic features into waveforms** by a chosen vocoder.
    1. If you want to generate the waveforms by GL algorithm, please follow the following instructions.
       ```
       cd ${SPEECHAIN_ROOT}/recipes/tts
@@ -347,7 +347,7 @@ Suppose that we want to train an TTS model by the configuration `${SPEECHAIN_ROO
          (--batch_size x --ngpu x)  
       ```
       A folder named `hifigan_wav` and two metadata files named `idx2hifigan_wav` and `idx2hifigan_wav_len` will be created in `${SPEECHAIN_ROOT}/recipes/tts/libritts/train-clean-100/exp_cfg/16khz_ecapa_transformer_v1_accum1_20gb/default_inference/10_train_loss_average/test-clean`. 
-5. Evaluate the synthetic waveforms by objective metrics.
+5. **Evaluate the synthetic waveforms by objective metrics.**
    ```
    cd ${SPEECHAIN_ROOT}/recipes/tts
    ${SPEECHAIN_PYTHON} tts_evaluation.py \
@@ -358,16 +358,25 @@ Suppose that we want to train an TTS model by the configuration `${SPEECHAIN_ROO
    A metadata file named `idx2{xxx}` and a .md report file named `hifigan_{xxx}_reports.md` will be crated in `${SPEECHAIN_ROOT}/recipes/tts/libritts/train-clean-100/exp_cfg/16khz_ecapa_g2p_transformer_accum1_20gb/default_inference/10_train_loss_average/test-clean`. 
    `xxx` is the name of an objective metric. Currently, `mcd` and `wav_len_ratio` are supported.  
    **Note:** If you want to change the number of processes for `tts_evaluation.py`, please give `--ngpu x` in your terminal.
-6. Evaluate the synthetic waveforms by a pretrained ASR model.
+6. **Evaluate the synthetic waveforms by a pretrained ASR model.**   
+   In the example below, the trained ASR model in `${SPEECHAIN_ROOT}/recipes/asr/librispeech/train-960/exp/transformer-wide_v1_accum4_40gb` will be used to evaluate the synthetic utterances in 
+   `recipes/tts/libritts/train-clean-100/exp/16khz_ecapa_g2p_transformer_v1_accum1_20gb/default_inference/10_train_loss_average/test-clean/idx2hifigan_wav`.
    ```
    cd ${SPEECHAIN_ROOT}/recipes/tts
    bash asr_evaluation.sh \
-      --asr_model_path  \
-      --tts_result_path  \
-      --asr_refer_idx2text  \
-      --vocoder  \
-      --asr_infer_cfg  \
-      
+      --asr_model_path recipes/asr/librispeech/train-960/exp/transformer-wide_v1_accum4_40gb \
+      --tts_result_path recipes/tts/libritts/train-clean-100/exp/16khz_ecapa_g2p_transformer_v1_accum1_20gb/default_inference/10_train_loss_average/test-clean \
+      --asr_refer_idx2text datasets/libritts/data/wav/test-clean/idx2librispeech_text \
+      --vocoder hifigan \
+      --asr_infer_cfg "{beam_size:16,temperature:1.3}" \
+      (--batch_len x --ngpu x --gpus x,x)
    ```
+   After running the above command, the ASR evaluation results will be saved to `{tts_result_path}/beam_size=16_temperature=1.3/10_valid_accuracy_average/vocoder=hifigan_model=recipes%asr%librispeech%train-960%exp%transformer-wide_v1_accum4_40gb`.  
+   _**Note:**_
+   1. The target metadata for synthetic waveforms `idx2hifigan_wav` is decided by the arguemnt `--vocoder`.
+   2. Please make sure that your given `--asr_refer_idx2text` matches the text format of your chosen ASR model.
+   3. If `--asr_infer_cfg` is not given, the one in  `infer_cfg` of `{asr_model_path}/exp_cfg.yaml` will be used.
+   4. If you want to speed up the ASR evaluation, please attach the optional arguments `--batch_len`, `--ngpu`, and `--gpus`. For details of these arguments, please run `bash asr_evaluation.sh --help` for more details.
+
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain/tree/main/recipes/tts#table-of-contents)
 

@@ -91,7 +91,7 @@ def load_idx2data_file(file_path: str or List[str], data_type: type = str, separ
         file_path: str or List[str]
             Absolute path of the file to be loaded.
         data_type: type = str
-            The Python built-in data type of the key value of the returned dictionary.
+            The data type of the values in the returned Dict. It should be the Python built-in data type.
         separator: str = " "
             The separator between the data instance index and the data value in each line of the 'idx2data' file.
         do_separate: bool = True
@@ -122,7 +122,7 @@ def load_idx2data_file(file_path: str or List[str], data_type: type = str, separ
         assert isinstance(file_path, List)
 
     # data file reading, List[str] -> List[Dict[str, str]]
-    idx2data_dict = [load_single_file(f_p) for f_p in file_path]
+    idx2data_dict = [load_single_file(parse_path_args(f_p)) for f_p in file_path]
 
     # multiple Dict case
     if len(idx2data_dict) > 1:

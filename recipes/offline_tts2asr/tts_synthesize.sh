@@ -12,35 +12,43 @@ fi
 function print_help_message {
   echo "usage:
   $0 \\ (The arguments in [] are optional while other arguments must be given by your run.sh.)
-      [--batch_len BATCH_LEN] \\                             # The total length of all unlabeled sentences in a single batch. This argument is required if you want to conduct batch-level TTS synthesis. (default: none)
+
+      # Group1: TTS Synthesis Environment
+      [--batch_len BATCH_LEN] \\                             # The total length of all unlabeled sentences in a single batch. This argument is required if you want to conduct batch-level TTS synthesis. We recommend you to set 'batch_len' up to {100 * total GBs of your GPUs}. (default: none)
       [--random_seed RANDOM_SEED] \\                         # The random seed used to control the randomness of reference speaker for TTS synthesis. (default: 0)
       [--ngpu NGPU] \\                                       # The number of GPUs you want to use. (default: 1)
       [--gpus GPUS] \\                                       # The GPUs you want to specify. (default: none)
       [--num_workers NUM_WORKERS] \\                         # The name of worker processes for data loading. (default: 1)
       [--resume RESUME] \\                                   # Whether to continue the unfinished evaluation. If true, the data loading strategy should remain the same as the last time. (default: false)
+
+      # Group2: Long Unspoken Sentence Filtering
       [--long_filter LONG_FILTER] \\                         # Whether to filter out long sentences with the largest text_len. (default: false)
-      [--filter_ratio FILTER_RATIO] \\                       # How many shorter utterances you want to retain. (default: 0.95)
-      [--tts_infer_cfg TTS_INFER_CFG] \\                     # The configuration for TTS inference. If not given, infer_cfg in {tts_model_path}/exp_cfg.yaml will be used. (default: none)
-      [--syn_result_path SYN_RESULT_PATH] \\                 # The path where you want to place the synthetic pseudo utterances. (default: recipes/offline_tts2asr/tts_syn_speech)
+      [--filter_ratio FILTER_RATIO] \\                       # How many shorter utterances you want to retain. (default: 0.99)
+
+      # Group3: Short Reference Utterance Filtering
+      [--sample_rate SAMPLE_RATE] \\                         # The sampling rate of the synthetic speech. (default: 16000)
+      [--ref_filter REF_FILTER] \\                           # Whether to filter out short reference speech by min_ref_len. If ref_filter is set to true, 'spk_emb_model' must be given. (default: false)
+      [--min_ref_second MIN_REF_SECOND] \\                   # The minimal seconds of the used reference speech. (default: 5)
+
+      # Group4: Speaker Embedding
       [--spk_emb_dataset SPK_EMB_DATASET] \\                 # The dataset where your target speaker embedding features are placed. If not given, this argument will be the same as 'tts_syn_dataset'. (default: none)
       [--spk_emb_subset SPK_EMB_SUBSET] \\                   # The subset where your target speaker embedding features are placed. If not given, this argument will be the same as 'tts_syn_subset'. (default: none)
       [--spk_emb_model SPK_EMB_MODEL] \\                     # The speaker embedding model you want to use for TTS synthesis. (default: none)
+
+      # Group5: Token & Text
       [--txt_format TXT_FORMAT] \\                           # The text format of the text data. (default: normal)
       [--token_type TOKEN_TYPE] \\                           # The type of tokens in your target vocabulary. (default: g2p)
       [--token_num TOKEN_NUM] \\                             # The number of tokens in your target vocabulary. (default: full_tokens)
+
+      # Group6: Main Arguments for Synthesis
+      [--tts_infer_cfg TTS_INFER_CFG] \\                     # The configuration for TTS inference. If not given, infer_cfg in {tts_model_path}/exp_cfg.yaml will be used. (default: none)
+      [--syn_result_path SYN_RESULT_PATH] \\                 # The path where you want to place the synthetic pseudo utterances. (default: ${SPEECHAIN_ROOT}/recipes/offline_tts2asr/tts_syn_speech/)
+      [--dump_data_path DUMP_DATA_PATH] \\                   # The path where your dumped data is placed. If your data is stored outside the toolkit, please specify them by this argument. (default: ${SPEECHAIN_ROOT}/datasets/)
       --tts_model_path TTS_MODEL_PATH \\                     # The path of the TTS model you want to use. There must be 'models/', 'exp_cfg.yaml', and 'train_cfg.yaml' in your specified folder.
       --tts_syn_dataset TTS_SYN_DATASET \\                   # The dataset whose text data you want to use for TTS synthesis.
       --tts_syn_subset TTS_SYN_SUBSET                       # The subset of your chosen dataset whose text data you want to use for TTS synthesis." >&2
   exit 1
 }
-
-
-tts_model_path=
-tts_infer_cfg=
-syn_result_path=recipes/offline_tts2asr/tts_syn_speech
-
-long_filter=false
-filter_ratio=0.95
 
 ngpu=1
 gpus=
@@ -49,14 +57,27 @@ random_seed=0
 resume=false
 num_workers=1
 
-tts_syn_dataset=
-tts_syn_subset=
+long_filter=false
+filter_ratio=0.99
+
+sample_rate=16000
+ref_filter=false
+min_ref_second=5
+
 spk_emb_dataset=
 spk_emb_subset=
 spk_emb_model=
+
 txt_format=normal
 token_type=g2p
 token_num=full_tokens
+
+tts_infer_cfg=
+syn_result_path=${SPEECHAIN_ROOT}/recipes/offline_tts2asr/tts_syn_speech
+dump_data_path=${SPEECHAIN_ROOT}/datasets/
+tts_model_path=
+tts_syn_dataset=
+tts_syn_subset=
 
 
 ### get args from the command line ###
@@ -100,6 +121,10 @@ while getopts ":h-:" optchar; do
           val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
           syn_result_path=${val}
           ;;
+        dump_data_path)
+          val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
+          dump_data_path=${val}
+          ;;
         tts_model_path)
           val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
           tts_model_path=${val}
@@ -115,6 +140,18 @@ while getopts ":h-:" optchar; do
         filter_ratio)
           val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
           filter_ratio=${val}
+          ;;
+        sample_rate)
+          val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
+          sample_rate=${val}
+          ;;
+        ref_filter)
+          val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
+          ref_filter=${val}
+          ;;
+        min_ref_second)
+          val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
+          min_ref_second=${val}
           ;;
         resume)
           val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
@@ -143,8 +180,9 @@ while getopts ":h-:" optchar; do
         help)
           print_help_message
           ;;
-        ?)
-          echo "Unknown variable $OPTARG"
+        *)
+          echo "Unknown variable --$OPTARG"
+          exit 1
           ;;
       esac
       ;;
@@ -153,6 +191,7 @@ while getopts ":h-:" optchar; do
       ;;
     *)
       echo "Please refer to an argument by '--'."
+      exit 1
       ;;
   esac
 done
@@ -170,13 +209,23 @@ else
 fi
 
 if ! grep -q '/' <<< "${syn_result_path}";then
-  echo "For 'syn_result_path', please give either an absolute address or an in-toolkit relative path!"
+  echo "There is no slash inside your given 'syn_result_path', please give either an absolute address or an in-toolkit relative path!"
+  exit 1
+fi
+
+if ! grep -q '/' <<< "${dump_data_path}";then
+  echo "There is no slash inside your given 'dump_data_path', please give either an absolute address or an in-toolkit relative path!"
   exit 1
 fi
 
 if [ -z ${tts_syn_dataset} ] || [ -z ${tts_syn_subset} ];then
    echo "Please give your target text data by '--dataset DATASET' and '--subset SUBSET'!"
    exit 1
+fi
+
+if ${ref_filter} && [ -z ${spk_emb_model} ];then
+  echo "Please give a speaker embedding model by '--spk_emb_model SPK_EMB_MODEL' if you give '--ref_filter true'!"
+  exit 1
 fi
 
 if [ -z ${spk_emb_dataset} ];then
@@ -202,6 +251,8 @@ args="--train False --test True --test_result_path ${syn_result_path}/${tts_syn_
 #            text:${unspoken_idx2text}
 #          },
 #          (spk_feat:${refer_idx2spk_feat},)
+#          (ref_len: ${idx2ref_len},)
+#          (min_ref_len: $(( sample_rate * min_ref_second )),)
 #          (data_selection:[min,${filter_ratio},${unspoken_idx2text_len}])
 #        },
 #        shuffle:false,
@@ -212,14 +263,20 @@ args="--train False --test True --test_result_path ${syn_result_path}/${tts_syn_
 #  }
 # the following code does the same job as the configuration above
 data_args="test:{seed=${random_seed}_"
-# if 'long_filter' is true, attach it into the folder name
+# if 'long_filter' is true, attach filter_ratio into the folder name
 if ${long_filter};then
   data_args="${data_args}long-filter=${filter_ratio}_"
 fi
+# if 'ref_filter' is true, attach min_ref_second into the folder name
+if ${ref_filter};then
+  data_args="${data_args}ref-filter=${min_ref_second}_"
+fi
 # if 'spk_emb_model' is given, attach it into the folder name
 if [ -n "${spk_emb_model}" ];then
-  data_args="${data_args}spk-emb=${spk_emb_dataset}-${spk_emb_subset}-${spk_emb_model}_model=${tts_model_path}:{type:"
+  data_args="${data_args}spk-emb=${spk_emb_dataset}-${spk_emb_subset}-${spk_emb_model}_model=${tts_model_path}"
 fi
+data_args="${data_args}:{type:"
+
 # if 'batch_len' is given, block.BlockIterator will be used as the iterator; else, use abs.Iterator
 if [ -n "${batch_len}" ];then
   data_args="${data_args}block.BlockIterator,"
@@ -227,24 +284,37 @@ else
   data_args="${data_args}abs.Iterator,"
 fi
 data_args="${data_args}conf:{"
+
 # if 'spk_emb_model' is given, RandomSpkFeatDataset will be used as the Dataset; else, use SpeechTextDataset
 if [ -n "${spk_emb_model}" ];then
   data_args="${data_args}dataset_type:speech_text.RandomSpkFeatDataset"
 else
   data_args="${data_args}dataset_type:speech_text.SpeechTextDataset"
 fi
+
 data_args="${data_args},dataset_conf:{main_data:{text:"
-unspoken_idx2text="datasets/${tts_syn_dataset}/data/${token_type}/${tts_syn_subset}/${token_num}/${txt_format}/idx2text"
+unspoken_idx2text="${dump_data_path}/${tts_syn_dataset}/data/${token_type}/${tts_syn_subset}/${token_num}/${txt_format}/idx2text"
 unspoken_idx2text_len="${unspoken_idx2text}_len"
 # if the idx2text file containing the split tokens doesn't exist, use the one containing the raw transcripts
-if [ ! -f "${SPEECHAIN_ROOT}/${unspoken_idx2text}" ];then
-  unspoken_idx2text="datasets/${tts_syn_dataset}/data/wav/${tts_syn_subset}/idx2${txt_format}_text"
+if [ ! -f "${unspoken_idx2text}" ];then
+  unspoken_idx2text="${dump_data_path}/${tts_syn_dataset}/data/wav/${tts_syn_subset}/idx2${txt_format}_text"
 fi
 data_args="${data_args}${unspoken_idx2text}}"
+
 # if 'spk_emb_model' is set to true, attach 'spk_feat' in 'dataset_conf'
 if [ -n "${spk_emb_model}" ];then
-  data_args="${data_args},spk_feat:datasets/${spk_emb_dataset}/data/wav/${spk_emb_subset}/idx2${spk_emb_model}_spk_feat"
+  data_args="${data_args},spk_feat:${dump_data_path}/${spk_emb_dataset}/data/wav/${spk_emb_subset}/idx2${spk_emb_model}_spk_feat"
 fi
+
+# if 'ref_filter' is set to true, attach 'ref_len' and 'min_ref_len' in 'dataset_conf'
+if ${ref_filter};then
+  idx2ref_len="${dump_data_path}/${spk_emb_dataset}/data/wav${sample_rate}/${spk_emb_subset}/idx2wav_len"
+  if [ ! -f "${idx2ref_len}" ];then
+    idx2ref_len="${dump_data_path}/${spk_emb_dataset}/data/wav/${spk_emb_subset}/idx2wav_len"
+  fi
+  data_args="${data_args},ref_len:${idx2ref_len},min_ref_len:$(( sample_rate * min_ref_second ))"
+fi
+
 # if 'long_filter' is set to true, attach 'data_selection' in 'dataset_conf'
 if ${long_filter};then
   data_args="${data_args},data_selection:[min,${filter_ratio},${unspoken_idx2text_len}]"
@@ -272,7 +342,7 @@ args="${args} --ngpu ${ngpu}"
 args="${args} --num_workers ${num_workers}"
 
 # exp_cfg.yaml and train_cfg.yaml generated during training in ${tts_model_path} will be used
-args="${args} --config ${tts_model_path}/exp_cfg.yaml --train_cfg ${tts_model_path}/train_cfg.yaml"
+args="${args} --config ${tts_model_path}/exp_cfg.yaml --train_result_path ${tts_model_path} --attach_config_folder_to_path false --train_cfg ${tts_model_path}/train_cfg.yaml"
 # explicitly specify the inference configuration if given
 if [ -n "${tts_infer_cfg}" ];then
   # do sth when infer_cfg is the name of a configuration file

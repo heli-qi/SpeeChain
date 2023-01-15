@@ -62,7 +62,6 @@ gpus: null # null means the GPUs with the largest free memory will be used
 train: False
 best_model_selection: !tuple (valid, accuracy, max, 10)
 early_stopping_patience: 10
-last_model_number: !ref <early_stopping_patience>
 
 # snapshot-related
 visual_snapshot_number: 3

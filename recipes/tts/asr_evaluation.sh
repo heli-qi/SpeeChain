@@ -12,36 +12,42 @@ fi
 function print_help_message {
   echo "usage:
   $0 \\ (The arguments in [] are optional while other arguments must be given by your run.sh.)
+
+      # Group1: ASR Decoding Environment
       [--batch_len BATCH_LEN] \\                            # The total length of all the synthetic utterances in a single batch. This argument is required if you want to conduct batch-level ASR evaluation. (default: none)
       [--ngpu NGPU] \\                                      # The number of GPUs you want to use. If not given, ngpu in {asr_model_path}/exp_cfg.yaml will be used. (default: none)
       [--gpus GPUS] \\                                      # The GPUs you want to specify. If not given, gpus in {asr_model_path}/exp_cfg.yaml will be used. (default: none)
-      [--vocoder VOCODER] \\                                # The vocoder you used to generate the waveforms. (default: gl)
       [--num_workers NUM_WORKERS] \\                        # The name of worker processes for data loading. If not given, num_workers in {asr_model_path}/exp_cfg.yaml will be used. (default: none)
       [--resume RESUME] \\                                  # Whether to continue the unfinished evaluation. If true, the data loading strategy should remain the same as the last time. (default: false)
+
+      # Group2: Long Synthetic Utterance Filtering
       [--long_filter LONG_FILTER] \\                        # Whether to filter out long utterances with the largest wav_len. (default: false)
-      [--filter_ratio FILTER_RATIO] \\                      # How many shorter utterances you want to retain. (default: 0.95)
+      [--filter_ratio FILTER_RATIO] \\                      # How many shorter utterances you want to retain. (default: 0.99)
+
+      # Group3: Main Arguments for ASR Evaluation
+      [--vocoder VOCODER] \\                                # The vocoder you used to generate the waveforms. (default: gl)
       [--asr_infer_cfg ASR_INFER_CFG] \\                    # The configuration for ASR inference. If not given, infer_cfg in {asr_model_path}/exp_cfg.yaml will be used. (default: none)
       --asr_model_path ASR_MODEL_PATH \\                    # The path of the ASR model you want to use. There must be 'models/', 'exp_cfg.yaml', and 'train_cfg.yaml' in your specified folder.
-      --tts_result_path TTS_RESULT_PATH \\                  # The path where you want to place the evaluation results.
+      --tts_result_path TTS_RESULT_PATH \\                  # The path where you want to place the evaluation results. The metadata files named 'idx2{vocoder}_wav' and 'idx2{vocoder}_wav_len' in your given 'tts_result_path' will be used for ASR evaluation.
       --asr_refer_idx2text ASR_REFER_IDX2TEXT \\            # The idx2text file of the ground-truth text data." >&2
   exit 1
 }
 
+ngpu=
+gpus=
+batch_len=
+resume=false
+num_workers=
 
+long_filter=false
+filter_ratio=0.99
+
+vocoder=gl
 asr_infer_cfg=
 asr_model_path=
 tts_result_path=
 asr_refer_idx2text=
 
-long_filter=false
-filter_ratio=0.95
-
-ngpu=
-gpus=
-vocoder=gl
-batch_len=
-resume=false
-num_workers=
 
 
 ### get args from the command line ###
@@ -100,8 +106,9 @@ while getopts ":h-:" optchar; do
         help)
           print_help_message
           ;;
-        ?)
-          echo "Unknown variable $OPTARG"
+        *)
+          echo "Unknown variable --$OPTARG"
+          exit 1
           ;;
       esac
       ;;
@@ -110,6 +117,7 @@ while getopts ":h-:" optchar; do
       ;;
     *)
       echo "Please refer to an argument by '--'."
+      exit 1
       ;;
   esac
 done
@@ -143,7 +151,7 @@ fi
 
 
 # --- 1. Argument Initialization --- #
-args="--train False --test True --test_result_path ${tts_result_path}"
+args="--train False --test True --train_result_path ${asr_model_path} --attach_config_folder_to_path false --test_result_path ${tts_result_path}"
 
 # automatically initialize the data loading configuration. The contents surrounded by a pair of brackets are optional.
 #  test:{
@@ -165,7 +173,13 @@ args="--train False --test True --test_result_path ${tts_result_path}"
 #    }
 #  }
 # the following code does the same job as the configuration above
-data_args="test:{${vocoder}_${asr_model_path}:{"
+data_args="test:{vocoder=${vocoder}"
+# if 'long_filter' is true, attach filter_ratio into the folder name
+if ${long_filter};then
+  data_args="${data_args}_long-filter=${filter_ratio}_"
+fi
+data_args="${data_args}_model=${asr_model_path}:{"
+
 # if 'batch_len' is given, block.BlockIterator will be used as the iterator; else, use abs.Iterator
 if [ -n "${batch_len}" ];then
   data_args="${data_args}type:block.BlockIterator,"

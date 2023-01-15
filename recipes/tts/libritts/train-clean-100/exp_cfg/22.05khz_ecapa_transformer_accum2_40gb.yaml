@@ -66,11 +66,8 @@ gpus: null # null means the GPUs with the largest free memory will be used
 # training-related
 train: True
 num_epochs: 1000
-best_model_selection:
-  - !tuple (train, loss, min, 10)
-  - !tuple (valid, loss, min, 10)
+best_model_selection: !tuple (train, loss, min, 10)
 early_stopping_patience: 10
-last_model_number: !ref <early_stopping_patience>
 valid_per_epochs: 10
 
 # snapshot-related

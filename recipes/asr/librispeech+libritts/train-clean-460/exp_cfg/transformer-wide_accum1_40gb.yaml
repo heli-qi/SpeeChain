@@ -64,7 +64,6 @@ gpus: null # null means the GPUs with the largest free memory will be used
 train: True
 best_model_selection: !tuple (valid, accuracy, max, 10)
 early_stopping_patience: 10
-last_model_number: !ref <early_stopping_patience>
 
 # snapshot-related
 visual_snapshot_number: 3
@@ -175,7 +174,7 @@ train_cfg:
     model_conf:
       customize_conf:
         token_type: !ref <token_type>
-        token_vocab: !ref <data_root>/<token_type>/<train_set>/<token_num>/<txt_format>/vocab
+        token_vocab: !ref <data_root>/<token_type>/<librispeech_train_set>/<token_num>/<txt_format>/vocab
 
     module_conf:
       frontend:

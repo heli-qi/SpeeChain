@@ -556,6 +556,10 @@ class ValidMonitor(Monitor):
 
         # last models-related members
         self.last_model_number = args.last_model_number
+        if self.last_model_number < 1:
+            raise ValueError("last_model_number cannot be lower than 1, "
+                             "otherwise the training will not be able to resume."
+                             f"Got last_model_number={self.last_model_number}!")
 
         # initialize the snapshooter of this validation monitor
         self.visual_snapshot_interval = args.visual_snapshot_interval
@@ -822,17 +826,21 @@ class ValidMonitor(Monitor):
                     for key in avg_model.keys():
                         avg_model[key] += _avg[key]
 
-            # for the parameters whose dtype is int, averaging is not performed
-            # reference: https://github.com/espnet/espnet/blob/5fa6dcc4e649dc66397c629d0030d09ecef36b80/espnet2/main_funcs/average_nbest_models.py#L90
-            for key in avg_model.keys():
-                if not str(avg_model[key].dtype).startswith("torch.int"):
-                    avg_model[key] /= aver_num
+            # if no average model, skip this function and return an empty string
+            if avg_model is None:
+                return ""
+            else:
+                # for the parameters whose dtype is int, averaging is not performed
+                # reference: https://github.com/espnet/espnet/blob/5fa6dcc4e649dc66397c629d0030d09ecef36b80/espnet2/main_funcs/average_nbest_models.py#L90
+                for key in avg_model.keys():
+                    if not str(avg_model[key].dtype).startswith("torch.int"):
+                        avg_model[key] /= aver_num
 
-            # save the average model
-            _aver_model_path = os.path.join(self.model_save_path, aver_model_name)
-            torch.save(avg_model, _aver_model_path)
+                # save the average model
+                _aver_model_path = os.path.join(self.model_save_path, aver_model_name)
+                torch.save(avg_model, _aver_model_path)
 
-            return f"{aver_model_name} has been updated to the average of epochs {aver_epoch_list}.\n"
+                return f"{aver_model_name} has been updated to the average of epochs {aver_epoch_list}.\n"
 
         # --- Save the average model for the best models of each metric --- #
         # loop each metric for best model selection

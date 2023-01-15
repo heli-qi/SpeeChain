@@ -50,7 +50,7 @@ warmup_steps: 8000
 
 # running-related
 seed: 0
-num_workers: 1
+num_workers: 0 #1
 pin_memory: True
 non_blocking: True
 
@@ -60,17 +60,14 @@ ft_factor: 1.0
 grad_clip: 1.0
 
 # multi-GPU-related
-ngpu: 2 # please change ngpu based on the situation of your machine
+ngpu: 1 #2 # please change ngpu based on the situation of your machine
 gpus: null # null means the GPUs with the largest free memory will be used
 
 # training-related
-train: True
+train: False
 num_epochs: 1000
-best_model_selection:
-  - !tuple (train, loss, min, 10)
-  - !tuple (valid, loss, min, 10)
+best_model_selection: !tuple (train, loss, min, 10)
 early_stopping_patience: 10
-last_model_number: !ref <early_stopping_patience>
 valid_per_epochs: 10
 
 # snapshot-related
@@ -78,7 +75,7 @@ visual_snapshot_number: 3
 visual_snapshot_interval: 10
 
 # testing-related
-test: False
+test: True
 test_model: 10_train_loss_average
 
 # This argument is shared by data_cfg and train_cfg

@@ -82,7 +82,7 @@ class Runner(object):
             "--config",
             type=str,
             # default=None,
-            default="recipes/asr/librispeech/train-clean-100/exp_cfg/transformer-narrow_temperature1.5_accum1_20gb.yaml",
+            default="recipes/tts/libritts/train-clean-100/exp_cfg/16khz_ecapa_g2p_transformer_accum1_20gb.yaml",
             help="The path of the all-in-one experiment configuration file. You can write all the arguments in this "
                  "all-in-one file instead of giving them to `runner.py` by command lines."
         )
@@ -274,6 +274,13 @@ class Runner(object):
                  "will be automatically initialized to `{SPEECHAIN_ROOT}/recipes/asr/librispeech/train-960/exp/`."
                  "(default: None)")
         group.add_argument(
+            '--attach_config_folder_to_path',
+            type=str2bool,
+            default=True,
+            help="Whether to attach an additional folder named by your input `--config` at the end of your input "
+                 "`train_result_path`. (default: True)"
+        )
+        group.add_argument(
             '--train',
             type=str2bool,
             default=False,
@@ -369,10 +376,10 @@ class Runner(object):
         group.add_argument(
             '--last_model_number',
             type=int,
-            default=10,
+            default=1,
             help="The number of models saved for the last several epochs. "
-                 "Usually, it's better to set this argument to the same value with 'early_stopping_patience'. "
-                 "(default: 10)"
+                 "This argument cannot be lower than 1 otherwise the training will not be able to resume. "
+                 "(default: 1)"
         )
 
         # Training Snapshotting
@@ -1172,7 +1179,8 @@ class Runner(object):
                             monitor.step(step_num=i + 1, test_results=test_results, test_index=test_indices[i])
                         except RuntimeError as e:
                             logger.info(
-                                f'Meet {e} at the step no{i}, skip the current step and continue the inference.')
+                                f'Meet {e} at the step no{i}, skip the current step and continue the inference. '
+                                f'The testing indices in this step contain {test_indices[i]}.')
 
                         # reduce the number of IO operations to speed up the testing
                         if (i + 1) % monitor.report_per_steps == 0 or i == total_step_num - 1:
@@ -1314,8 +1322,8 @@ class Runner(object):
             assert _config_split is not None, \
                 "If you want to automatically generate train_result_path, please give the configuration by '--config'."
             args.train_result_path = '/'.join(_config_split[:-2] + ['exp', '.'.join(_config_split[-1].split('.')[:-1])])
-        # decide by the given result path
-        else:
+        # attach a folder named by args.config to the end of your given result path
+        elif args.attach_config_folder_to_path:
             # if `--config` is given, attach the name of exp_cfg to the end of train_result_path
             if _config_split is not None:
                 args.train_result_path = os.path.join(

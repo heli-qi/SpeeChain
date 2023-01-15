@@ -2,7 +2,7 @@
 # Model: Transformer-ASR
 # Tokens: BPE 5k
 # losses: 0.2 Label Smooth
-# Training: train-960 of LibriTTS
+# Training: train-960 of 16khz-downsampled LibriTTS
 # Validation: dev of LibriTTS
 # Testing: test-clean & test-other of LibriTTS
 # Authors: Heli Qi
@@ -22,8 +22,8 @@ train_set: train-960
 valid_set: dev
 
 # waveform-related
-wav_format: wav
-sample_rate: 24000
+wav_format: wav16000
+sample_rate: 16000
 
 # tokenizer-related
 txt_format: librispeech
@@ -62,7 +62,6 @@ gpus: null # null means the GPUs with the largest free memory will be used
 train: True
 best_model_selection: !tuple (valid, accuracy, max, 10)
 early_stopping_patience: 10
-last_model_number: !ref <early_stopping_patience>
 
 # snapshot-related
 visual_snapshot_number: 3

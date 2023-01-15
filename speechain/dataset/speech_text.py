@@ -149,23 +149,46 @@ class RandomSpkFeatDataset(SpeechTextDataset):
     `collate_main_data_fn` of the parent class will be reused to collate a batch of data instances.
 
     """
-    def dataset_init_fn(self, spk_feat: List[str] or str):
+    def dataset_init_fn(self, spk_feat: List[str] or str, min_ref_len: int = None, ref_len: List[str] or str = None):
         """
 
         Args:
             spk_feat: List[str] or str
                 The address of the idx2spk_feat that contains the speaker embedding feature files you want to use.
+            min_ref_len: int = None
+                The minimal length for the reference speech to extract speaker embedding
+            ref_len: ref_len: List[str] or str = None
+                The address of the idx2wav_len or idx2feat-len that contains the length of your reference speech
 
         """
-        # str -> List[str]
-        self.spk_feat_dict = spk_feat if isinstance(spk_feat, List) else [spk_feat]
 
-        # data file reading, List[str] -> List[Dict[str, str]]
-        self.spk_feat_dict = [load_idx2data_file(_data_path) for _data_path in self.spk_feat_dict]
-        # data Dict combination, List[Dict[str, str]] -> Dict[str, str]
-        self.spk_feat_dict = {key: value for _data_dict in self.spk_feat_dict for key, value in _data_dict.items()}
-        # sort the key-value items in the dict by their key names
-        self.spk_feat_dict = dict(sorted(self.spk_feat_dict.items(), key=lambda x: x[0]))
+        # speaker embedding file reading, List[str] or str -> Dict[str, str]
+        self.spk_feat_dict = load_idx2data_file(spk_feat)
+
+        # filter out the short reference speech if min_ref_len is given
+        if min_ref_len is not None:
+            if isinstance(min_ref_len, float):
+                min_ref_len = int(min_ref_len)
+            assert isinstance(min_ref_len, int) and min_ref_len > 0,\
+                f"min_ref_len must be given as a positive integer, but got {min_ref_len}"
+            assert ref_len is not None, "if min_ref_len is given, please also give ref_len!"
+
+            # reference length file reading, List[str] or str -> Dict[str, str]
+            self.ref_len_dict = load_idx2data_file(ref_len, data_type=int)
+
+            # check whether the keys of spk_feat and ref_len match each other
+            spk_feat_keys, ref_len_keys = set(self.spk_feat_dict.keys()), set(self.ref_len_dict.keys())
+            redundant_keys = spk_feat_keys.difference(ref_len_keys)
+            assert len(redundant_keys) == 0, \
+                f"There are {len(redundant_keys)} keys that exist in spk_feat but not in ref_len! " \
+                f"Please check your data_cfg."
+            redundant_keys = ref_len_keys.difference(spk_feat_keys)
+            assert len(redundant_keys) == 0, \
+                f"There are {len(redundant_keys)} keys that exist in ref_len but not in spk_feat! " \
+                f"Please check your data_cfg."
+
+            self.ref_len_dict = {key: value for key, value in self.ref_len_dict.items() if value > min_ref_len}
+            self.spk_feat_dict = {key: value for key, value in self.spk_feat_dict.items() if key in self.ref_len_dict.keys()}
 
         # register the list of available speaker embedding features
         self.spk_feat_list = list(self.spk_feat_dict.keys())

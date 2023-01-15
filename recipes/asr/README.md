@@ -236,7 +236,7 @@ model:
 
 ## How to train an ASR model
 Suppose that we want to train an ASR model by the configuration `${SPEECHAIN_ROOT}/recipes/asr/librispeech/train-clean-100/exp_cfg/transformer-narrow_accum1_20gb.yaml`.
-1. Train the ASR model on your target training set
+1. **Train the ASR model** on your target training set
    ```
    cd ${SPEECHAIN_ROOT}/recipes/asr/librispeech/train-clean-100
    bash run.sh --train true --exp_cfg transformer-narrow_accum1_20gb (--ngpu x --gpus x,x)
@@ -248,14 +248,14 @@ Suppose that we want to train an ASR model by the configuration `${SPEECHAIN_ROO
       please specify where you want to save the results by attaching `--train_result_path {your-target-path}` to `bash run.sh`.  
       In this example, if you give `bash run.sh --train true --exp_cfg transformer-narrow_accum1_20gb --train_result_path /a/b/c`, 
       the results will be saved to `/a/b/c/transformer-narrow_accum1_20gb`.
-2. Tune the inference hyperparameters on the corresponding validation set
+2. **Tune the inference hyperparameters** on the corresponding validation set
    ```
    bash run.sh --test true --exp_cfg transformer-narrow_accum1_20gb --data_cfg validtune_dev-clean
    ```
    **Note:** 
    1. `--data_cfg` is used to change the data loading configuration from the original one for training in `exp_cfg` to the one for validation tuning.
    2. If your experimental results are saved outside the toolkit, please attach `--train_result_path {your-target-path}` to `bash run.sh`.
-3. Evaluate the trained ASR model on the official test sets
+3. **Evaluate the trained ASR model** on the official test sets
    ```
    bash run.sh --test true --exp_cfg transformer-narrow_v1_accum1_ngpu2 --infer_cfg "{the-best-configuration-you-get-during-validation-tuning}"
    ```
