@@ -329,24 +329,23 @@ Suppose that we want to train an TTS model by the configuration `${SPEECHAIN_ROO
       ```
       cd ${SPEECHAIN_ROOT}/recipes/tts
       ${SPEECHAIN_PYTHON} spec_to_wav.py \
-         --hypo_idx2feat recipes/tts/libritts/train-clean-100/exp_cfg/16khz_ecapa_g2p_transformer_accum1_20gb/default_inference/10_train_loss_average/test-clean/idx2feat \
+         --feat_path recipes/tts/libritts/train-clean-100/exp_cfg/16khz_ecapa_g2p_transformer_accum1_20gb \
          --vocoder_name gl \
-         --frontend_cfg recipes/tts/libritts/train-clean-100/exp_cfg/16khz_ecapa_transformer_v1_accum1_20gb/train_cfg.yaml \
          (--batch_size x --ngpu x) 
       ```
-      A folder named `gl_wav` and two metadata files named `idx2gl_wav` and `idx2gl_wav_len` will be created in `${SPEECHAIN_ROOT}/recipes/tts/libritts/train-clean-100/exp_cfg/16khz_ecapa_transformer_v1_accum1_20gb/default_inference/10_train_loss_average/test-clean`.  
+      A folder named `gl_wav` and two metadata files named `idx2gl_wav` and `idx2gl_wav_len` will be created in `${SPEECHAIN_ROOT}/recipes/tts/libritts/train-clean-100/exp_cfg/16khz_ecapa_transformer_v1_accum1_20gb/default_inference/10_train_loss_average/test-clean` and `${SPEECHAIN_ROOT}/recipes/tts/libritts/train-clean-100/exp_cfg/16khz_ecapa_transformer_v1_accum1_20gb/default_inference/10_train_loss_average/test-other`.  
       **Note:** spec_to_wav.py is default to be done by `--batch_size 1 --ncpu 8`. If you want to use GPUs, please give `--ngpu x`.
    2. If you want to generate the waveforms by _HiFiGAN_, please follow the following instructions. 
       ```
       cd ${SPEECHAIN_ROOT}/recipes/tts
       ${SPEECHAIN_PYTHON} spec_to_wav.py \
-         --hypo_idx2feat recipes/tts/libritts/train-clean-100/exp_cfg/16khz_ecapa_g2p_transformer_accum1_20gb/default_inference/10_train_loss_average/test-clean/idx2feat \
-         --vocoder_name hifigan \
+         --feat_path recipes/tts/libritts/train-clean-100/exp_cfg/16khz_ecapa_g2p_transformer_accum1_20gb \
+         --vocoder hifigan \
          --sample_rate 16000 \
          --vocoder_train_data libritts \
          (--batch_size x --ngpu x)  
       ```
-      A folder named `hifigan_wav` and two metadata files named `idx2hifigan_wav` and `idx2hifigan_wav_len` will be created in `${SPEECHAIN_ROOT}/recipes/tts/libritts/train-clean-100/exp_cfg/16khz_ecapa_transformer_v1_accum1_20gb/default_inference/10_train_loss_average/test-clean`. 
+      A folder named `hifigan_wav` and two metadata files named `idx2hifigan_wav` and `idx2hifigan_wav_len` will be created in `${SPEECHAIN_ROOT}/recipes/tts/libritts/train-clean-100/exp_cfg/16khz_ecapa_transformer_v1_accum1_20gb/default_inference/10_train_loss_average/test-clean` and `${SPEECHAIN_ROOT}/recipes/tts/libritts/train-clean-100/exp_cfg/16khz_ecapa_transformer_v1_accum1_20gb/default_inference/10_train_loss_average/test-other`. 
 5. **Evaluate the synthetic waveforms by objective metrics.**
    ```
    cd ${SPEECHAIN_ROOT}/recipes/tts
@@ -368,7 +367,7 @@ Suppose that we want to train an TTS model by the configuration `${SPEECHAIN_ROO
       --tts_result_path recipes/tts/libritts/train-clean-100/exp/16khz_ecapa_g2p_transformer_v1_accum1_20gb/default_inference/10_train_loss_average/test-clean \
       --asr_refer_idx2text datasets/libritts/data/wav/test-clean/idx2librispeech_text \
       --vocoder hifigan \
-      --asr_infer_cfg "{beam_size:16,temperature:1.3}" \
+      --asr_infer_cfg "beam_size:16,temperature:1.3" \
       (--batch_len x --ngpu x --gpus x,x)
    ```
    After running the above command, the ASR evaluation results will be saved to `{tts_result_path}/beam_size=16_temperature=1.3/10_valid_accuracy_average/vocoder=hifigan_model=recipes%asr%librispeech%train-960%exp%transformer-wide_v1_accum4_40gb`.  

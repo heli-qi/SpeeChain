@@ -15,7 +15,7 @@ from multiprocessing import Pool
 from speechbrain.pretrained import HIFIGAN
 
 from speechain.utilbox.type_util import str2dict
-from speechain.utilbox.data_loading_util import parse_path_args, load_idx2data_file, read_data_by_path
+from speechain.utilbox.data_loading_util import parse_path_args, load_idx2data_file, read_data_by_path, search_file_in_subfolder
 from speechain.utilbox.yaml_util import load_yaml
 from speechain.utilbox.import_util import get_idle_gpu
 from speechain.utilbox.data_saving_util import save_data_by_format
@@ -50,9 +50,10 @@ def parse():
     group = parser.add_argument_group("Shared Arguments")
     group.add_argument('--vocoder', type=str, default='hifigan',
                        help="The type of the vocoder you want to use to generate waveforms. (default: hifigan)")
-    group.add_argument('--hypo_idx2feat', type=str, required=True,
-                       help="The absolute path of the 'idx2feat' containing the addresses of all the hypothesis "
-                            "acoustic features. This argument is required.")
+    group.add_argument('--feat_path', type=str, required=True,
+                       help="The path of your TTS experimental folder. All the files named 'idx2feat' will be "
+                            "automatically found out and used for vocoding. You can also specify the path of your "
+                            "target 'idx2feat' file by this argument.")
     group.add_argument('--result_path', type=str, default=None,
                        help="The path where the generated waveforms are placed. If not given, the results will be "
                             "saved to the same directory as your given 'hypo_idx2feat'. (default: None)")
@@ -68,9 +69,10 @@ def parse():
 
     # GL-specific Arguments
     group = parser.add_argument_group("GL-specific Arguments")
-    group.add_argument('--frontend_cfg', type=str2dict, default=None,
-                       help="The configuration of the acoustic feature extraction frontend for GL vocoding. "
-                            "This argument must be given if you want to use GL vocoder. (default: None)")
+    group.add_argument('--tts_model_cfg', type=str2dict, default=None,
+                       help="The path of the configuration file of your TTS model for GL vocoding. If not given, the "
+                            "file named 'train_cfg.yaml' will be automatically found out in your given 'feat_path'. "
+                            "(default: None)")
 
     # Neural Vocoder-specific Arguments
     group = parser.add_argument_group("Neural Vocoder-specific Arguments")
@@ -132,18 +134,7 @@ def convert_feat_to_wav(idx2feat: Dict, device: str, batch_size: int, sample_rat
 
 
 def vocode_by_gl(idx2feat: Dict, gpu_id: int, batch_size: int, result_path: str, frontend_cfg: Dict) -> (Dict, Dict):
-    """
 
-    Args:
-        idx2feat:
-        gpu_id:
-        batch_size:
-        result_path:
-        frontend_cfg:
-
-    Returns:
-
-    """
     if frontend_cfg['type'] == 'mel_fbank':
         frontend = Speech2MelSpec(**frontend_cfg['conf'])
     elif frontend_cfg['type'] == 'stft':
@@ -204,78 +195,100 @@ def vocode_by_hifigan(idx2feat: Dict, gpu_id: int,
     return idx2wav, idx2wav_len
 
 
-def main(vocoder: str, hypo_idx2feat: str, result_path: str, batch_size: int, ngpu: int, ncpu: int,
-         frontend_cfg: Dict or str, sample_rate: int, vocoder_train_data: str):
+def main(vocoder: str, feat_path: str, result_path: str, batch_size: int, ngpu: int, ncpu: int,
+         tts_model_cfg: Dict or str, sample_rate: int, vocoder_train_data: str):
 
-    # initialize the result path
-    hypo_idx2feat = parse_path_args(hypo_idx2feat)
-    if result_path is None:
-        result_path = os.path.dirname(hypo_idx2feat)
+    feat_path = parse_path_args(feat_path)
+    # for folder input, automatically find out all the idx2feat candidates as hypo_idx2feat
+    if os.path.isdir(feat_path):
+        hypo_idx2feat_list = search_file_in_subfolder(feat_path, 'idx2feat')
+    # for file input, directly use it as hypo_idx2feat
     else:
-        result_path = parse_path_args(result_path)
-    # read the idx2feat file into a Dict, str -> Dict[str, str]
-    hypo_idx2feat = load_idx2data_file(hypo_idx2feat)
+        hypo_idx2feat_list = [feat_path]
 
-    # go through different branches by vocoder
-    vocoder = vocoder.lower()
-    if vocoder == 'gl':
-        assert frontend_cfg is not None
-        if isinstance(frontend_cfg, str):
-            frontend_cfg = load_yaml(parse_path_args(frontend_cfg))
-
-        if 'model' in frontend_cfg.keys():
-            frontend_cfg = frontend_cfg['model']['module_conf']['frontend']
-        assert 'type' in frontend_cfg.keys() and 'conf' in frontend_cfg.keys(), \
-            "frontend_cfg must contain 'type' and 'conf' as necessary key-value items!"
-
-        vocode_func = partial(vocode_by_gl, batch_size=batch_size, result_path=result_path, frontend_cfg=frontend_cfg)
-
-    elif vocoder == 'hifigan':
-        assert vocoder_train_data is not None, \
-            "If you choose 'hifigan' as the vocoder, " \
-            "please specify 'vocoder_train_data' to pick up the target hifigan model file."
-        vocoder_train_data = vocoder_train_data.lower()
-
-        if vocoder_train_data == 'ljspeech':
-            assert sample_rate == 22050, "If you choose 'ljspeech' as vocoder_train_data, sample_rate must be 22050."
-        elif vocoder_train_data == 'libritts':
-            assert sample_rate in [16000, 22050], \
-                "If you choose 'libritts' as vocoder_train_data, sample_rate must be either 16000 or 22050."
+    # loop each candidate idx2feat for hypothesis acoustic feature
+    for hypo_idx2feat in hypo_idx2feat_list:
+        if os.path.exists(os.path.join(os.path.dirname(hypo_idx2feat), f'idx2{vocoder}_wav')):
+            print(f"The waveform files have already existed. So {hypo_idx2feat} will be skipped.")
         else:
-            raise NotImplementedError(f"Unknown vocoder_train_data ({vocoder_train_data})! "
-                                      f"vocoder_train_data should be one of ['ljspeech', 'libritts'].")
+            # initialize the result path
+            hypo_idx2feat = parse_path_args(hypo_idx2feat)
+            if result_path is None:
+                result_path = os.path.dirname(hypo_idx2feat)
+            else:
+                result_path = parse_path_args(result_path)
+            # read the idx2feat file into a Dict, str -> Dict[str, str]
+            hypo_idx2feat = load_idx2data_file(hypo_idx2feat)
 
-        vocode_func = partial(vocode_by_hifigan, batch_size=batch_size, result_path=result_path,
-                              sample_rate=sample_rate, vocoder_train_data=vocoder_train_data)
+            # go through different branches by vocoder
+            vocoder = vocoder.lower()
+            if vocoder == 'gl':
+                if tts_model_cfg is None:
+                    tts_model_cfg = search_file_in_subfolder(feat_path, 'train_cfg.yaml')
+                    if len(tts_model_cfg) == 1:
+                        tts_model_cfg = load_yaml(parse_path_args(tts_model_cfg[0]))
+                    else:
+                        raise RuntimeError(
+                            f"Found multiple train_cfg.yaml files {tts_model_cfg} in {feat_path}. "
+                            f"Please directly give the path of your target train_cfg.yaml by '--tts_model_cfg'!")
 
-    else:
-        raise NotImplementedError(
-            "Currently, we only support Griffin-Lim ('gl') and HiFiGAN ('hifigan') as the vocoder.")
+                if 'model' in tts_model_cfg.keys():
+                    frontend_cfg = tts_model_cfg['model']['module_conf']['frontend']
+                else:
+                    frontend_cfg = tts_model_cfg
+                assert 'type' in frontend_cfg.keys() and 'conf' in frontend_cfg.keys(), \
+                    "tts_model_cfg must contain 'type' and 'conf' as necessary key-value items!"
 
-    # initialize the arguments for vocoder execution function
-    device_list = get_idle_gpu(ngpu, id_only=True) if ngpu > 0 else [-1 for _ in range(ncpu)]
-    n_proc = len(device_list) if ngpu > 0 else ncpu
-    hypo_idx2feat_list = list(hypo_idx2feat.items())
-    func_args = [[dict(hypo_idx2feat_list[i::n_proc]), device_list[i]] for i in range(n_proc)]
+                vocode_func = partial(vocode_by_gl,
+                                      batch_size=batch_size, result_path=result_path, frontend_cfg=frontend_cfg)
 
-    # # debugging use
-    # vocode_results = [vocode_func(*i) for i in func_args]
+            elif vocoder == 'hifigan':
+                assert vocoder_train_data is not None, \
+                    "If you choose 'hifigan' as the vocoder, " \
+                    "please specify 'vocoder_train_data' to pick up the target hifigan model file."
+                vocoder_train_data = vocoder_train_data.lower()
 
-    # start the executing jobs
-    with Pool(n_proc) as executor:
-        vocode_results = executor.starmap(vocode_func, func_args)
+                if vocoder_train_data == 'ljspeech':
+                    assert sample_rate == 22050, \
+                        "If you choose 'ljspeech' as vocoder_train_data, sample_rate must be 22050."
+                elif vocoder_train_data == 'libritts':
+                    assert sample_rate in [16000, 22050], \
+                        "If you choose 'libritts' as vocoder_train_data, sample_rate must be either 16000 or 22050."
+                else:
+                    raise NotImplementedError(f"Unknown vocoder_train_data ({vocoder_train_data})! "
+                                              f"vocoder_train_data should be one of ['ljspeech', 'libritts'].")
 
-    # gather the results from all the processes
-    idx2wav, idx2wav_len = {}, {}
-    for _idx2wav, _idx2wav_len in vocode_results:
-        idx2wav.update(_idx2wav)
-        idx2wav_len.update(_idx2wav_len)
+                vocode_func = partial(vocode_by_hifigan, batch_size=batch_size, result_path=result_path,
+                                      sample_rate=sample_rate, vocoder_train_data=vocoder_train_data)
 
-    # save the address and length of each synthetic utterance
-    np.savetxt(os.path.join(result_path, f'idx2{vocoder}_wav'),
-               sorted(idx2wav.items(), key=lambda x: x[0]), fmt='%s')
-    np.savetxt(os.path.join(result_path, f'idx2{vocoder}_wav_len'),
-               sorted(idx2wav_len.items(), key=lambda x: x[0]), fmt='%s')
+            else:
+                raise NotImplementedError(
+                    "Currently, we only support Griffin-Lim ('gl') and HiFiGAN ('hifigan') as the vocoder.")
+
+            # initialize the arguments for vocoder execution function
+            device_list = get_idle_gpu(ngpu, id_only=True) if ngpu > 0 else [-1 for _ in range(ncpu)]
+            n_proc = len(device_list) if ngpu > 0 else ncpu
+            hypo_idx2feat_list = list(hypo_idx2feat.items())
+            func_args = [[dict(hypo_idx2feat_list[i::n_proc]), device_list[i]] for i in range(n_proc)]
+
+            # # debugging use
+            # vocode_results = [vocode_func(*i) for i in func_args]
+
+            # start the executing jobs
+            with Pool(n_proc) as executor:
+                vocode_results = executor.starmap(vocode_func, func_args)
+
+            # gather the results from all the processes
+            idx2wav, idx2wav_len = {}, {}
+            for _idx2wav, _idx2wav_len in vocode_results:
+                idx2wav.update(_idx2wav)
+                idx2wav_len.update(_idx2wav_len)
+
+            # save the address and length of each synthetic utterance
+            np.savetxt(os.path.join(result_path, f'idx2{vocoder}_wav'),
+                       sorted(idx2wav.items(), key=lambda x: x[0]), fmt='%s')
+            np.savetxt(os.path.join(result_path, f'idx2{vocoder}_wav_len'),
+                       sorted(idx2wav_len.items(), key=lambda x: x[0]), fmt='%s')
 
 
 if __name__ == '__main__':

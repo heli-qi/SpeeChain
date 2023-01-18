@@ -261,7 +261,7 @@ Suppose that we want to train an ASR model by the configuration `${SPEECHAIN_ROO
    ```
    **Note:** There are two ways to specify the optimal `infer_cfg` tuned on the validation set:
    1. Change `infer_cfg` in `${SPEECHAIN_ROOT}/recipes/asr/librispeech/train-clean-100/exp_cfg/transformer-narrow_accum1_20gb.yaml`.
-   2. Give a parsable string as the value for `--infer_cfg` in the terminal. For example, `{beam_size:16,temperature:1.5}` can be converted into a dictionary with two key-value items (`beam_size:16` and `temperature:1.5`).  
+   2. Give a parsable string as the value for `--infer_cfg` in the terminal. For example, `beam_size:16,temperature:1.5` can be converted into a dictionary with two key-value items (`beam_size:16` and `temperature:1.5`).  
    For more details about how to give the parsable string that can be converted into a dictionary, please refer to [**here**](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#convertable-arguments-in-the-terminal) for instructions.
    3. If your experimental results are saved outside the toolkit, please attach `--train_result_path {your-target-path}` to `bash run.sh`.  
    

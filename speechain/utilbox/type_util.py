@@ -86,7 +86,7 @@ def str2dict(input_str: str) -> Dict or str:
 
     # input string checking
     assert (not input_str.startswith('{')) or (not input_str.endswith('}')), \
-        "If you want the framework to automatically convert your input string into a list, " \
+        "If you want the framework to automatically convert your input string into a Dict, " \
         "please don't surround it by a pair of braces '{}'."
     assert input_str.count('{') == input_str.count('}'), \
         "The number of left braces '{' doesn't match that of right braces '}'."

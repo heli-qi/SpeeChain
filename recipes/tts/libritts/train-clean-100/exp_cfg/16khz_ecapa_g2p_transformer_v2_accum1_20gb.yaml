@@ -50,7 +50,7 @@ warmup_steps: 8000
 
 # running-related
 seed: 0
-num_workers: 0 #1
+num_workers: 1
 pin_memory: True
 non_blocking: True
 
@@ -60,7 +60,7 @@ ft_factor: 1.0
 grad_clip: 1.0
 
 # multi-GPU-related
-ngpu: 1 #2 # please change ngpu based on the situation of your machine
+ngpu: 2 # please change ngpu based on the situation of your machine
 gpus: null # null means the GPUs with the largest free memory will be used
 
 # training-related
@@ -186,7 +186,7 @@ train_cfg:
         conf:
           posenc_dropout: !ref <trmf_dropout>
           posenc_scale: true
-          emb_scale: false
+          emb_scale: true
           emb_layernorm: true
           d_model: !ref <d_model>
           num_heads: !ref <head_num>
@@ -234,7 +234,7 @@ train_cfg:
         conf:
           posenc_dropout: !ref <trmf_dropout>
           posenc_scale: true
-          emb_scale: false
+          emb_scale: true
           emb_layernorm: true
           d_model: !ref <d_model>
           num_heads: !ref <head_num>

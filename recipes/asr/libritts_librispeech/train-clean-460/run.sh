@@ -143,7 +143,7 @@ done
 #
 args="
   --task asr \
-  --dataset librispeech+libritts \
+  --dataset libritts_librispeech \
   --subset train-clean-460 \
   --dry_run ${dry_run} \
   --no_optim ${no_optim} \

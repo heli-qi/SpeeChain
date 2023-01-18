@@ -588,6 +588,7 @@ class ARTTS(Model):
                   sample_index: str,
                   snapshot_interval: int = 1,
                   epoch_records: Dict = None,
+                  domain: str = None,
                   feat: torch.Tensor = None,
                   feat_len: torch.Tensor = None,
                   text: torch.Tensor = None,

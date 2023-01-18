@@ -807,6 +807,10 @@ class ValidMonitor(Monitor):
         """
 
         def save_aver_models(aver_epoch_list: List, aver_num: int, aver_model_name: str):
+            # no average model is saved if there is only one candidate model
+            if len(aver_epoch_list) == 1:
+                return ""
+
             # sum up the parameters of all best models
             avg_model = None
             for epoch in aver_epoch_list:
@@ -1157,13 +1161,13 @@ class TestMonitor(Monitor):
         os.makedirs(final_path, exist_ok=True)
 
         # load the checkpoint of rank0 and delete testing time information
-        self.load_state_dict(torch.load(os.path.join(final_path, '.0', 'checkpoint.pth'))['monitor'])
+        self.load_state_dict(torch.load(os.path.join(final_path, 'rank0_tmp', 'checkpoint.pth'))['monitor'])
         self.step_info.pop('group_time')
         self.step_info.pop('total_time')
 
         if self.distributed:
             for rank in range(1, torch.distributed.get_world_size()):
-                _tmp_dict = torch.load(os.path.join(final_path, f'.{rank}', 'checkpoint.pth'))['monitor']['step_info']
+                _tmp_dict = torch.load(os.path.join(final_path, f'rank{rank}_tmp', 'checkpoint.pth'))['monitor']['step_info']
                 for key in self.step_info.keys():
                     self.step_info[key].update(_tmp_dict[key])
 
@@ -1191,12 +1195,12 @@ class TestMonitor(Monitor):
         # copy the files from the other ranks in the distributed setting
         if self.distributed:
             for rank in range(1, torch.distributed.get_world_size()):
-                for file_name in os.listdir(os.path.join(final_path, f'.{rank}')):
+                for file_name in os.listdir(os.path.join(final_path, f'rank{rank}_tmp')):
                     # only consider the folders not named as 'figures'
-                    if os.path.isdir(os.path.join(final_path, f'.{rank}', file_name)) and file_name != 'figures':
+                    if os.path.isdir(os.path.join(final_path, f'rank{rank}_tmp', file_name)) and file_name != 'figures':
                         # move all the files to the final_path once a time (shutil.move doesn't work)
-                        for data_file in os.listdir(os.path.join(final_path, f'.{rank}', file_name)):
-                            os.rename(src=os.path.join(final_path, f'.{rank}', file_name, data_file),
+                        for data_file in os.listdir(os.path.join(final_path, f'rank{rank}_tmp', file_name)):
+                            os.rename(src=os.path.join(final_path, f'rank{rank}_tmp', file_name, data_file),
                                       dst=os.path.join(final_path, file_name, data_file))
 
         # generate the data path files
@@ -1204,8 +1208,8 @@ class TestMonitor(Monitor):
             # only consider folders
             if not os.path.isdir(os.path.join(final_path, file_name)):
                 continue
-            # only consider the folders not named as 'figures' and '.rank'
-            if file_name.startswith('.') or file_name == 'figures':
+            # only consider the folders not named as 'figures' and 'rank_tmp'
+            if file_name.startswith('rank') or file_name == 'figures':
                 continue
             idx2path = []
             for data_file in os.listdir(os.path.join(final_path, file_name)):

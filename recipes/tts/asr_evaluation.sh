@@ -176,7 +176,7 @@ args="--train False --test True --train_result_path ${asr_model_path} --attach_c
 data_args="test:{vocoder=${vocoder}"
 # if 'long_filter' is true, attach filter_ratio into the folder name
 if ${long_filter};then
-  data_args="${data_args}_long-filter=${filter_ratio}_"
+  data_args="${data_args}_long-filter=${filter_ratio}"
 fi
 data_args="${data_args}_model=${asr_model_path}:{"
 

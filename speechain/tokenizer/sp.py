@@ -55,7 +55,15 @@ class SentencePieceTokenizer(Tokenizer):
 
         # initialize the tokenizer model by the sentencepiece package
         self.sp_model = spm.SentencePieceProcessor()
-        self.sp_model.load(self.token_model)
+        try:
+            self.sp_model.load(self.token_model)
+        # in case that the sp model in copy_path fails to be loaded
+        except RuntimeError:
+            if token_model is None:
+                self.token_model = os.path.join(os.path.dirname(self.token_vocab), 'model')
+            else:
+                self.token_model = parse_path_args(token_model)
+            self.sp_model.load(self.token_model)
 
         # save the backup if copy_path is given
         if copy_path is not None:

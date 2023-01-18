@@ -189,3 +189,20 @@ def read_idx2data_file_to_dict(path_dict: Dict[str, str or List[str]]) -> (Dict[
                 output_dict[data_name].pop(redund_key)
 
     return output_dict, sorted(key_intsec)
+
+
+def search_file_in_subfolder(dir_name: str, tgt_name: str):
+    """
+    Find out all the files or directories in dir_name with the name tgt_name.
+
+    """
+    candidates = []
+
+    for curDir, dirs, files in os.walk(parse_path_args(dir_name)):
+        for name in dirs:
+            if name == tgt_name:
+                candidates.append(os.path.join(curDir, name))
+        for name in files:
+            if name == tgt_name:
+                candidates.append(os.path.join(curDir, name))
+    return candidates

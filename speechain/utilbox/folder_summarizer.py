@@ -12,13 +12,16 @@ def parse():
     parser.add_argument('--tgt_path', type=str, default=None,
                         help="The target path you want to save the summary file. "
                              "If not given, the summary file will be saved to the parent directory of 'src_folder'.")
-    parser.add_argument('--sum_file_name', type=str, required=True, help="The name of the summary file.")
+    parser.add_argument('--sum_file_name', type=str, default=None, help="The name of the summary file.")
     return parser.parse_args()
 
 
 def main(src_folder: str, tgt_path: str, sum_file_name: str):
     if tgt_path is None:
         tgt_path = '/'.join(src_folder.split('/')[:-1])
+    if sum_file_name is None:
+        sum_file_name = f"idx2{src_folder.split('/')[-1]}"
+
     src_folder, tgt_path = parse_path_args(src_folder), parse_path_args(tgt_path)
 
     file_summary = {}

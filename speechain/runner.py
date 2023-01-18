@@ -967,7 +967,7 @@ class Runner(object):
                             monitor.valid_step(valid_metrics=valid_metrics)
 
             # --- Visualization Stage --- #
-            if args.visual_snapshot_number > 0 and epoch % args.visual_snapshot_interval == 0:
+            if args.visual_snapshot_number > 0 and (epoch - 1) % args.visual_snapshot_interval == 0:
                 # make sure that all processes go through the validation phase smoothly
                 if visual_iterator is not None:
                     if not isinstance(visual_iterator, Dict):
@@ -1114,7 +1114,7 @@ class Runner(object):
                 # replace the slash with a percent symbol
                 name = name.replace('/', '%')
                 # add the identity symbol to the path for multi-GPU testing
-                test_dset_path = os.path.join(test_result_path, test_model, name, f'.{args.rank}')
+                test_dset_path = os.path.join(test_result_path, test_model, name, f'rank{args.rank}_tmp')
                 logger = logger_stdout_file(test_dset_path, file_name='test')
 
                 # initialize top-n bad case presentation
