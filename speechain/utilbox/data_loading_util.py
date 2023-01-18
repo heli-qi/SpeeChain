@@ -191,18 +191,28 @@ def read_idx2data_file_to_dict(path_dict: Dict[str, str or List[str]]) -> (Dict[
     return output_dict, sorted(key_intsec)
 
 
-def search_file_in_subfolder(dir_name: str, tgt_name: str):
+def search_file_in_subfolder(curr_query: str, tgt_name: str):
     """
     Find out all the files or directories in dir_name with the name tgt_name.
 
     """
     candidates = []
+    curr_query = parse_path_args(curr_query)
 
-    for curDir, dirs, files in os.walk(parse_path_args(dir_name)):
-        for name in dirs:
-            if name == tgt_name:
-                candidates.append(os.path.join(curDir, name))
-        for name in files:
-            if name == tgt_name:
-                candidates.append(os.path.join(curDir, name))
+    # input query is the path of a file
+    if os.path.isfile(curr_query):
+        dir_name, node_name = '/'.join(curr_query.split('/')[:-1]), curr_query.split('/')[-1]
+        if node_name == tgt_name:
+            return candidates + [curr_query]
+        else:
+            raise RuntimeError(f"Your input query {curr_query} doesn't match tgt_name {tgt_name}!")
+
+    # input query is the path of a folder
+    for node_name in os.listdir(curr_query):
+        node_path = os.path.join(curr_query, node_name)
+        if os.path.isdir(node_path):
+            candidates = candidates + search_file_in_subfolder(node_path, tgt_name)
+        elif node_name == tgt_name:
+            candidates = candidates + [node_path]
+
     return candidates

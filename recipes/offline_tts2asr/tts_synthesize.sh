@@ -28,7 +28,7 @@ function print_help_message {
       # Group3: Short Reference Utterance Filtering
       [--sample_rate SAMPLE_RATE] \\                         # The sampling rate of the synthetic speech. (default: 16000)
       [--ref_filter REF_FILTER] \\                           # Whether to filter out short reference speech by min_ref_len. If ref_filter is set to true, 'spk_emb_model' must be given. (default: false)
-      [--min_ref_second MIN_REF_SECOND] \\                   # The minimal seconds of the used reference speech. (default: 5)
+      [--min_ref_second MIN_REF_SECOND] \\                   # The minimal seconds of the used reference speech. (default: 3)
 
       # Group4: Speaker Embedding
       [--spk_emb_dataset SPK_EMB_DATASET] \\                 # The dataset where your target speaker embedding features are placed. If not given, this argument will be the same as 'tts_syn_dataset'. (default: none)
@@ -62,7 +62,7 @@ filter_ratio=0.99
 
 sample_rate=16000
 ref_filter=false
-min_ref_second=5
+min_ref_second=3
 
 spk_emb_dataset=
 spk_emb_subset=

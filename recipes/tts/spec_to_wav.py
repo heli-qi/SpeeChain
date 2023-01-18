@@ -9,6 +9,7 @@ import os
 import numpy as np
 import torch
 
+from tqdm import tqdm
 from typing import Dict, List
 from functools import partial
 from multiprocessing import Pool
@@ -50,7 +51,8 @@ def parse():
     group = parser.add_argument_group("Shared Arguments")
     group.add_argument('--vocoder', type=str, default='hifigan',
                        help="The type of the vocoder you want to use to generate waveforms. (default: hifigan)")
-    group.add_argument('--feat_path', type=str, required=True,
+    group.add_argument('--feat_path', type=str,
+                       required=True,
                        help="The path of your TTS experimental folder. All the files named 'idx2feat' will be "
                             "automatically found out and used for vocoding. You can also specify the path of your "
                             "target 'idx2feat' file by this argument.")
@@ -111,7 +113,7 @@ def convert_feat_to_wav(idx2feat: Dict, device: str, batch_size: int, sample_rat
     curr_batch, wav_results, idx2wav, idx2wav_len = [], [], {}, {}
     kwargs = dict(device=device, sample_rate=sample_rate, save_path=save_path, feat_to_wav_func=feat_to_wav_func)
 
-    for i, (idx, feat_path) in enumerate(idx2feat.items()):
+    for idx, feat_path in tqdm(idx2feat.items()):
         # collect the data into the current batch
         feat = read_data_by_path(feat_path, return_tensor=True).to(device)
         curr_batch.append([idx, feat, feat.size(0)])

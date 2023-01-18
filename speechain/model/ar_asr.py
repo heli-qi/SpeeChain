@@ -974,7 +974,8 @@ class MultiDomainARASR(ARASR):
                     metrics.update(**{f"{domain}_{_key}": _value for _key, _value in _criteria[1].items()})
                 # only update metric Dict during validation
                 else:
-                    metrics.update(**{f"{domain}_{_key}": _value for _key, _value in _criteria.items()})
+                    metrics.update(**{_key if len(domain_list) == 1 else f"{domain}_{_key}": _value
+                                      for _key, _value in _criteria.items()})
 
             # calculate the overall weighted loss during training
             if self.training:

@@ -56,11 +56,20 @@ class Tokenizer(ABC):
 
         # register token-related variables
         self.idx2token = load_idx2data_file(self.token_vocab, do_separate=False)
-        self.token2idx = dict(map(reversed, self.idx2token.items()))
-        self.vocab_size = len(self.token2idx)
-        self.sos_eos_idx = self.token2idx['<sos/eos>']
-        self.ignore_idx = self.token2idx['<blank>']
-        self.unk_idx = self.token2idx['<unk>']
+        try:
+            self.token2idx = dict(map(reversed, self.idx2token.items()))
+            self.vocab_size = len(self.token2idx)
+            self.sos_eos_idx = self.token2idx['<sos/eos>']
+            self.ignore_idx = self.token2idx['<blank>']
+            self.unk_idx = self.token2idx['<unk>']
+        except KeyError:
+            self.token_vocab = parse_path_args(token_vocab)
+            self.idx2token = load_idx2data_file(self.token_vocab, do_separate=False)
+            self.token2idx = dict(map(reversed, self.idx2token.items()))
+            self.vocab_size = len(self.token2idx)
+            self.sos_eos_idx = self.token2idx['<sos/eos>']
+            self.ignore_idx = self.token2idx['<blank>']
+            self.unk_idx = self.token2idx['<unk>']
 
         # save the backup if copy_path is given
         if copy_path is not None:
