@@ -938,6 +938,7 @@ class ValidMonitor(Monitor):
         """
         return dict(
             epoch_records=self.epoch_records,
+            saved_model_epoch=self.saved_model_epoch,
             best_model_performance=self.best_model_performance,
             early_stopping_epochs=self.early_stopping_epochs,
             last_best_performance=self.last_best_performance
