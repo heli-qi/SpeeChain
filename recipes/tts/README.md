@@ -330,7 +330,7 @@ Suppose that we want to train an TTS model by the configuration `${SPEECHAIN_ROO
       cd ${SPEECHAIN_ROOT}/recipes/tts
       ${SPEECHAIN_PYTHON} spec_to_wav.py \
          --feat_path recipes/tts/libritts/train-clean-100/exp_cfg/16khz_ecapa_g2p_transformer_accum1_20gb \
-         --vocoder_name gl \
+         --vocoder gl \
          (--batch_size x --ngpu x) 
       ```
       A folder named `gl_wav` and two metadata files named `idx2gl_wav` and `idx2gl_wav_len` will be created in `${SPEECHAIN_ROOT}/recipes/tts/libritts/train-clean-100/exp_cfg/16khz_ecapa_transformer_v1_accum1_20gb/default_inference/10_train_loss_average/test-clean` and `${SPEECHAIN_ROOT}/recipes/tts/libritts/train-clean-100/exp_cfg/16khz_ecapa_transformer_v1_accum1_20gb/default_inference/10_train_loss_average/test-other`.  
