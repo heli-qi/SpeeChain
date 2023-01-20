@@ -101,6 +101,7 @@ def load_idx2data_file(file_path: str or List[str], data_type: type = str, separ
         In each key-value item, the key is the index of a data instance and the value is the target data.
 
     """
+
     def load_single_file(_file_path: str):
         # str -> (n,) np.ndarray. First read the content of the given file one line a time.
         with open(parse_path_args(_file_path), mode='r') as f:
@@ -191,7 +192,7 @@ def read_idx2data_file_to_dict(path_dict: Dict[str, str or List[str]]) -> (Dict[
     return output_dict, sorted(key_intsec)
 
 
-def search_file_in_subfolder(curr_query: str, tgt_match_fn):
+def search_file_in_subfolder(curr_query: str, tgt_match_fn=None):
     """
     Find out all the files or directories in dir_name with the name tgt_name.
 
@@ -202,7 +203,7 @@ def search_file_in_subfolder(curr_query: str, tgt_match_fn):
     # input query is the path of a file
     if os.path.isfile(curr_query):
         dir_name, node_name = '/'.join(curr_query.split('/')[:-1]), curr_query.split('/')[-1]
-        if tgt_match_fn(node_name):
+        if tgt_match_fn is None or tgt_match_fn(node_name):
             return candidates + [curr_query]
         else:
             raise RuntimeError(f"Your input query is the path of a file {curr_query} and it doesn't match your target!")
@@ -212,7 +213,7 @@ def search_file_in_subfolder(curr_query: str, tgt_match_fn):
         node_path = os.path.join(curr_query, node_name)
         if os.path.isdir(node_path):
             candidates = candidates + search_file_in_subfolder(node_path, tgt_match_fn)
-        elif tgt_match_fn(node_name):
+        elif tgt_match_fn is None or tgt_match_fn(node_name):
             candidates = candidates + [node_path]
 
     return candidates

@@ -3,6 +3,7 @@ import os
 import numpy as np
 
 from speechain.utilbox.import_util import parse_path_args
+from speechain.utilbox.data_loading_util import search_file_in_subfolder
 
 
 def parse():
@@ -25,9 +26,9 @@ def main(src_folder: str, tgt_path: str, sum_file_name: str):
     src_folder, tgt_path = parse_path_args(src_folder), parse_path_args(tgt_path)
 
     file_summary = {}
-    for file_name in os.listdir(src_folder):
-        if os.path.isdir(file_name):
-            continue
+    file_path_list = search_file_in_subfolder(src_folder)
+    for file_path in file_path_list:
+        file_name = file_path.split('/')[-1]
         # get rid of the extension
         file_summary['.'.join(file_name.split('.')[:-1])] = os.path.join(src_folder, file_name)
 
