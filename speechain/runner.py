@@ -82,7 +82,7 @@ class Runner(object):
             "--config",
             type=str,
             # default=None,
-            default="recipes/tts/libritts/train-clean-100/exp_cfg/16khz_ecapa_g2p_transformer_accum1_20gb.yaml",
+            default="recipes/tts/libritts/train-clean-100/exp_cfg/16khz_ecapa_g2p_transformer_v6_accum1_20gb.yaml",
             help="The path of the all-in-one experiment configuration file. You can write all the arguments in this "
                  "all-in-one file instead of giving them to `runner.py` by command lines."
         )
@@ -936,7 +936,7 @@ class Runner(object):
             if monitor is not None:
                 monitor.start_valid_epoch(epoch)
 
-            valid_flag = epoch % args.valid_per_epochs == 0
+            valid_flag = (epoch - 1) % args.valid_per_epochs == 0
             if valid_flag:
                 # initialize all the validation dataloaders
                 data_loaders = cls.dict_transform(iterators['valid'], lambda x: iter(x.build_loader(epoch)))
@@ -1665,7 +1665,7 @@ class Runner(object):
                 args.infer_cfg = [parse_path_args(cfg) if isinstance(cfg, str) else cfg for cfg in args.infer_cfg]
             elif not isinstance(args.infer_cfg, Dict):
                 raise TypeError("infer_cfg should be either a string, a List, or a Dict, "
-                                f"but got type(args.infer_cfg)={type(args.infer_cfg)}.")
+                                f"b16khz_ecapa_g2p_transformer_v5_accum1_20gbut got type(args.infer_cfg)={type(args.infer_cfg)}.")
 
         # --- 3. Start the Experimental Pipeline --- #
         assert (args.train ^ args.test) is True, \

@@ -4,13 +4,10 @@
 # In most of the materials, MCD is calculated on 24-points MFCC features.
 
 # fairseq configuration
-#n_mfcc: 13
-#win_length: 0.05
-#hop_length: 0.0125
+n_mfcc: 13
+win_length: 0.05
+hop_length: 0.0125
 #log_base: null
 #htk: True
 #norm: null
 
-n_mfcc: 25 # the first dimension will be discarded
-win_length: 0.05
-hop_length: 0.0125

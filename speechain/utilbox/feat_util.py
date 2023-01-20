@@ -40,7 +40,7 @@ def convert_wav_to_stft(wav: np.ndarray,
                         mag_spec: bool = False,
                         clamp: float = 1e-10,
                         logging: bool = False,
-                        log_base: float = None) -> np.ndarray:
+                        log_base: float or None = None) -> np.ndarray:
     """
     For the details about the arguments and returns,
         please refer to ${SPEECHAIN_ROOT}/speechain/module/frontend/speech2linear.py
@@ -105,9 +105,9 @@ def convert_wav_to_logmel(wav: np.ndarray,
                           fmax: float = None,
                           clamp: float = 1e-10,
                           logging: bool = True,
-                          log_base: float = 10.0,
+                          log_base: float or None = 10.0,
                           htk: bool = False,
-                          norm: str = 'slaney',
+                          norm: str or None = 'slaney',
                           delta_order: int = 0,
                           delta_N: int = 2) -> np.ndarray:
     """
@@ -164,9 +164,9 @@ def convert_wav_to_mfcc(wav: np.ndarray,
                         fmax: float = None,
                         clamp: float = 1e-10,
                         logging: bool = True,
-                        log_base: float = 10.0,
+                        log_base: float or None = 10.0,
                         htk: bool = False,
-                        norm: str = 'slaney',
+                        norm: str or None = 'slaney',
                         delta_order: int = 0,
                         delta_N: int = 2) -> np.ndarray:
     """

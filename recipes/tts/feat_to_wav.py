@@ -51,12 +51,11 @@ def parse():
     group = parser.add_argument_group("Shared Arguments")
     group.add_argument('--vocoder', type=str, default='hifigan',
                        help="The type of the vocoder you want to use to generate waveforms. (default: hifigan)")
-    group.add_argument('--feat_path', type=str,
-                       required=True,
+    group.add_argument('--feat_path', type=str, required=True,
                        help="The path of your TTS experimental folder. All the files named 'idx2feat' will be "
-                            "automatically found out and used for vocoding. You can also specify the path of your "
-                            "target 'idx2feat' file by this argument.")
-    group.add_argument('--result_path', type=str, default=None,
+                            "automatically found out and used for waveform generation. You can also specify the path "
+                            "of your target 'idx2feat' file by this argument.")
+    group.add_argument('--wav_path', type=str, default=None,
                        help="The path where the generated waveforms are placed. If not given, the results will be "
                             "saved to the same directory as your given 'hypo_idx2feat'. (default: None)")
     group.add_argument('--batch_size', type=int, default=1,
@@ -135,7 +134,7 @@ def convert_feat_to_wav(idx2feat: Dict, device: str, batch_size: int, sample_rat
     return idx2wav, idx2wav_len
 
 
-def vocode_by_gl(idx2feat: Dict, gpu_id: int, batch_size: int, result_path: str, frontend_cfg: Dict) -> (Dict, Dict):
+def vocode_by_gl(idx2feat: Dict, gpu_id: int, batch_size: int, save_path: str, frontend_cfg: Dict) -> (Dict, Dict):
 
     if frontend_cfg['type'] == 'mel_fbank':
         frontend = Speech2MelSpec(**frontend_cfg['conf'])
@@ -149,20 +148,20 @@ def vocode_by_gl(idx2feat: Dict, gpu_id: int, batch_size: int, result_path: str,
     # convert idx2feat into idx2wav by batches
     idx2wav, idx2wav_len = convert_feat_to_wav(idx2feat=idx2feat, device=device, batch_size=batch_size,
                                                sample_rate=frontend.get_sample_rate(),
-                                               save_path=os.path.join(result_path, 'gl_wav'),
+                                               save_path=os.path.join(save_path, 'gl_wav'),
                                                feat_to_wav_func=frontend.recover)
     return idx2wav, idx2wav_len
 
 
 def vocode_by_hifigan(idx2feat: Dict, gpu_id: int,
-                      batch_size: int, result_path: str, sample_rate: int, vocoder_train_data: str):
+                      batch_size: int, save_path: str, sample_rate: int, vocoder_train_data: str):
     """
 
     Args:
         idx2feat:
         gpu_id:
         batch_size:
-        result_path:
+        save_path:
         sample_rate:
         vocoder_train_data:
 
@@ -192,18 +191,18 @@ def vocode_by_hifigan(idx2feat: Dict, gpu_id: int,
     # convert idx2feat into idx2wav by batches
     idx2wav, idx2wav_len = convert_feat_to_wav(idx2feat=idx2feat, device=device, batch_size=batch_size,
                                                sample_rate=sample_rate,
-                                               save_path=os.path.join(result_path, 'hifigan_wav'),
+                                               save_path=os.path.join(save_path, 'hifigan_wav'),
                                                feat_to_wav_func=SpeechBrainWrapper(hifi_gan.decode_batch))
     return idx2wav, idx2wav_len
 
 
-def main(vocoder: str, feat_path: str, result_path: str, batch_size: int, ngpu: int, ncpu: int,
+def main(vocoder: str, feat_path: str, wav_path: str, batch_size: int, ngpu: int, ncpu: int,
          tts_model_cfg: Dict or str, sample_rate: int, vocoder_train_data: str):
 
     feat_path = parse_path_args(feat_path)
     # for folder input, automatically find out all the idx2feat candidates as hypo_idx2feat
     if os.path.isdir(feat_path):
-        hypo_idx2feat_list = search_file_in_subfolder(feat_path, 'idx2feat')
+        hypo_idx2feat_list = search_file_in_subfolder(feat_path, lambda x: x == 'idx2feat')
     # for file input, directly use it as hypo_idx2feat
     else:
         hypo_idx2feat_list = [feat_path]
@@ -213,12 +212,14 @@ def main(vocoder: str, feat_path: str, result_path: str, batch_size: int, ngpu: 
         if os.path.exists(os.path.join(os.path.dirname(hypo_idx2feat), f'idx2{vocoder}_wav')):
             print(f"The waveform files have already existed. So {hypo_idx2feat} will be skipped.")
         else:
+            print(f"Start to generate the waveforms by {hypo_idx2feat}.")
+
             # initialize the result path
             hypo_idx2feat = parse_path_args(hypo_idx2feat)
-            if result_path is None:
-                result_path = os.path.dirname(hypo_idx2feat)
+            if wav_path is None:
+                save_path = os.path.dirname(hypo_idx2feat)
             else:
-                result_path = parse_path_args(result_path)
+                save_path = parse_path_args(wav_path)
             # read the idx2feat file into a Dict, str -> Dict[str, str]
             hypo_idx2feat = load_idx2data_file(hypo_idx2feat)
 
@@ -242,7 +243,7 @@ def main(vocoder: str, feat_path: str, result_path: str, batch_size: int, ngpu: 
                     "tts_model_cfg must contain 'type' and 'conf' as necessary key-value items!"
 
                 vocode_func = partial(vocode_by_gl,
-                                      batch_size=batch_size, result_path=result_path, frontend_cfg=frontend_cfg)
+                                      batch_size=batch_size, save_path=save_path, frontend_cfg=frontend_cfg)
 
             elif vocoder == 'hifigan':
                 assert vocoder_train_data is not None, \
@@ -260,7 +261,7 @@ def main(vocoder: str, feat_path: str, result_path: str, batch_size: int, ngpu: 
                     raise NotImplementedError(f"Unknown vocoder_train_data ({vocoder_train_data})! "
                                               f"vocoder_train_data should be one of ['ljspeech', 'libritts'].")
 
-                vocode_func = partial(vocode_by_hifigan, batch_size=batch_size, result_path=result_path,
+                vocode_func = partial(vocode_by_hifigan, batch_size=batch_size, save_path=save_path,
                                       sample_rate=sample_rate, vocoder_train_data=vocoder_train_data)
 
             else:
@@ -287,10 +288,15 @@ def main(vocoder: str, feat_path: str, result_path: str, batch_size: int, ngpu: 
                 idx2wav_len.update(_idx2wav_len)
 
             # save the address and length of each synthetic utterance
-            np.savetxt(os.path.join(result_path, f'idx2{vocoder}_wav'),
-                       sorted(idx2wav.items(), key=lambda x: x[0]), fmt='%s')
-            np.savetxt(os.path.join(result_path, f'idx2{vocoder}_wav_len'),
-                       sorted(idx2wav_len.items(), key=lambda x: x[0]), fmt='%s')
+            idx2wav_path = os.path.join(save_path, f'idx2{vocoder}_wav')
+            np.savetxt(idx2wav_path, sorted(idx2wav.items(), key=lambda x: x[0]), fmt='%s')
+            print(f"idx2wav file has been saved to {idx2wav_path}.")
+
+            idx2wav_len_path = os.path.join(save_path, f'idx2{vocoder}_wav_len')
+            np.savetxt(idx2wav_len_path, sorted(idx2wav_len.items(), key=lambda x: x[0]), fmt='%s')
+            print(f"idx2wav_len file has been saved to {idx2wav_len_path}.")
+
+        print("\n")
 
 
 if __name__ == '__main__':

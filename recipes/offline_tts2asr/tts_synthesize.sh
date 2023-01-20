@@ -23,7 +23,7 @@ function print_help_message {
 
       # Group2: Long Unspoken Sentence Filtering
       [--long_filter LONG_FILTER] \\                         # Whether to filter out long sentences with the largest text_len. (default: false)
-      [--filter_ratio FILTER_RATIO] \\                       # How many shorter utterances you want to retain. (default: 0.99)
+      [--filter_ratio FILTER_RATIO] \\                       # How many shorter utterances you want to retain. (default: 0.95)
 
       # Group3: Short Reference Utterance Filtering
       [--sample_rate SAMPLE_RATE] \\                         # The sampling rate of the synthetic speech. (default: 16000)
@@ -58,7 +58,7 @@ resume=false
 num_workers=1
 
 long_filter=false
-filter_ratio=0.99
+filter_ratio=0.95
 
 sample_rate=16000
 ref_filter=false

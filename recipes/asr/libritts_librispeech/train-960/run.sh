@@ -16,9 +16,9 @@ function print_help_message {
     [--resume false or true] \\                             # Whether to activate resuming mode (default: false)
     [--train_result_path TRAIN_RESULT_PATH] \\              # The value of train_result_path given to runner.py (default: none)
     [--test_result_path TEST_RESULT_PATH] \\                # The value of train_result_path given to runner.py (default: none)
-    --exp_cfg EXP_CFG \\                                    # The name of your specified configuration file in ${SPEECHAIN_ROOT}/recipes/asr/libritts_librispeech/train-clean-460/exp_cfg
-    [--data_cfg DATA_CFG] \\                                # The name of your specified configuration file in ${SPEECHAIN_ROOT}/recipes/asr/libritts_librispeech/train-clean-460/data_cfg (default: none)
-    [--train_cfg TRAIN_CFG] \\                              # The name of your specified configuration file in ${SPEECHAIN_ROOT}/recipes/asr/libritts_librispeech/train-clean-460/train_cfg (default: none)
+    --exp_cfg EXP_CFG \\                                    # The name of your specified configuration file in ${SPEECHAIN_ROOT}/recipes/asr/libritts_librispeech/train-960/exp_cfg
+    [--data_cfg DATA_CFG] \\                                # The name of your specified configuration file in ${SPEECHAIN_ROOT}/recipes/asr/libritts_librispeech/train-960/data_cfg (default: none)
+    [--train_cfg TRAIN_CFG] \\                              # The name of your specified configuration file in ${SPEECHAIN_ROOT}/recipes/asr/libritts_librispeech/train-960/train_cfg (default: none)
     [--infer_cfg INFER_CFG] \\                              # The name of your specified configuration file in ${SPEECHAIN_ROOT}/config/asr/ (default: none)
     [--num_workers NUM_WORKERS] \\                          # The value of 'num_workers' given to runner.py (default: none)
     [--accum_grad ACCUM_GRAD] \\                            # The value of 'accum_grad' given to runner.py (default: none)
@@ -144,7 +144,7 @@ done
 args="
   --task asr \
   --dataset libritts_librispeech \
-  --subset train-clean-460 \
+  --subset train-960 \
   --dry_run ${dry_run} \
   --no_optim ${no_optim} \
   --resume ${resume} \

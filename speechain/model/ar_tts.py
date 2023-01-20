@@ -780,7 +780,6 @@ class ARTTS(Model):
             hypo_feat = infer_results['hypo_feat']
             hypo_feat_len = infer_results['hypo_feat_len']
             feat_token_len_ratio = infer_results['feat_token_len_ratio']
-            outputs.update(feat_token_len_ratio=dict(format='txt', content=to_cpu(feat_token_len_ratio)))
 
         # --- 1.2. The 2nd Pass: TTS Teacher-Forcing Decoding --- #
         if teacher_forcing or return_att:
@@ -802,14 +801,14 @@ class ARTTS(Model):
                 )
                 hypo_feat = infer_results['pred_feat_before' if use_before else 'pred_feat_after']
                 hypo_feat_len = infer_results['tgt_feat_len']
-                feat_token_len_ratio = hypo_feat_len / text_len
-                # reduction_factor recovery
+                # hypo_feat_len recovery by reduction_factor
                 if self.reduction_factor > 1:
                     batch_size, feat_dim = hypo_feat.size(0), hypo_feat.size(-1)
                     hypo_feat = hypo_feat.reshape(
                         batch_size, hypo_feat.size(1) * self.reduction_factor, feat_dim // self.reduction_factor
                     )
                     hypo_feat_len *= self.reduction_factor
+                feat_token_len_ratio = hypo_feat_len / text_len
 
         # --- 1.3. The 3rd Pass: denormalize the acoustic feature if needed --- #
         if hasattr(self.decoder, 'normalize'):
@@ -821,7 +820,9 @@ class ARTTS(Model):
         outputs.update(
             # the sampling rate of the generated waveforms is obtained from the frontend of the decoder
             feat=dict(format='npz', sample_rate=self.sample_rate, content=to_cpu(hypo_feat, tgt='numpy')),
-            feat_len=dict(format='txt', content=to_cpu(hypo_feat_len))
+            feat_len=dict(format='txt', content=to_cpu(hypo_feat_len)),
+            # text_len=dict(format='txt', content=to_cpu(text_len)),
+            feat_token_len_ratio=dict(format='txt', content=to_cpu(feat_token_len_ratio))
         )
 
         # record the speaker ID used as the reference

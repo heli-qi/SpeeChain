@@ -14,7 +14,7 @@ function print_help_message {
   $0 \\ (The arguments in [] are optional while other arguments must be given by your run.sh.)
 
       # Group1: ASR Decoding Environment
-      [--batch_len BATCH_LEN] \\                            # The total length of all the synthetic utterances in a single batch. This argument is required if you want to conduct batch-level ASR evaluation. (default: none)
+      [--batch_len BATCH_LEN] \\                            # The total length of all the synthetic utterances in a single batch to conduct batch-level ASR decoding. We recommend you to set 'batch_len' up to {1000 * beam number * total GBs of your GPUs}. (default: none)
       [--ngpu NGPU] \\                                      # The number of GPUs you want to use. If not given, ngpu in {asr_model_path}/exp_cfg.yaml will be used. (default: none)
       [--gpus GPUS] \\                                      # The GPUs you want to specify. If not given, gpus in {asr_model_path}/exp_cfg.yaml will be used. (default: none)
       [--num_workers NUM_WORKERS] \\                        # The name of worker processes for data loading. If not given, num_workers in {asr_model_path}/exp_cfg.yaml will be used. (default: none)
@@ -22,7 +22,7 @@ function print_help_message {
 
       # Group2: Long Synthetic Utterance Filtering
       [--long_filter LONG_FILTER] \\                        # Whether to filter out long utterances with the largest wav_len. (default: false)
-      [--filter_ratio FILTER_RATIO] \\                      # How many shorter utterances you want to retain. (default: 0.99)
+      [--filter_ratio FILTER_RATIO] \\                      # How many shorter utterances you want to retain. (default: 0.95)
 
       # Group3: Main Arguments for ASR Evaluation
       [--vocoder VOCODER] \\                                # The vocoder you used to generate the waveforms. (default: gl)
@@ -40,7 +40,7 @@ resume=false
 num_workers=
 
 long_filter=false
-filter_ratio=0.99
+filter_ratio=0.95
 
 vocoder=gl
 asr_infer_cfg=

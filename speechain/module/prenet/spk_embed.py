@@ -19,18 +19,22 @@ class SpeakerEmbedPrenet(Module):
                     spk_emb_comb: str = 'concat',
                     spk_emb_act: str = 'Softsign',
                     spk_emb_scale: bool = False,
-                    is_dec_comb: bool = False):
+                    dec_comb: bool = False,
+                    same_proj: bool = True):
         """
 
         Args:
-            spk_emb_dim:
             d_model:
+            spk_emb_dim:
             spk_num:
             spk_emb_mode:
             spk_emb_comb:
             spk_emb_act:
             spk_emb_scale:
-            is_dec_comb:
+            dec_comb:
+            same_proj:
+
+        Returns:
 
         """
         assert spk_emb_mode in ['open', 'close'], \
@@ -48,7 +52,6 @@ class SpeakerEmbedPrenet(Module):
 
         # initialize the linear projection layer
         self.spk_emb_comb = spk_emb_comb
-        self.is_dec_comb = is_dec_comb
         if spk_emb_comb == 'add' and spk_emb_dim != d_model:
             self.pre_add_proj = torch.nn.Linear(spk_emb_dim, d_model)
 
@@ -64,7 +67,11 @@ class SpeakerEmbedPrenet(Module):
 
         # at the end of SpeakerEmbedPrenet, there is a linear projection layer shared by both open-set and close-set
         # multi-speaker TTS models before passing the results to the TTS decoder
+        self.dec_comb = dec_comb
+        self.same_proj = same_proj
         self.final_proj = torch.nn.Linear(d_model if spk_emb_comb == 'add' else spk_emb_dim + d_model, d_model)
+        if self.dec_comb and not self.same_proj:
+            self.final_proj_dec = torch.nn.Linear(d_model if spk_emb_comb == 'add' else spk_emb_dim + d_model, d_model)
 
     def reset_parameters(self):
         """
@@ -123,7 +130,7 @@ class SpeakerEmbedPrenet(Module):
             assert spk_feat.dim() == 3 and spk_feat.size(1) == 1, \
                 f"Something wrong happens to the dimension of the input spk_feat. Its dimension is {spk_feat.shape}."
 
-        def combine_spk_feat_to_tgt(tgt_feat: torch.Tensor):
+        def combine_spk_feat_to_tgt(tgt_feat: torch.Tensor, proj_layer: torch.nn.Linear):
             # directly add the speaker embedding into the target features
             if self.spk_emb_comb == 'add':
                 tgt_feat = spk_feat + tgt_feat
@@ -133,13 +140,13 @@ class SpeakerEmbedPrenet(Module):
             else:
                 raise RuntimeError
             # project the concatenated vectors to the same dimension as self.d_model
-            return self.final_proj(tgt_feat)
+            return proj_layer(tgt_feat)
 
         # (mandatory) combine the speaker embedding to the TTS encoder outputs
-        enc_output = combine_spk_feat_to_tgt(enc_output)
+        enc_output = combine_spk_feat_to_tgt(enc_output, self.final_proj)
         # (optional) combine the speaker embedding to the TTS decoder inputs
-        if self.is_dec_comb:
-            dec_input = combine_spk_feat_to_tgt(dec_input)
+        if self.dec_comb:
+            dec_input = combine_spk_feat_to_tgt(dec_input, self.final_proj if self.same_proj else self.final_proj_dec)
 
         return enc_output, dec_input
 
@@ -152,7 +159,9 @@ class SpeakerEmbedPrenet(Module):
             return None
 
     def extra_repr(self) -> str:
-        output = f"spk_emb_scale={hasattr(self, 'alpha')}"
+        output = f"spk_emb_scale={hasattr(self, 'alpha')}\n" \
+                 f"dec_comb={self.dec_comb}\n" \
+                 f"same_proj={self.same_proj}"
         if not isinstance(self.activation, torch.nn.Module):
             output += "\nactivation=torch.nn.functional.normalize"
         return output
