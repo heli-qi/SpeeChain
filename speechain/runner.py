@@ -82,7 +82,7 @@ class Runner(object):
             "--config",
             type=str,
             # default=None,
-            default="recipes/tts/libritts/train-clean-100/exp_cfg/16khz_ecapa_g2p_transformer_v6_accum1_20gb.yaml",
+            default="recipes/tts/libritts/train-clean-100/exp_cfg/16khz_ecapa_g2p_transformer_v1_accum1_20gb.yaml",
             help="The path of the all-in-one experiment configuration file. You can write all the arguments in this "
                  "all-in-one file instead of giving them to `runner.py` by command lines."
         )
@@ -1078,8 +1078,12 @@ class Runner(object):
                     infer_cfg_dict['_'.join([f"{key}={value}" for key, value in cfg.items()])] = cfg
 
             elif 'shared_args' not in args.infer_cfg.keys() and 'exclu_args' not in args.infer_cfg.keys():
-                args.infer_cfg = dict(sorted(args.infer_cfg.items(), key=lambda x: x[0]))
-                infer_cfg_dict = {'_'.join([f"{key}={value}" for key, value in args.infer_cfg.items()]): args.infer_cfg}
+                if len(args.infer_cfg) == 0:
+                    infer_cfg_dict = dict(default_inference=dict())
+                else:
+                    args.infer_cfg = dict(sorted(args.infer_cfg.items(), key=lambda x: x[0]))
+                    infer_cfg_dict = \
+                        {'_'.join([f"{key}={value}" for key, value in args.infer_cfg.items()]): args.infer_cfg}
 
             else:
                 raise RuntimeError("If infer_cfg is given in the form of a Dict, "

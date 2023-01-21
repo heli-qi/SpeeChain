@@ -84,6 +84,10 @@ def str2dict(input_str: str) -> Dict or str:
     if ':' not in input_str and ',' not in input_str and '{' not in input_str and '}' not in input_str:
         return input_str
 
+    # if only a pair of braces is input, return an empty dict
+    if input_str == '{}':
+        return dict()
+
     # input string checking
     assert (not input_str.startswith('{')) or (not input_str.endswith('}')), \
         "If you want the framework to automatically convert your input string into a Dict, " \

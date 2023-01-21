@@ -15,6 +15,7 @@ def auto_regression(enc_text: torch.Tensor,
                     feat_dim: int,
                     spk_ids: torch.Tensor = None,
                     spk_feat: torch.Tensor = None,
+                    rand_spk_feat: bool = False,
                     stop_threshold: float = 0.5,
                     maxlen_ratio: int or float = 10.0,
                     continual_steps: int = 0,
@@ -63,7 +64,7 @@ def auto_regression(enc_text: torch.Tensor,
         pred_stop, pred_feat_before, pred_feat_after, _, _, _, _, _ = decode_one_step(
             enc_text=enc_text, enc_text_mask=enc_text_mask,
             feat=hypo_feat, feat_len=hypo_feat_len,
-            spk_feat=spk_feat, spk_ids=spk_ids, is_test=True
+            spk_feat=spk_feat, spk_ids=spk_ids, is_test=True, rand_spk_feat=rand_spk_feat
         )
 
         # attach the new synthetic frames to the end of synthetic frames obtained so far

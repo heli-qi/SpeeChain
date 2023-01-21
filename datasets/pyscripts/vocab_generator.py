@@ -10,6 +10,7 @@ import argparse
 import numpy as np
 import sentencepiece as spm
 
+from tqdm import tqdm
 from g2p_en import G2p
 from collections import Counter
 
@@ -82,7 +83,7 @@ def save_token_vocab(save_path: str, text_path: str, txt_format: str, text2token
     # read the index-to-text file and turn the information into a Dict
     idx2text = load_idx2data_file(os.path.join(text_path, f"idx2{txt_format}_text"))
     # convert each string sentence into its token sentence
-    idx2text_token = {idx: text2tokens_func(text) for idx, text in idx2text.items()}
+    idx2text_token = {idx: text2tokens_func(text) for idx, text in tqdm(idx2text.items())}
     if vocab_size is not None:
         save_path = os.path.join(save_path, get_readable_number(vocab_size), txt_format)
     else:

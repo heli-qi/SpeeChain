@@ -56,10 +56,7 @@ class SpeakerEmbedPrenet(Module):
             self.pre_add_proj = torch.nn.Linear(spk_emb_dim, d_model)
 
         # initialize the activation function for the speaker embedding
-        if spk_emb_act == 'normalize':
-            self.activation = torch.nn.functional.normalize
-        else:
-            self.activation = getattr(torch.nn, spk_emb_act)()
+        self.activation = getattr(torch.nn, spk_emb_act)()
 
         # initialize the speaker embedding scalar
         if spk_emb_scale:
@@ -80,12 +77,13 @@ class SpeakerEmbedPrenet(Module):
         if hasattr(self, 'alpha'):
             self.alpha.data = torch.tensor(1.0)
 
-    def forward(self, spk_ids: torch.Tensor = None, spk_feat: torch.Tensor = None):
+    def forward(self, spk_ids: torch.Tensor = None, spk_feat: torch.Tensor = None, spk_feat_act: bool = True):
         """
 
         Args:
-            spk_ids: (batch,)
-            spk_feat: (batch, spk_feat_dim)
+            spk_ids:
+            spk_feat:
+            no_spk_feat_act:
 
         Returns:
 
@@ -104,7 +102,8 @@ class SpeakerEmbedPrenet(Module):
             spk_feat = self.pre_add_proj(spk_feat)
 
         # 3. (mandatory) normalize the speaker feature to make its centroid zero
-        spk_feat = self.activation(spk_feat)
+        if spk_feat_act:
+            spk_feat = self.activation(spk_feat)
 
         # 4. (optional) scale the speaker embedding vectors
         if hasattr(self, 'alpha'):
@@ -162,6 +161,4 @@ class SpeakerEmbedPrenet(Module):
         output = f"spk_emb_scale={hasattr(self, 'alpha')}\n" \
                  f"dec_comb={self.dec_comb}\n" \
                  f"same_proj={self.same_proj}"
-        if not isinstance(self.activation, torch.nn.Module):
-            output += "\nactivation=torch.nn.functional.normalize"
         return output

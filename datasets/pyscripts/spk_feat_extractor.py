@@ -9,6 +9,7 @@ import librosa
 import torch
 import numpy as np
 
+from tqdm import tqdm
 from functools import partial
 from multiprocessing import Pool
 from typing import Dict, List
@@ -72,7 +73,7 @@ def extract_spk_feat(idx2wav: Dict, gpu_id: int, batch_size: int, speechbrain_ar
     kwargs = dict(device=device, spk_emb_func=speechbrain_model.encode_batch, save_path=save_path)
 
     curr_batch, wav_results, idx2spk_feat = [], [], {}
-    for i, (idx, wav_path) in enumerate(idx2wav.items()):
+    for idx, wav_path in tqdm(idx2wav.items()):
         # collect the data into the current batch
         wav, sample_rate = read_data_by_path(wav_path, return_tensor=True, return_sample_rate=True)
         wav = wav.to(device)

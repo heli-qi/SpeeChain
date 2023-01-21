@@ -149,7 +149,8 @@ class RandomSpkFeatDataset(SpeechTextDataset):
     `collate_main_data_fn` of the parent class will be reused to collate a batch of data instances.
 
     """
-    def dataset_init_fn(self, spk_feat: List[str] or str, min_ref_len: int = None, ref_len: List[str] or str = None):
+    def dataset_init_fn(self, spk_feat: List[str] or str,
+                        min_ref_len: int = None, ref_len: List[str] or str = None, mixup_number: int = 1):
         """
 
         Args:
@@ -157,10 +158,15 @@ class RandomSpkFeatDataset(SpeechTextDataset):
                 The address of the idx2spk_feat that contains the speaker embedding feature files you want to use.
             min_ref_len: int = None
                 The minimal length for the reference speech to extract speaker embedding
-            ref_len: ref_len: List[str] or str = None
+            ref_len: List[str] or str = None
                 The address of the idx2wav_len or idx2feat-len that contains the length of your reference speech
+            mixup_number: int = 1
+                The number of randomly-chosen speaker embedding vectors used for feature mixup.
 
         """
+        assert isinstance(mixup_number, int) and mixup_number >= 1, \
+            f"mixup_number must be a positive integer, but got {mixup_number}!"
+        self.mixup_number = mixup_number
 
         # speaker embedding file reading, List[str] or str -> Dict[str, str]
         self.spk_feat_dict = load_idx2data_file(spk_feat)
@@ -210,9 +216,19 @@ class RandomSpkFeatDataset(SpeechTextDataset):
         # process 'feat' and 'text' by the parent class
         main_data = super(RandomSpkFeatDataset, self).extract_main_data_fn(main_data)
 
-        # randomly pick up a speaker embedding feature vector
-        spk_feat_idx = self.spk_feat_list[random.randint(0, self.spk_feat_num - 1)]
-        main_data['spk_feat'] = read_data_by_path(self.spk_feat_dict[spk_feat_idx], return_tensor=True)
-        main_data['spk_feat_ids'] = spk_feat_idx
+        for _ in range(self.mixup_number):
+            # randomly pick up a speaker embedding feature vector
+            spk_feat_idx = self.spk_feat_list[random.randint(0, self.spk_feat_num - 1)]
+            if 'spk_feat' not in main_data.keys():
+                main_data['spk_feat'] = read_data_by_path(self.spk_feat_dict[spk_feat_idx], return_tensor=True)
+            else:
+                main_data['spk_feat'] += read_data_by_path(self.spk_feat_dict[spk_feat_idx], return_tensor=True)
+
+            if 'spk_feat_ids' not in main_data.keys():
+                main_data['spk_feat_ids'] = spk_feat_idx
+            else:
+                main_data['spk_feat_ids'] += f'+{spk_feat_idx}'
+        # take the average of the chose speaker embedding features
+        main_data['spk_feat'] /= self.mixup_number
 
         return main_data

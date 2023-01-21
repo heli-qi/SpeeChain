@@ -744,6 +744,7 @@ class ARTTS(Model):
             self.decoder.turn_on_dropout()
 
         # Multi-speaker TTS scenario
+        rand_spk_feat = False
         if hasattr(self.decoder, 'spk_emb'):
             batch_size = text.size(0)
             # close-set multi-speaker TTS
@@ -753,10 +754,12 @@ class ARTTS(Model):
                     spk_ids = torch.randint(low=1, high=len(self.idx2spk) + 1, size=(batch_size,), device=text.device)
             # open-set multi-speaker TTS
             else:
-                # use zero vectors (the average speaker) as the reference speaker embedding if spk_feat is not given
+                # use random vectors as the reference speaker embedding if spk_feat is not given
                 if spk_feat is None:
-                    spk_feat = torch.zeros((batch_size, self.decoder.spk_emb.spk_emb_dim), device=text.device)
-                    spk_feat_ids = ['aver_spk' for _ in range(batch_size)]
+                    # make sure that the range of random speaker feature is [-1, 1)
+                    spk_feat = torch.rand((batch_size, self.decoder.spk_emb.spk_emb_dim), device=text.device) * 2 - 1
+                    spk_feat_ids = ['rand_spk' for _ in range(batch_size)]
+                    rand_spk_feat = True
 
         # --- 1. Acoustic Feature Generation Stage --- #
         outputs = dict()
@@ -773,6 +776,7 @@ class ARTTS(Model):
                                             enc_text_mask=enc_text_mask,
                                             spk_ids=spk_ids,
                                             spk_feat=spk_feat,
+                                            rand_spk_feat=rand_spk_feat,
                                             reduction_factor=self.reduction_factor,
                                             feat_dim=self.decoder.output_size,
                                             decode_one_step=self.decoder,

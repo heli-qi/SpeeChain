@@ -66,8 +66,10 @@ else
 fi
 
 # remove the compressed data package
-echo "Remove the downloaded data ${download_path}/data/LJSpeech-1.1.tar.bz2"
-rm ${download_path}/data/LJSpeech-1.1.tar.bz2
+if [ -f ${download_path}/data/LJSpeech-1.1.tar.bz2 ];then
+  echo "Remove the downloaded data ${download_path}/data/LJSpeech-1.1.tar.bz2"
+  rm ${download_path}/data/LJSpeech-1.1.tar.bz2
+fi
 
 # Finally, remove the folder named LJSpeech-1.1 if needed
 if [ -d "${download_path}/data/LJSpeech-1.1" ];then

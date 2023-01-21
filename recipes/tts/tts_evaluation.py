@@ -44,7 +44,7 @@ def parse():
                         help="The path where the evaluated results are placed. If not given, the results will be saved "
                              "to the same directory as the hypo 'idx2xxx_wav' found in 'hypo_path'. (default: None)")
     parser.add_argument('--ncpu', type=int, default=8,
-                        help="The number of processes you want to use to calculate the evaluation metrics.")
+                        help="The number of processes used to calculate the evaluation metrics. (default: 8)")
     parser.add_argument('--topn_num', type=int, default=30,
                         help="The number of top-n bad cases you want to show in the result md file. (default: 30)")
     return parser.parse_args()

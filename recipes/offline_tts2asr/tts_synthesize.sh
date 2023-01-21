@@ -31,6 +31,9 @@ function print_help_message {
       [--min_ref_second MIN_REF_SECOND] \\                   # The minimal seconds of the used reference speech. (default: 3)
 
       # Group4: Speaker Embedding
+      [--rand_spk_emb RAND_SPK_EMB] \\                       # Whether to randomly generate the speaker embedding feature for TTS synthesis. (default: false)
+      [--spk_emb_mixup SPK_FEAT_MIXUP] \\                    # Whether to conduct speaker embedding mixup. (default: false)
+      [--mixup_number MIXUP_NUMBER] \\                       # The number of speaker embedding features used for mixup. (default: 2)
       [--spk_emb_dataset SPK_EMB_DATASET] \\                 # The dataset where your target speaker embedding features are placed. If not given, this argument will be the same as 'tts_syn_dataset'. (default: none)
       [--spk_emb_subset SPK_EMB_SUBSET] \\                   # The subset where your target speaker embedding features are placed. If not given, this argument will be the same as 'tts_syn_subset'. (default: none)
       [--spk_emb_model SPK_EMB_MODEL] \\                     # The speaker embedding model you want to use for TTS synthesis. (default: none)
@@ -64,6 +67,9 @@ sample_rate=16000
 ref_filter=false
 min_ref_second=3
 
+rand_spk_emb=false
+spk_emb_mixup=false
+mixup_number=2
 spk_emb_dataset=
 spk_emb_subset=
 spk_emb_model=
@@ -104,6 +110,18 @@ while getopts ":h-:" optchar; do
         token_num)
           val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
           token_num=${val}
+          ;;
+        rand_spk_emb)
+          val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
+          rand_spk_emb=${val}
+          ;;
+        spk_emb_mixup)
+          val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
+          spk_emb_mixup=${val}
+          ;;
+        mixup_number)
+          val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
+          mixup_number=${val}
           ;;
         spk_emb_dataset)
           val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
@@ -228,6 +246,26 @@ if ${ref_filter} && [ -z ${spk_emb_model} ];then
   exit 1
 fi
 
+if ${rand_spk_emb} && [ -n "${spk_emb_model}" ];then
+  echo "If 'rand_spk_emb' is set to true, you don't need to give '--spk_emb_model SPK_EMB_MODEL'!"
+  exit 1
+fi
+
+if ${rand_spk_emb} && ${ref_filter};then
+  echo "'rand_spk_emb' and 'ref_filter' cannot be true at the same time!"
+  exit 1
+fi
+
+if ${rand_spk_emb} && ${spk_emb_mixup};then
+  echo "'rand_spk_emb' and 'spk_emb_mixup' cannot be true at the same time!"
+  exit 1
+fi
+
+if ${spk_emb_mixup} && [ -z ${spk_emb_model} ];then
+  echo "Please give a speaker embedding model by '--spk_emb_model SPK_EMB_MODEL' if you give '--spk_emb_mixup true'!"
+  exit 1
+fi
+
 if [ -z ${spk_emb_dataset} ];then
    spk_emb_dataset=${tts_syn_dataset}
 fi
@@ -253,6 +291,7 @@ args="--train False --test True --test_result_path ${syn_result_path}/${tts_syn_
 #          (spk_feat:${refer_idx2spk_feat},)
 #          (ref_len: ${idx2ref_len},)
 #          (min_ref_len: $(( sample_rate * min_ref_second )),)
+#          (mixup_number: ${mixup_number},)
 #          (data_selection:[min,${filter_ratio},${unspoken_idx2text_len}])
 #        },
 #        shuffle:false,
@@ -262,20 +301,26 @@ args="--train False --test True --test_result_path ${syn_result_path}/${tts_syn_
 #    }
 #  }
 # the following code does the same job as the configuration above
-data_args="test:{seed=${random_seed}_"
+data_args="test:{seed=${random_seed}"
 # if 'long_filter' is true, attach filter_ratio into the folder name
 if ${long_filter};then
-  data_args="${data_args}long-filter=${filter_ratio}_"
+  data_args="${data_args}_long-filter=${filter_ratio}"
 fi
 # if 'ref_filter' is true, attach min_ref_second into the folder name
 if ${ref_filter};then
-  data_args="${data_args}ref-filter=${min_ref_second}_"
+  data_args="${data_args}_ref-filter=${min_ref_second}s"
 fi
-# if 'spk_emb_model' is given, attach it into the folder name
-if [ -n "${spk_emb_model}" ];then
-  data_args="${data_args}spk-emb=${spk_emb_dataset}-${spk_emb_subset}-${spk_emb_model}_model=${tts_model_path}"
+# if 'rand_spk_emb' is given, attach rand_spk_emb into the folder name
+if ${rand_spk_emb};then
+  data_args="${data_args}_spk-emb=random"
+# if 'spk_emb_model' is given, attach the model name and reference subset into the folder name
+elif [ -n "${spk_emb_model}" ];then
+  if ${spk_emb_mixup};then
+    data_args="${data_args}_mixup=${mixup_number}"
+  fi
+  data_args="${data_args}_spk-emb=${spk_emb_dataset}-${spk_emb_subset}-${spk_emb_model}"
 fi
-data_args="${data_args}:{type:"
+data_args="${data_args}_model=${tts_model_path}:{type:"
 
 # if 'batch_len' is given, block.BlockIterator will be used as the iterator; else, use abs.Iterator
 if [ -n "${batch_len}" ];then
@@ -313,6 +358,11 @@ if ${ref_filter};then
     idx2ref_len="${dump_data_path}/${spk_emb_dataset}/data/wav/${spk_emb_subset}/idx2wav_len"
   fi
   data_args="${data_args},ref_len:${idx2ref_len},min_ref_len:$(( sample_rate * min_ref_second ))"
+fi
+
+# if 'spk_emb_mixup' is set to true, attach 'mixup_number' in 'dataset_conf'
+if ${spk_emb_mixup};then
+  data_args="${data_args},mixup_number:${mixup_number}"
 fi
 
 # if 'long_filter' is set to true, attach 'data_selection' in 'dataset_conf'
@@ -357,6 +407,8 @@ if [ -n "${tts_infer_cfg}" ];then
     fi
   fi
   args="${args} --infer_cfg ${tts_infer_cfg}"
+else
+  args="${args} --infer_cfg {}"
 fi
 
 if ${resume};then

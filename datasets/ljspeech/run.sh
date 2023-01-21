@@ -19,10 +19,12 @@ function print_help_message {
       [--feat_type FEAT_TYPE] \\                            # The type of the feature you would like to dump. (default: wav)
       [--feat_config FEAT_CONFIG] \\                        # The name of acoustic feature extraction configuration file. (default: none)
       [--sample_rate SAMPLE_RATE] \\                        # The sampling rate you want the waveforms to have. If not given, the original sampling rate of LJSpeech (22.05kHz) will be used for the folder 'ljspeech/data/wav' (default: none)
+      [--spk_emb_model SPK_EMB_MODEL] \\                    # The speaker recognition model you want to use to extract the speaker embeddings. If given, this argument must be either 'xvector' or 'ecapa'. (default: none)
       [--comp_chunk_ext COMP_CHUNK_EXT] \\                  # The file extension of the compressed chunk files. (default: none)
       [--token_type TOKEN_TYPE] \\                          # The type of the token you want your tokenizer to have. (default: g2p)
       [--txt_format TXT_FORMAT] \\                          # The text processing format for the transcripts in the dataset. (default: normal)
       [--ncpu NCPU] \\                                      # The number of processes used for all the multiprocessing jobs. (default: 8)
+      [--ngpu NGPU] \\                                      # The number of GPUs used to extract speaker embeddings. If not given, extraction will be done by CPUs. (default: 1)
       [--vocab_size VOCAB_SIZE] \\                          # The size of the tokenizer vocabulary. (default: 1000 for dump_part '100'; 5000 for dump_part '460'; 10000 for dump_part '960')
       [--model_type MODEL_TYPE] \\                          # The model_type argument for building sentencepiece tokenzier model. (default: bpe)
       [--character_coverage CHARACTER_COVERAGE] \\          # The character_coverage argument for building sp tokenizer model. (default: 1.0)
@@ -45,12 +47,15 @@ stop_step=10000
 src_path=
 tgt_path=
 ncpu=8
+ngpu=1
 # acoustic feature-related arguments
 feat_type=wav
 # empty feat_config means no feature extraction configuration
 feat_config=
 # empty sample_rate means the sampling rate of the original LJSpeech (22.05kHz) will be used
 sample_rate=
+# empty spk_emb_model means no speaker embedding will be extracted
+spk_emb_model=
 # tokenization-related arguments
 token_type=g2p
 # empty vocab_size will be automatically initialized if token_type is 'word' or 'sentencepiece':
@@ -106,6 +111,10 @@ while getopts ":h-:" optchar; do
           val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
           sample_rate=${val}
           ;;
+        spk_emb_model)
+          val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
+          spk_emb_model=${val}
+          ;;
         token_type)
           val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
           token_type=${val}
@@ -129,6 +138,10 @@ while getopts ":h-:" optchar; do
         ncpu)
           val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
           ncpu=${val}
+          ;;
+        ngpu)
+          val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
+          ngpu=${val}
           ;;
         valid_section)
           val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
@@ -196,6 +209,7 @@ fi
   --feat_type "${feat_type}" \
   --feat_config "${feat_config}" \
   --sample_rate "${sample_rate}" \
+  --spk_emb_model "${spk_emb_model}" \
   --token_type "${token_type}" \
   --txt_format "${txt_format}" \
   --dataset_name "ljspeech" \
@@ -203,4 +217,5 @@ fi
   --subsets "${subsets}" \
   --vocab_src_subsets "train valid test" \
   --vocab_generate_args "${vocab_generate_args}" \
-  --ncpu "${ncpu}"
+  --ncpu "${ncpu}" \
+  --ngpu "${ngpu}"

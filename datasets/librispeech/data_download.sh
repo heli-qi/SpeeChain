@@ -147,8 +147,10 @@ for (( n=0; n < ${#subsets[*]}; n++ )); do
   fi
 
   # remove the compressed data package
-  echo "Remove the downloaded data package ${download_path}/data/${set}.tar.gz"
-  rm ${download_path}/data/"${set}".tar.gz
+  if [ -f ${download_path}/data/"${set}".tar.gz ];then
+    echo "Remove the downloaded data package ${download_path}/data/${set}.tar.gz"
+    rm ${download_path}/data/"${set}".tar.gz
+  fi
 done
 
 # Finally, remove the folder named LibriSpeech if needed

@@ -4,6 +4,8 @@
     Date: 2022.07
 """
 import shutil
+
+from tqdm import tqdm
 from typing import List
 
 import librosa
@@ -22,13 +24,10 @@ def parse():
     parser.add_argument('--sample_rate', type=int, default=16000)
     parser.add_argument('--src_file', type=str,
                         # required=True,
-                        default="datasets/libritts/data/wav/train-clean-100/idx2wav")
+                        default="datasets/ljspeech/data/wav/train/idx2wav")
     parser.add_argument('--tgt_path', type=str,
                         # required=True,
-                        default="datasets/libritts/data/wav16000/train-clean-100")
-    parser.add_argument('--chunk_size', type=int, default=1000,
-                        help="The number of waveform instances packaged in a chunk when downsamping by multiple "
-                             "processes. (default: 1000)")
+                        default="datasets/ljspeech/data/wav16000/train")
     parser.add_argument('--ncpu', type=int, default=8,
                         help="The number of processes you want to use to save the chunk files. (default: 8)")
     return parser.parse_args()
@@ -49,7 +48,7 @@ def waveform_downsample(idx2src_wav: List[List[str]], tgt_path: str, sample_rate
     """
     idx2tgt_wav = []
     # loop each source data wav in the given chunk
-    for idx, src_wav_path in idx2src_wav:
+    for idx, src_wav_path in tqdm(idx2src_wav):
         file_name = src_wav_path.split('/')[-1]
         tgt_wav_path = os.path.join(tgt_path, file_name)
         # create the downsampled waveform file
@@ -64,7 +63,7 @@ def waveform_downsample(idx2src_wav: List[List[str]], tgt_path: str, sample_rate
     return idx2tgt_wav
 
 
-def main(src_file: str, tgt_path: str, sample_rate: int, ncpu: int, chunk_size: int = 1000):
+def main(src_file: str, tgt_path: str, sample_rate: int, ncpu: int):
     src_file, tgt_path = parse_path_args(src_file), parse_path_args(tgt_path)
     os.makedirs(tgt_path, exist_ok=True)
 
@@ -73,21 +72,19 @@ def main(src_file: str, tgt_path: str, sample_rate: int, ncpu: int, chunk_size: 
     if not os.path.exists(idx2tgt_wav_path):
         # reshape the source waveform paths into individual chunks by the given chunk_size
         idx2src_wav = load_idx2data_file(src_file)
-        idx2src_wav = np.array([[idx, src_wav] for idx, src_wav in idx2src_wav.items()])
-        _residue = len(idx2src_wav) % chunk_size
-        idx2src_wav_chunk = idx2src_wav[:-_residue].reshape(-1, chunk_size, idx2src_wav.shape[-1]).tolist()
-        idx2src_wav_chunk.append(idx2src_wav[-_residue:].tolist())
+        idx2src_wav = [[idx, src_wav] for idx, src_wav in idx2src_wav.items()]
+        func_args = [idx2src_wav[i::ncpu] for i in range(ncpu)]
 
         # saving the downsampled audio files to the disk
         with Pool(ncpu) as executor:
             os.makedirs(os.path.join(tgt_path, 'wav'), exist_ok=True)
             waveform_downsample_func = partial(waveform_downsample,
                                                tgt_path=os.path.join(tgt_path, 'wav'), sample_rate=sample_rate)
-            idx2tgt_wav_chunk = executor.map(waveform_downsample_func, idx2src_wav_chunk)
+            idx2tgt_wav_list_nproc = executor.map(waveform_downsample_func, func_args)
 
         idx2tgt_wav = []
-        for chunk in idx2tgt_wav_chunk:
-            idx2tgt_wav += chunk
+        for idx2tgt_wav_list in idx2tgt_wav_list_nproc:
+            idx2tgt_wav += idx2tgt_wav_list
         np.savetxt(idx2tgt_wav_path, sorted(idx2tgt_wav, key=lambda x: x[0]), fmt='%s')
     else:
         print(f"Downsampled waveforms have already existed in {args.tgt_path}, so the dowmsampling process is skipped.")
@@ -100,6 +97,8 @@ def main(src_file: str, tgt_path: str, sample_rate: int, ncpu: int, chunk_size: 
                 os.path.isdir(os.path.join(src_dir, file)) or '.' in file:
             continue
         shutil.copy(os.path.join(src_dir, file), tgt_path)
+
+    print("\n")
 
 
 if __name__ == '__main__':
