@@ -146,6 +146,7 @@ class TransformerEncoder(Module):
                     fdfwd_dropout: float = 0.1,
                     res_dropout: float = 0.1,
                     layernorm_first: bool = True,
+                    uni_direction: bool = False,
                     dwsmpl_factors: int or List[int] = None,
                     dwsmpl_type: str = 'drop'):
         """
@@ -185,6 +186,9 @@ class TransformerEncoder(Module):
                 The dropout rate for the Dropout layer after the first linear feedforward layer in each Transformer layer
             res_dropout: float
                 The dropout rate for the Dropout layer before adding the output of each Transformer layer into its input
+            uni_direction: bool = False
+                Whether the encoder is unidirectional or not. If True, the attention matrix will be masked into a
+                lower-triangular matrix.
             dwsmpl_factors: int or List[int]
                 The downsampling factor for each Transformer layer.
                 If only an integer is given, it will be treated as the factor of the last layer and the factors of
@@ -222,6 +226,7 @@ class TransformerEncoder(Module):
         self.num_layers = num_layers
         self.num_heads = num_heads
         self.layernorm_first = layernorm_first
+        self.uni_direction = uni_direction
         self.dwsmpl_factors = dwsmpl_factors
         self.dwsmpl_type = dwsmpl_type
 
@@ -258,6 +263,22 @@ class TransformerEncoder(Module):
         if self.layernorm_first:
             self.layernorm = nn.LayerNorm(d_model, eps=1e-6)
 
+    @staticmethod
+    def subsequent_mask(batch_size, maxlen: int) -> torch.Tensor:
+        """
+        Mask out subsequent positions (to prevent attending to future positions)
+        Transformer helper function.
+
+        Args:
+            batch_size:
+            maxlen: int
+                size of mask (2nd and 3rd dim)
+
+        Returns:
+
+        """
+        return ~torch.triu(torch.ones(batch_size, maxlen, maxlen, dtype=torch.bool), diagonal=1)
+
     def forward(self, src: torch.Tensor, mask: torch.Tensor):
         """
         Pass the input (and mask) through each layer in turn.
@@ -280,6 +301,12 @@ class TransformerEncoder(Module):
 
         # add position encoding to word embeddings
         src = self.posenc(src)
+
+        # generate the low-triangular mask for self-attention layers
+        if self.uni_direction:
+            batch_size, _, src_maxlen = mask.size()
+            mask = torch.logical_and(mask.repeat(1, src_maxlen, 1),
+                                     self.subsequent_mask(batch_size, src_maxlen).to(mask.device))
 
         # go through the Transformer layers
         attmat, hidden = [], []

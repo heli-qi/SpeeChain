@@ -19,7 +19,7 @@ from speechain.utilbox.eval_util import get_word_edit_alignment
 from speechain.utilbox.train_util import text2tensor_and_len
 
 from speechain.module.encoder.asr import ASREncoder
-from speechain.module.decoder.asr import ASRDecoder
+from speechain.module.decoder.ar_asr import ARASRDecoder
 from speechain.module.postnet.token import TokenPostnet
 
 from speechain.criterion.cross_entropy import CrossEntropy
@@ -41,9 +41,9 @@ class ARASR(Model):
         3. `specaug` randomly warps and masks the normalized acoustic features.
         4. `prenet` preprocesses the augmented acoustic features before passing them to the encoder.
         5. `encoder` extracts the encoder hidden representations of the preprocessed acoustic features and passes them
-            to `ASRDecoder`.
+            to `ARASRDecoder`.
 
-    2. an `ASRDecoder` made up of:
+    2. an `ARASRDecoder` made up of:
         1. `embedding` embeds each tokens in the input sentence into token embedding vectors.
         2. `decoder` extracts the decoder hidden representations based on the token embedding vectors and encoder
             hidden representations.
@@ -72,7 +72,7 @@ class ARASR(Model):
         This initialization function contains 4 steps:
         1. `Tokenizer` initialization.
         2. `ASREncoder` initialization.
-        3. `ASRDecoder` initialization.
+        3. `ARASRDecoder` initialization.
         4. (optional) 'CTC' layer initialization
 
         The input arguments of this function are two-fold:
@@ -108,14 +108,14 @@ class ARASR(Model):
                 input acoustic features.
                 For more details about how to give `encoder`, please refer to speechain.module.encoder.asr.ASREncoder.
             dec_emb: (mandatory)
-                The configuration of the embedding layer in the `ASRDecoder` member.
+                The configuration of the embedding layer in the `ARASRDecoder` member.
                 The decoder prenet embeds the input token ids into hidden embeddings before feeding them into
                 the decoder.
                 For more details about how to give `dec_emb`, please refer to speechain.module.encoder.asr.ASREncoder.
             decoder: (mandatory)
-                The configuration of the decoder main body in the `ASRDecoder` member.
+                The configuration of the decoder main body in the `ARASRDecoder` member.
                 The decoder predicts the probability of the next token at each time steps based on the token embeddings.
-                For more details about how to give `decoder`, please refer to speechain.module.decoder.asr.ASRDecoder.
+                For more details about how to give `decoder`, please refer to speechain.module.decoder.ar_asr.ARASRDecoder.
             # --- customize_conf arguments --- #
             token_type: (mandatory)
                 The type of the built-in tokenizer.
@@ -195,7 +195,7 @@ class ARASR(Model):
                               f"tokenizer ({self.tokenizer.vocab_size}). The latter one will be used to initialize the "
                               f"decoder for correctness.")
             dec_emb['conf'].pop('vocab_size')
-        self.decoder = ASRDecoder(
+        self.decoder = ARASRDecoder(
             vocab_size=self.tokenizer.vocab_size,
             embedding=dec_emb,
             decoder=decoder
@@ -348,9 +348,6 @@ class ARASR(Model):
                 Controls whether the attention matrices of each layer in the encoder and decoder will be returned.
             kwargs:
                 Temporary register used to store the redundant arguments.
-
-        Returns:
-            A dictionary containing all the ASR model outputs necessary to calculate the losses
 
         """
 
@@ -722,15 +719,14 @@ class ARASR(Model):
             # update the hypothesis text-related data in the teacher forcing mode
             if teacher_forcing:
                 # the last token is meaningless because the text is padded with eos at the end
-                temperature = infer_conf['temperature'] if 'temperature' in infer_conf.keys() else 1.0
-                infer_results['logits'] = torch.log_softmax(infer_results['logits'][:, :-1] / temperature, dim=-1)
-                hypo_text_confid, hypo_text = torch.max(infer_results['logits'], dim=-1)
+                infer_results['logits'] = torch.log_softmax(infer_results['logits'][:, :-1], dim=-1)
+                hypo_text_prob, hypo_text = torch.max(infer_results['logits'], dim=-1)
                 # the original text contains both sos at the beginning and eos at the end
                 hypo_text_len = text_len - 2
                 feat_token_len_ratio = feat_len / hypo_text_len
                 # sum up the log-probability of all time steps to get the confidence
                 length_penalty = infer_conf['length_penalty'] if 'length_penalty' in infer_conf.keys() else 1.0
-                hypo_text_confid = torch.sum(hypo_text_confid, dim=-1) / (hypo_text_len ** length_penalty)
+                hypo_text_confid = torch.sum(hypo_text_prob, dim=-1) / (hypo_text_len ** length_penalty)
 
         # turn the data all the unsupervised metrics into the cpu version (List)
         # consider one <sos/eos> at the end, so hypo_text_len is added to 1
@@ -831,6 +827,7 @@ class ARASR(Model):
 
 class MultiDomainARASR(ARASR):
     """
+    Auto-Regressive ASR model trained by multiple dataloaders on different domains.
 
     """
     def criterion_init(self,
@@ -885,9 +882,22 @@ class MultiDomainARASR(ARASR):
         # only initialize ctc loss if it is given
         if ctc_loss is not None:
             self.ctc_loss = recur_init_loss_by_dict(ctc_loss, CTCLoss)
+
         # only initialize attention-guidance loss if it is given
         if att_guid_loss is not None:
-            self.att_guid_loss = recur_init_loss_by_dict(att_guid_loss, AttentionGuidance)
+            assert 'encdec' in self.return_att_type, \
+                "If you want to enable attention guidance for ASR training, please include 'encdec' in return_att_type."
+
+            # if att_guid_loss is given as True, the default arguments of AttentionGuidance will be used
+            if not isinstance(att_guid_loss, Dict):
+                assert isinstance(att_guid_loss, bool) and att_guid_loss, \
+                    "If you want to use the default setting of AttentionGuidance, please give att_guid_loss as True."
+
+            if isinstance(att_guid_loss, Dict):
+                self.att_guid_loss = recur_init_loss_by_dict(att_guid_loss, AttentionGuidance)
+            # att_guid_loss is True, intialize the default AttentionGuidance criterion
+            else:
+                self.att_guid_loss = AttentionGuidance()
 
         # initialize teacher-forcing accuracy for validation
         self.accuracy = Accuracy()
@@ -997,6 +1007,7 @@ class MultiDomainARASR(ARASR):
                     losses.update(
                         loss=sum([losses[f"{domain}_loss"] for domain in domain_list]) / len(domain_list)
                     )
+                metrics.update(loss=losses['loss'].clone().detach())
 
             if self.training:
                 return losses, metrics

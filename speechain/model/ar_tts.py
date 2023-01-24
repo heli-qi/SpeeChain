@@ -23,7 +23,7 @@ from speechain.utilbox.train_util import make_mask_from_len, text2tensor_and_len
 from speechain.utilbox.data_loading_util import parse_path_args
 
 from speechain.module.encoder.tts import TTSEncoder
-from speechain.module.decoder.tts import TTSDecoder
+from speechain.module.decoder.ar_tts import ARTTSDecoder
 
 from speechain.criterion.least_error import LeastError
 from speechain.criterion.bce_logits import BCELogits
@@ -66,11 +66,11 @@ class ARTTS(Model):
         Args:
             # --- module_conf arguments --- #
             frontend: Dict (mandatory)
-                The configuration of the acoustic feature extraction frontend in the `TTSDecoder` member.
+                The configuration of the acoustic feature extraction frontend in the `ARTTSDecoder` member.
                 This argument must be given since our toolkit doesn't support time-domain TTS.
-                For more details about how to give `frontend`, please refer to speechain.module.encoder.tts.TTSDecoder.
+                For more details about how to give `frontend`, please refer to speechain.module.encoder.ar_tts.ARTTSDecoder.
             normalize: Dict
-                The configuration of the normalization layer in the `TTSDecoder` member.
+                The configuration of the normalization layer in the `ARTTSDecoder` member.
                 This argument can also be given as a bool value.
                 True means the default configuration and False means no normalization.
                 For more details about how to give `normalize`, please refer to
@@ -91,18 +91,18 @@ class ARTTS(Model):
                 input acoustic features.
                 For more details about how to give `encoder`, please refer to speechain.module.encoder.tts.TTSEncoder.
             spk_emb: Dict = None (conditionally mandatory)
-                The configuration for the `SPKEmbedPrenet` in the `TTSDecoder` member.
+                The configuration for the `SPKEmbedPrenet` in the `ARTTSDecoder` member.
                 For more details about how to give `spk_emb`, please refer to
                     speechain.module.prenet.spk_embed.SpeakerEmbedPrenet.
             dec_prenet: Dict (mandatory)
-                The configuration of the prenet in the `TTSDecoder` member.
-                For more details about how to give `dec_prenet`, please refer to speechain.module.encoder.tts.TTSDecoder.
+                The configuration of the prenet in the `ARTTSDecoder` member.
+                For more details about how to give `dec_prenet`, please refer to speechain.module.encoder.ar_tts.ARTTSDecoder.
             decoder: Dict (mandatory)
-                The configuration of the decoder main body in the `TTSDecoder` member.
-                For more details about how to give `decoder`, please refer to speechain.module.decoder.tts.TTSDecoder.
+                The configuration of the decoder main body in the `ARTTSDecoder` member.
+                For more details about how to give `decoder`, please refer to speechain.module.decoder.ar_tts.ARTTSDecoder.
             dec_postnet: Dict (mandatory)
-                The configuration of the postnet in the `TTSDecoder` member.
-                For more details about how to give `dec_postnet`, please refer to speechain.module.encoder.tts.TTSDecoder.
+                The configuration of the postnet in the `ARTTSDecoder` member.
+                For more details about how to give `dec_postnet`, please refer to speechain.module.encoder.ar_tts.ARTTSDecoder.
             # --- customize_conf arguments --- #
             token_type: (mandatory)
                 The type of the built-in tokenizer.
@@ -227,7 +227,7 @@ class ARTTS(Model):
                 # all seen speakers plus an unknown speaker
                 spk_emb['spk_num'] = len(self.spk2idx) + 1
 
-        self.decoder = TTSDecoder(
+        self.decoder = ARTTSDecoder(
             spk_emb=spk_emb,
             frontend=frontend,
             normalize=normalize,
@@ -463,6 +463,9 @@ class ARTTS(Model):
                           tgt_feat_len: torch.Tensor,
                           text_len: torch.Tensor,
                           att: Dict[str, List[torch.Tensor]] = None,
+                          feat_loss_fn: LeastError = None,
+                          stop_loss_fn: BCELogits = None,
+                          att_guid_loss_fn: AttentionGuidance = None,
                           **kwargs) -> \
             (Dict[str, torch.Tensor], Dict[str, torch.Tensor]) or Dict[str, torch.Tensor]:
         """
@@ -479,6 +482,9 @@ class ARTTS(Model):
             tgt_feat_len: (batch,)
             text_len: (batch,)
             att:
+            feat_loss_fn:
+            stop_loss_fn:
+            att_guid_loss_fn:
             **kwargs:
                 Unnecessary arguments for criterion calculation.
 
@@ -488,9 +494,12 @@ class ARTTS(Model):
 
         """
         # --- Losses Calculation --- #
+        # the external feature loss function has the higher priority
+        if feat_loss_fn is None:
+            feat_loss_fn = self.feat_loss
         # acoustic feature prediction loss
-        feat_loss_before = self.feat_loss(pred=pred_feat_before, tgt=tgt_feat, tgt_len=tgt_feat_len)
-        feat_loss_after = self.feat_loss(pred=pred_feat_after, tgt=tgt_feat, tgt_len=tgt_feat_len)
+        feat_loss_before = feat_loss_fn(pred=pred_feat_before, tgt=tgt_feat, tgt_len=tgt_feat_len)
+        feat_loss_after = feat_loss_fn(pred=pred_feat_after, tgt=tgt_feat, tgt_len=tgt_feat_len)
 
         # feature prediction stop loss
         pred_stop = pred_stop.squeeze(-1)
@@ -499,18 +508,24 @@ class ARTTS(Model):
         ).squeeze(1))
         if pred_stop.is_cuda:
             tgt_stop = tgt_stop.cuda(pred_stop.device)
+        # the external feature loss function has the higher priority
+        if stop_loss_fn is None:
+            stop_loss_fn = self.stop_loss
         # end-flag prediction
-        stop_loss = self.stop_loss(pred=pred_stop, tgt=tgt_stop, tgt_len=tgt_feat_len)
+        stop_loss = stop_loss_fn(pred=pred_stop, tgt=tgt_stop, tgt_len=tgt_feat_len)
 
         # combine all losses into the final one
         loss = feat_loss_before + feat_loss_after + stop_loss
 
         # attention guidance loss
-        if hasattr(self, 'att_guid_loss'):
-            assert att is not None and 'encdec' in att.keys()
+        if att_guid_loss_fn is not None or hasattr(self, 'att_guid_loss'):
+            # the external attention guidance loss function has the higher priority
+            if att_guid_loss_fn is None:
+                att_guid_loss_fn = self.att_guid_loss
+
             # layer_num * (batch, head_num, ...) -> (batch, layer_num * head_num, ...)
             att_tensor = torch.cat(att['encdec'], dim=1)
-            att_guid_loss = self.att_guid_loss(att_tensor, tgt_feat_len, text_len)
+            att_guid_loss = att_guid_loss_fn(att_tensor, tgt_feat_len, text_len)
             loss += att_guid_loss
         else:
             att_guid_loss = None
@@ -607,7 +622,7 @@ class ARTTS(Model):
 
         # --- snapshot the objective metrics --- #
         vis_logs = []
-        # CER, WER, hypothesis probability
+        # numerical metrics recording
         materials = dict()
         for metric in ['loss', 'stop_accuracy', 'stop_f2']:
             # store each target metric into materials
@@ -678,6 +693,7 @@ class ARTTS(Model):
                   spk_ids: torch.Tensor = None,
                   spk_feat: torch.Tensor = None,
                   spk_feat_ids: List[str] = None,
+                  domain: str = None,
                   return_att: bool = False,
                   use_dropout: bool = False,
                   use_before: bool = False,
@@ -702,6 +718,9 @@ class ARTTS(Model):
             spk_feat_ids: List[str] = None
                 The IDs for the input spk_feat. Mainly used to record the reference speaker embedding during inference.
             # --- General inference arguments --- #
+            domain: str = None
+                This argument indicates which domain the input speech belongs to.
+                It's used to indicate the `TTSDecoder` member how to encode the input speech.
             return_att: bool = False
                 Whether the attention matrix of the input speech is returned.
             use_dropout: bool = False
@@ -863,3 +882,211 @@ class ARTTS(Model):
                 att=hypo_att
             )
         return outputs
+
+
+class MultiDomainARTTS(ARTTS):
+    """
+    Auto-Regressive TTS model trained by multiple dataloaders on different domains.
+
+    """
+    def criterion_init(self,
+                       loss_weights: Dict[str, float] = None,
+                       feat_loss: Dict = None,
+                       stop_loss: Dict = None,
+                       att_guid_loss: Dict = None,
+                       **kwargs):
+        """
+
+        Args:
+            loss_weights:
+            ce_loss:
+            ctc_loss:
+            att_guid_loss:
+            **kwargs:
+
+        Returns:
+
+        """
+        # register the weight for each loss if loss_weights is given
+        if loss_weights is not None:
+            self.loss_weights = dict()
+            for loss_name, weight in loss_weights.items():
+                assert isinstance(weight, float) and 0 < weight < 1, \
+                    f"Your input weight should be a float number in (0, 1), but got loss_weights[{loss_name}]={weight}!"
+                self.loss_weights[loss_name] = weight
+
+        def recur_init_loss_by_dict(loss_dict: Dict, loss_class):
+            leaf_num = sum([not isinstance(value, Dict) for value in loss_dict.values()])
+            # all the items in loss_dict are not Dict mean that the loss function is shared by all the dataloaders
+            if leaf_num == len(loss_dict):
+                return loss_class(**loss_dict)
+            # no item in loss_dict is Dict mean that each dataloader has its own loss function
+            elif leaf_num == 0:
+                if hasattr(self, 'loss_weights'):
+                    assert len(loss_dict) == len(self.loss_weights), \
+                        "The key number in the xxx_loss should match the one in the loss_weights"
+
+                nested_loss = dict()
+                for name, conf in loss_dict.items():
+                    if hasattr(self, 'loss_weights'):
+                        assert name in self.loss_weights.keys(), \
+                            f"The key name {name} doesn't match anyone in the loss_weights!"
+                    nested_loss[name] = loss_class(**conf)
+                return nested_loss
+            else:
+                raise RuntimeError("Your loss configuration must be either Dict[str, Any] or Dict[str, Dict[str, Any]]")
+
+        # feature loss will be initialized no matter whether feat_loss is given or not
+        self.feat_loss = recur_init_loss_by_dict(feat_loss, LeastError) if feat_loss is not None else LeastError()
+
+        # stop loss will be initialized no matter whether stop_loss is given or not
+        self.stop_loss = recur_init_loss_by_dict(stop_loss, BCELogits) if stop_loss is not None else BCELogits()
+
+        # only initialize attention-guidance loss if it is given
+        if att_guid_loss is not None:
+            assert 'encdec' in self.return_att_type, \
+                "If you want to enable attention guidance for ASR training, please include 'encdec' in return_att_type."
+
+            # if att_guid_loss is given as True, the default arguments of AttentionGuidance will be used
+            if not isinstance(att_guid_loss, Dict):
+                assert isinstance(att_guid_loss, bool) and att_guid_loss, \
+                    "If you want to use the default setting of AttentionGuidance, please give att_guid_loss as True."
+
+            if isinstance(att_guid_loss, Dict):
+                self.att_guid_loss = recur_init_loss_by_dict(att_guid_loss, AttentionGuidance)
+            # att_guid_loss is True, intialize the default AttentionGuidance criterion
+            else:
+                self.att_guid_loss = AttentionGuidance()
+
+        # validation metrics
+        self.stop_accuracy = Accuracy()
+        self.stop_fbeta = FBetaScore(beta=2)
+
+    def module_forward(self, **batch_data) -> Dict[str, Dict or torch.Tensor]:
+        """
+
+        Args:
+            **batch_data:
+
+        Returns:
+
+        """
+        # whether the input batch_data is generated by multiple dataloaders
+        multi_flag = sum([not isinstance(value, torch.Tensor) for value in batch_data.values()]) == len(batch_data)
+
+        # Single-dataloader scenario
+        # probably for the validation stage of in-domain semi-supervised ASR where we only have one data-label pair
+        if not multi_flag:
+            return super(MultiDomainARTTS, self).module_forward(**batch_data)
+        # Multi-dataloader scenario
+        # For semi-supervised training or validation of out-domain semi-supervised ASR where we may have multiple
+        # data-label pairs in a single batch, we need to go through forward function once for each pair.
+        else:
+            # pop the non-Dict arguments from the input batch data
+            general_args, data_keys = dict(), list(batch_data.keys())
+            for key in data_keys:
+                if not isinstance(batch_data[key], Dict):
+                    general_args[key] = batch_data.pop(key)
+
+            # otherwise, go through the normal training process once for all the sub-batches
+            # (each sub-batch corresponds to a dataloader)
+            return {domain: super(MultiDomainARTTS, self).module_forward(domain=domain, **general_args, **domain_data)
+                    for domain, domain_data in batch_data.items()}
+
+    def criterion_forward(self, **data_output_dict) -> (Dict[str, torch.Tensor], Dict[str, torch.Tensor]):
+        """
+
+        Args:
+            **data_output_dict:
+
+        Returns:
+
+        """
+        # whether the input data_output_dict is generated by multiple dataloaders
+        multi_flag = sum([isinstance(value, Dict) for value in data_output_dict.values()]) == len(data_output_dict)
+
+        # Single-dataloader scenario
+        # probably for the validation stage of in-domain semi-supervised ASR where we only have one data-label pair
+        if not multi_flag:
+            return super(MultiDomainARTTS, self).criterion_forward(**data_output_dict)
+        # Multi-dataloader scenario
+        # For semi-supervised training or validation of out-domain semi-supervised ASR where we may have multiple
+        # data-label pairs in a single batch, we need to go through forward function once for each pair.
+        else:
+            losses, metrics, domain_list = dict(), dict(), list(data_output_dict.keys())
+            for domain in domain_list:
+                # initialize the feature loss function
+                feat_loss_fn = self.feat_loss[domain] if isinstance(self.feat_loss, Dict) else self.feat_loss
+                # initialize the stop loss function
+                stop_loss_fn = self.stop_loss[domain] if isinstance(self.stop_loss, Dict) else self.stop_loss
+                # initialize the attention-guidance loss function only if att_guid_loss is created
+                if hasattr(self, 'att_guid_loss'):
+                    att_guid_loss_fn = self.att_guid_loss[domain] if isinstance(self.att_guid_loss, Dict) \
+                        else self.att_guid_loss
+                else:
+                    att_guid_loss_fn = None
+
+                # call the criterion_forward() of the parent class by the initialized loss functions
+                _criteria = super(MultiDomainARTTS, self).criterion_forward(
+                    feat_loss_fn=feat_loss_fn, stop_loss_fn=stop_loss_fn, att_guid_loss_fn=att_guid_loss_fn,
+                    **data_output_dict[domain])
+
+                # update loss and metric Dicts during training
+                if self.training:
+                    # update the losses and metrics Dicts by the domain name at the beginning
+                    losses.update(**{f"{domain}_{_key}": _value for _key, _value in _criteria[0].items()})
+                    metrics.update(**{f"{domain}_{_key}": _value for _key, _value in _criteria[1].items()})
+                # only update metric Dict during validation
+                else:
+                    metrics.update(**{_key if len(domain_list) == 1 else f"{domain}_{_key}": _value
+                                      for _key, _value in _criteria.items()})
+
+            # calculate the overall weighted loss during training
+            if self.training:
+                # normalize losses of all the domains by the given loss_weights
+                if hasattr(self, 'loss_weights'):
+                    assert len(self.loss_weights) == len(domain_list), \
+                        "There is a number mismatch of the domains between your data_cfg and train_cfg."
+                    assert sum([domain in self.loss_weights.keys() for domain in domain_list]) == len(domain_list), \
+                        "There is a name mismatch of the domains between your data_cfg and train_cfg."
+                    losses.update(
+                        loss=sum(
+                            [losses[f"{domain}_loss"] * self.loss_weights[domain] for domain in domain_list]
+                        ) / sum(
+                            [self.loss_weights[domain] for domain in domain_list]
+                        )
+                    )
+                # average losses of all the domains if loss_weights is not given
+                else:
+                    losses.update(
+                        loss=sum([losses[f"{domain}_loss"] for domain in domain_list]) / len(domain_list)
+                    )
+                metrics.update(loss=losses['loss'].clone().detach())
+
+            if self.training:
+                return losses, metrics
+            else:
+                return metrics
+
+    def inference(self, infer_conf: Dict, **test_batch) -> Dict[str, Any]:
+        """
+
+        Args:
+            infer_conf:
+            **test_batch:
+
+        Returns:
+
+        """
+        multi_flag = sum([isinstance(value, Dict) for value in test_batch.values()]) == len(test_batch)
+        # no sub-Dict means one normal supervised dataloader, go through the inference function of ASR
+        if not multi_flag:
+            return super(MultiDomainARTTS, self).inference(infer_conf=infer_conf, **test_batch)
+
+        # sub-Dict means that the domain information is given for ASR inference
+        else:
+            assert len(test_batch) == 1, \
+                "If you want to evaluate the ASR model by multiple domains, please evaluate them one by one."
+            for domain, domain_batch in test_batch.items():
+                return super(MultiDomainARTTS, self).inference(infer_conf=infer_conf, domain=domain, **domain_batch)
+

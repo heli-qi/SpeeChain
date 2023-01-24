@@ -110,7 +110,18 @@ class Dataset(torch.utils.data.Dataset, ABC):
                 self.data_index = self.data_selection(self.data_index, selection_mode, selection_num, meta_info)
 
         # --- 3. Customized Initialization for Individual Dataset Subclasses --- #
+        self.data_len = self.data_len_register_fn(self.main_data)
         self.dataset_init_fn(**dataset_conf)
+
+    @staticmethod
+    def data_len_register_fn(main_data: Dict[str, Dict[str, str]]) -> Dict[str, int or float] or None:
+        """
+        This static hook function registers the default information about the length of each data instance.
+        This hook is not mandatory to be overridden and the original one in the base class does nothing.
+        If you want to decide the data length on-the-fly, please override this hook function and put your logic here.
+
+        """
+        return None
 
     def dataset_init_fn(self, **dataset_conf):
         """

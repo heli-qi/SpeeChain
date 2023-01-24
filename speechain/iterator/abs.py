@@ -51,7 +51,7 @@ class Iterator(ABC):
                  batches_per_epoch: int = None,
                  data_len: str or List[str] = None,
                  group_info: Dict[str, str or List[str]] = None,
-                 is_descending: bool = True,
+                 is_descending: bool or None = True,
                  shuffle: bool = True,
                  seed: int = 0,
                  ngpu: int = 1,
@@ -77,7 +77,7 @@ class Iterator(ABC):
                 number. If not given (None), all batches will be used in each epoch.
             is_descending: bool = True
                 Whether the batches are sorted in the descending order by the length (True) or in the ascending order
-                (False).
+                (False). If this argument is given as None, no sorting is done for involved data instances.
             data_len: str or List[str] = None
                 The absolute path of the data length file. Multiple length files can be given in a list, but they
                 should contain non-overlapping data instances.
@@ -124,10 +124,13 @@ class Iterator(ABC):
         self.distributed = distributed
 
         # --- 1. Loading the Data Length Information --- #
+        if data_len is None:
+            data_len = self.dataset.data_len
+
         # initialize the data lengths if given
         if data_len is not None:
             # remain the original order of the data indices if is_descending not specified
-            self.data_len = load_idx2data_file(data_len, int)
+            self.data_len = load_idx2data_file(data_len, int) if isinstance(data_len, str) else data_len
 
             # check the data index in data_len and self.dataset
             data_len_keys, dataset_keys = set(self.data_len.keys()), set(self.dataset.get_data_index())
@@ -155,7 +158,7 @@ class Iterator(ABC):
 
         # --- 2. Sorting the Data instances in order --- #
         # sorting the data indices by their lengths if specified
-        if self.data_len is not None:
+        if self.data_len is not None and self.is_descending is not None:
             # shrink the data_len by sorted_data if necessary
             if len(self.data_len) > len(self.sorted_data):
                 self.data_len = {index: self.data_len[index] for index in self.sorted_data}
@@ -195,7 +198,7 @@ class Iterator(ABC):
             stride = torch.distributed.get_world_size()
             # set the start point to the global rank of the current process
             # make sure that the batches on GPU no.0 have the least data size (for more memory on no.0 GPU)
-            start_point = stride - torch.distributed.get_rank() - 1 if self.is_descending \
+            start_point = stride - torch.distributed.get_rank() - 1 if self.is_descending or self.is_descending is None \
                 else torch.distributed.get_rank()
             self.batches = [batch[start_point::stride] for batch in self.batches]
 

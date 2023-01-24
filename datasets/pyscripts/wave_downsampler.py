@@ -22,12 +22,8 @@ from speechain.utilbox.data_loading_util import parse_path_args, load_idx2data_f
 def parse():
     parser = argparse.ArgumentParser(description='params')
     parser.add_argument('--sample_rate', type=int, default=16000)
-    parser.add_argument('--src_file', type=str,
-                        # required=True,
-                        default="datasets/ljspeech/data/wav/train/idx2wav")
-    parser.add_argument('--tgt_path', type=str,
-                        # required=True,
-                        default="datasets/ljspeech/data/wav16000/train")
+    parser.add_argument('--src_file', type=str, required=True)
+    parser.add_argument('--tgt_path', type=str, required=True)
     parser.add_argument('--ncpu', type=int, default=8,
                         help="The number of processes you want to use to save the chunk files. (default: 8)")
     return parser.parse_args()

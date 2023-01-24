@@ -24,7 +24,7 @@ class CrossEntropy(Criterion):
     """
 
     def criterion_init(self,
-                       is_normalized: bool = False,
+                       length_normalized: bool = False,
                        label_smoothing: float = 0.0,
                        temperature: float = 1.0,
                        confid_threshold: float = 0.0,
@@ -34,7 +34,7 @@ class CrossEntropy(Criterion):
         """
 
         Args:
-            is_normalized: bool
+            length_normalized: bool
                 Controls whether the sentence normalization is performed.
             label_smoothing: float
                 Controls the scale of label smoothing. 0 means no smoothing.
@@ -65,7 +65,7 @@ class CrossEntropy(Criterion):
             f"confid_level must be one of ['sentence', 'token'], but got {confid_level}"
 
         # para recording
-        self.is_normalized = is_normalized
+        self.length_normalized = length_normalized
         self.label_smoothing = label_smoothing
         self.temperature = temperature
         self.confid_threshold = confid_threshold
@@ -123,7 +123,7 @@ class CrossEntropy(Criterion):
             logits.contiguous().view(batch * seq_maxlen, vocab_size) / self.temperature, dim=-1)
 
         # reshape targets and calculate the loss
-        log_prob_target = log_prob.gather(1, text.contiguous().view(-1, 1)).squeeze()
+        log_prob_target = log_prob.gather(1, text.contiguous().view(-1, 1)).squeeze(dim=-1)
         if self.label_smoothing > 0:
             smooth_pos = 1 - self.label_smoothing
             smooth_neg = self.label_smoothing / vocab_size
@@ -174,7 +174,7 @@ class CrossEntropy(Criterion):
         loss = loss.masked_fill(loss_mask, 0.0).reshape(batch, seq_maxlen).sum(dim=-1)
 
         # normalize the loss by the token sequence length if specified
-        if self.is_normalized:
+        if self.length_normalized:
             loss /= text_len + 1e-10
 
         # valid_sent is used to calculate the number of valid sentence included in the loss

@@ -220,25 +220,34 @@ def main(vocoder: str, feat_path: str, wav_path: str, batch_size: int, ngpu: int
                 save_path = os.path.dirname(hypo_idx2feat)
             else:
                 save_path = parse_path_args(wav_path)
-            # read the idx2feat file into a Dict, str -> Dict[str, str]
-            hypo_idx2feat = load_idx2data_file(hypo_idx2feat)
 
             # go through different branches by vocoder
             vocoder = vocoder.lower()
             if vocoder == 'gl':
                 if tts_model_cfg is None:
-                    tts_model_cfg = search_file_in_subfolder(feat_path, 'train_cfg.yaml')
-                    if len(tts_model_cfg) == 1:
-                        tts_model_cfg = load_yaml(parse_path_args(tts_model_cfg[0]))
+                    cand_model_cfg_list = search_file_in_subfolder(feat_path, lambda x: x == 'train_cfg.yaml')
+                    if len(cand_model_cfg_list) == 1:
+                        tgt_model_cfg = parse_path_args(cand_model_cfg_list[0])
                     else:
-                        raise RuntimeError(
-                            f"Found multiple train_cfg.yaml files {tts_model_cfg} in {feat_path}. "
-                            f"Please directly give the path of your target train_cfg.yaml by '--tts_model_cfg'!")
+                        tgt_model_cfg = None
+                        for cand_model_cfg in cand_model_cfg_list:
+                            cand_model_cfg = parse_path_args(cand_model_cfg)
+                            if hypo_idx2feat.startswith(os.path.dirname(cand_model_cfg)):
+                                tgt_model_cfg = cand_model_cfg
+                                break
 
-                if 'model' in tts_model_cfg.keys():
-                    frontend_cfg = tts_model_cfg['model']['module_conf']['frontend']
+                        if tgt_model_cfg is None:
+                            raise RuntimeError(
+                                f"None of the train_cfg.yaml files in {feat_path} matches the chosen idx2feat file "
+                                f"{hypo_idx2feat}! Please check your arguments.")
                 else:
-                    frontend_cfg = tts_model_cfg
+                    tgt_model_cfg = parse_path_args(tts_model_cfg)
+
+                tts_model_cfg_dict = load_yaml(tgt_model_cfg)
+                if 'model' in tts_model_cfg_dict.keys():
+                    frontend_cfg = tts_model_cfg_dict['model']['module_conf']['frontend']
+                else:
+                    frontend_cfg = tts_model_cfg_dict
                 assert 'type' in frontend_cfg.keys() and 'conf' in frontend_cfg.keys(), \
                     "tts_model_cfg must contain 'type' and 'conf' as necessary key-value items!"
 
@@ -267,6 +276,9 @@ def main(vocoder: str, feat_path: str, wav_path: str, batch_size: int, ngpu: int
             else:
                 raise NotImplementedError(
                     "Currently, we only support Griffin-Lim ('gl') and HiFiGAN ('hifigan') as the vocoder.")
+
+            # read the idx2feat file into a Dict, str -> Dict[str, str]
+            hypo_idx2feat = load_idx2data_file(hypo_idx2feat)
 
             # initialize the arguments for vocoder execution function
             device_list = get_idle_gpu(ngpu, id_only=True) if ngpu > 0 else [-1 for _ in range(ncpu)]

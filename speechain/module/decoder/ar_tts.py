@@ -24,7 +24,7 @@ from speechain.module.transformer.decoder import TransformerDecoder
 from speechain.module.postnet.conv1d import Conv1dPostnet
 
 
-class TTSDecoder(Module):
+class ARTTSDecoder(Module):
     """
 
     """

@@ -105,7 +105,7 @@ class CurvePlotter(Plotter):
         # only one curve in the figure
         if isinstance(material, List):
             # for the stand-alone figure, only show up to 5 points at x-axis
-            x_axis = np.arange(1, len(material) + 1, dtype=np.int) * x_stride
+            x_axis = np.arange(0, len(material), dtype=np.int) * x_stride + 1
             interval = math.ceil(len(x_axis) / 5)
             ax.set_xticks(x_axis, [str(x_axis[i]) if i % interval == 0 else '' for i in range(len(x_axis))])
             ax.plot(x_axis, material, **self.plot_conf)
@@ -459,12 +459,13 @@ class SnapShooter:
                     break
 
         # setup the figure plotter and initialize the figure
-        fig_width = self.fig_width
-        fig_height = self.fig_height
-        if row_num > col_num:
-            fig_height *= (row_num / col_num)
-        elif col_num > row_num:
-            fig_width *= (col_num / row_num)
+        # scale the height and width when the number of rows or columns exceeds 3
+        fig_width = self.fig_width * math.ceil(col_num / 3)
+        fig_height = self.fig_height * math.ceil(row_num / 3)
+        # if row_num > col_num:
+        #     fig_height *= (row_num / col_num)
+        # elif col_num > row_num:
+        #     fig_width *= (col_num / row_num)
 
         fig = plt.figure(figsize=[fig_width, fig_height], num=row_num * col_num)
         material_keys = list(materials.keys())
@@ -596,7 +597,7 @@ class SnapShooter:
                                     text_string=material[-1], global_step=epoch)
 
             if epoch is not None and data_save:
-                x_axis = np.arange(1, len(material) + 1, dtype=np.int) * x_stride
+                x_axis = np.arange(0, len(material), dtype=np.int) * x_stride + 1
                 save_data = np.concatenate((x_axis.reshape(-1, 1), np.array(material).reshape(-1, 1)), axis=-1)
 
                 # save each material into a specific .txt file for easy visualization

@@ -163,13 +163,24 @@ class Model(torch.nn.Module, ABC):
             pretrained_model = pretrained_model if isinstance(pretrained_model, list) else [pretrained_model]
 
             for ptm in pretrained_model:
-                assert 'path' in ptm.keys() and os.path.exists(ptm['path']), \
-                    f"The pretrained model path {ptm['path']} doesn't exist! Please check the input path."
-                _pt_model = torch.load(ptm['path'], map_location=self.device)
+                # argument checking
+                if isinstance(ptm, str):
+                    ptm = dict(path=ptm)
+                elif isinstance(ptm, Dict):
+                    assert 'path' in ptm.keys(), \
+                        "If model['model_conf']['pretrained_model'] is given as a Dict, " \
+                        "please give a key named 'path' to specify where your pretrained model is placed."
+                    if os.path.exists(ptm['path']):
+                        raise RuntimeError(f"The specified path of your pretrained model {ptm['path']} doesn't exist! "
+                                           f"Please check the input path.")
+                else:
+                    raise TypeError(f"The elements in model['model_conf']['pretrained_model'] must be either a string "
+                                    f"or a Dict, but got {ptm}")
 
+                _pt_model = torch.load(parse_path_args(ptm['path']), map_location=self.device)
                 mapping = ptm['mapping'] if 'mapping' in ptm.keys() else None
                 if mapping is None:
-                    self.load_state_dict(_pt_model)
+                    self.load_state_dict(_pt_model, strict=False)
                 else:
                     assert isinstance(mapping, dict) and len(mapping) >= 1, \
                         f"mapping must be given as a dict and cannot be empty! " \
@@ -184,7 +195,7 @@ class Model(torch.nn.Module, ABC):
                             if name.startswith(src):
                                 name = name.replace(src, tgt)
                             _src_modules[name] = para
-                    self.load_state_dict(_src_modules)
+                    self.load_state_dict(_src_modules, strict=False)
 
         # --- 2.2. Model Parameter Initialization --- #
         else:
@@ -333,7 +344,7 @@ class Model(torch.nn.Module, ABC):
         # --- 2.2. Model Forward Calculation --- #
         # --- model forward is shared by both the training and validation branches --- #
         # context function used when doing the loss backward for efficient gradient accumulation in the DDP mode
-        forward_context = nullcontext if self.training else torch.no_grad
+        forward_context = nullcontext if self.training else torch.inference_mode
         with forward_context():
             # Feed the input batch into the model and get the outputs, copy.deepcopy() here is for the data safety
             model_outputs = self.module_forward(epoch=epoch, **copy.deepcopy(batch_data))
@@ -374,7 +385,7 @@ class Model(torch.nn.Module, ABC):
         # --- 3.2. Model Validation Branch --- #
         else:
             # In the validation stage, only the non-trainable metrics will be returned
-            with torch.no_grad():
+            with torch.inference_mode():
                 metrics = self.criterion_forward(**combine_input_output(batch_data, model_outputs))
             metrics.update(self.get_recordable_para())
 

@@ -24,13 +24,11 @@ from speechain.utilbox.md_util import get_list_strings
 
 def parse():
     parser = argparse.ArgumentParser(description='params')
-    parser.add_argument('--hypo_path', type=str,
-                        # required=True,
-                        default="recipes/tts/libritts/train-clean-100/exp",
+    parser.add_argument('--hypo_path', type=str, required=True,
                         help="The path of your TTS experimental folder. All the files named 'idx2xxx_wav' will be "
                             "automatically found out and used for TTS objective evaluation. You can also directly "
                             "specify the path of your target 'idx2xxx_wav' file by this argument.")
-    parser.add_argument('--refer_path', type=str, default="datasets/libritts/data/wav16000/dev-clean",
+    parser.add_argument('--refer_path', type=str, default=None,
                         help="The path of the ground-truth data folder. All the files named 'idx2wav' will be "
                              "automatically found out and used as the reference. The hypo 'idx2xxx_wav' and refer "
                              "'idx2wav' will be matched by the data indices. You can also directly specify the path of "

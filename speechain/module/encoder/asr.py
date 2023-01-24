@@ -9,7 +9,6 @@ from typing import Dict
 from speechain.module.abs import Module
 from speechain.utilbox.train_util import make_mask_from_len
 
-from speechain.module.frontend.speech2linear import Speech2LinearSpec
 from speechain.module.frontend.speech2mel import Speech2MelSpec
 from speechain.module.norm.feat_norm import FeatureNormalization
 from speechain.module.augment.specaug import SpecAugment

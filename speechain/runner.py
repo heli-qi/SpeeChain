@@ -82,7 +82,7 @@ class Runner(object):
             "--config",
             type=str,
             # default=None,
-            default="recipes/tts/libritts/train-clean-100/exp_cfg/16khz_ecapa_g2p_transformer_v1_accum1_20gb.yaml",
+            default="recipes/tts/libritts/train-clean-100/exp_cfg/16khz_ecapa_g2p_transformer_v1_joint-lj_accum1_20gb.yaml",
             help="The path of the all-in-one experiment configuration file. You can write all the arguments in this "
                  "all-in-one file instead of giving them to `runner.py` by command lines."
         )
@@ -868,7 +868,7 @@ class Runner(object):
                     visual_iterator = Iterator(dataset_type=data_cfg['valid']['conf']['dataset_type'],
                                                dataset_conf=data_cfg['valid']['conf']['dataset_conf'],
                                                batches_per_epoch=args.visual_snapshot_number,
-                                               shuffle=False, ngpu=1, distributed=False)
+                                               shuffle=False, ngpu=1, distributed=False, is_descending=None)
                 else:
                     visual_domain = _valid_keys[0]
                     logger.info("There are multiple sub-Dict in your given data_cfg['valid']. "
@@ -877,7 +877,7 @@ class Runner(object):
                         {visual_domain: Iterator(dataset_type=data_cfg['valid'][visual_domain]['conf']['dataset_type'],
                                                  dataset_conf=data_cfg['valid'][visual_domain]['conf']['dataset_conf'],
                                                  batches_per_epoch=args.visual_snapshot_number,
-                                                 shuffle=False, ngpu=1, distributed=False)}
+                                                 shuffle=False, ngpu=1, distributed=False, is_descending=None)}
             else:
                 visual_iterator = None
         else:
@@ -944,7 +944,7 @@ class Runner(object):
 
                 # make sure that no gradient appears during validation
                 model.eval()
-                with torch.no_grad():
+                with torch.inference_mode():
                     # loop all validation batches
                     for step in range(min_valid_batch_num):
                         # --- data loading part --- #
@@ -981,7 +981,7 @@ class Runner(object):
 
                     # make sure that no gradient appears during validation
                     model.eval()
-                    with torch.no_grad():
+                    with torch.inference_mode():
                         for step, visual_sample in enumerate(visual_dataloader):
                             # feed the current sample to the model
                             monitor.valid_model_snapshot(epoch=epoch, domain=visual_domain,
@@ -1167,7 +1167,7 @@ class Runner(object):
 
                 # make sure that no gradient appears during testing
                 model.eval()
-                with torch.no_grad():
+                with torch.inference_mode():
                     monitor.start_epoch(total_step_num=total_step_num)
                     # iterate the testing batches
                     for i in range(total_step_num):

@@ -21,6 +21,19 @@ class SpeechTextDataset(Dataset):
     (speaker ID + speaker embedding feature).
 
     """
+    @staticmethod
+    def data_len_register_fn(main_data: Dict[str, Dict[str, str]]) -> Dict[str, int or float] or None:
+        """
+
+        Returns:
+            If 'text' is given in main_data, return the number of characters in each sentence.
+            Otherwise, return None
+
+        """
+        if 'text' in main_data.keys():
+            return {key: len(value) for key, value in main_data['text'].items()}
+        else:
+            return None
 
     def collate_main_data_fn(self, batch_dict: Dict[str, List]) -> Dict[str, torch.Tensor or List]:
         """

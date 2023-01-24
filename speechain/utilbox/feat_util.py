@@ -70,8 +70,8 @@ def convert_wav_to_stft(wav: np.ndarray,
             raise ValueError
 
     # --- 3. STFT Processing --- #
-    stft_results = librosa.stft(wav.squeeze(-1), n_fft=n_fft, hop_length=hop_length, win_length=win_length,
-                                window=window, center=center)
+    stft_results = librosa.stft(wav.squeeze(-1) if len(wav.shape) == 2 else wav, n_fft=n_fft, hop_length=hop_length,
+                                win_length=win_length, window=window, center=center)
     linear_spec = np.abs(stft_results) ** 2 + np.angle(stft_results) ** 2
 
     # --- 4. STFT Post-Processing --- #
