@@ -3,6 +3,7 @@
     Affiliation: NAIST
     Date: 2022.07
 """
+import os.path
 
 import numpy as np
 import torch
@@ -163,7 +164,9 @@ class RandomSpkFeatDataset(SpeechTextDataset):
 
     """
     def dataset_init_fn(self, spk_feat: List[str] or str,
-                        min_ref_len: int = None, ref_len: List[str] or str = None, mixup_number: int = 1):
+                        min_ref_len: int = None, ref_len: List[str] or str = None,
+                        mixup_number: int = 1, same_gender: bool = True,
+                        tgt_gender: str = None, gender_info: List[str] or str = None):
         """
 
         Args:
@@ -175,24 +178,56 @@ class RandomSpkFeatDataset(SpeechTextDataset):
                 The address of the idx2wav_len or idx2feat-len that contains the length of your reference speech
             mixup_number: int = 1
                 The number of randomly-chosen speaker embedding vectors used for feature mixup.
+            same_gender: bool = True
+                Whether to conduct embedding mixup for the speakers with the same gender.
+            tgt_gender: str = None
+                The target gender used for the reference speech filtering.
+            gender_info: List[str] or str = None
+                The metadata file used for gender filtering. If not given, the file named 'idx2gen' in the directory of
+                spk_feat will be used.
 
         """
         assert isinstance(mixup_number, int) and mixup_number >= 1, \
             f"mixup_number must be a positive integer, but got {mixup_number}!"
         self.mixup_number = mixup_number
+        self.same_gender = same_gender
 
-        # speaker embedding file reading, List[str] or str -> Dict[str, str]
+        # List[str] or str -> List[str]
+        if not isinstance(spk_feat, List):
+            spk_feat = [spk_feat]
+        metadata_dir = [os.path.dirname(s_f) for s_f in spk_feat]
+        # speaker embedding file reading, List[str] -> Dict[str, str]
         self.spk_feat_dict = load_idx2data_file(spk_feat)
 
-        # filter out the short reference speech if min_ref_len is given
+        # load the gender information
+        if gender_info is None:
+            gender_info = [os.path.join(m_d, 'idx2gen') for m_d in metadata_dir]
+        self.gender_info_dict = load_idx2data_file(gender_info)
+
+        # filter out the reference speech with the opposite gender
+        if tgt_gender is not None:
+            assert tgt_gender in ['M', 'F'], f"Your input tgt_gender must be one of 'M' or 'F', but got {tgt_gender}!"
+
+            # check whether the keys of spk_feat and ref_len match each other
+            spk_feat_keys, gender_info_keys = set(self.spk_feat_dict.keys()), set(self.gender_info_dict.keys())
+            redundant_keys = spk_feat_keys.difference(gender_info_keys)
+            assert len(redundant_keys) == 0, \
+                f"There are {len(redundant_keys)} keys that exist in spk_feat but not in gender_info! " \
+                f"Please check your data_cfg."
+
+            self.gender_info_dict = {key: value for key, value in self.gender_info_dict.items() if value == tgt_gender}
+            self.spk_feat_dict = {key: value for key, value in self.spk_feat_dict.items() if key in self.gender_info_dict.keys()}
+
+        # filter out the short reference speech
         if min_ref_len is not None:
             if isinstance(min_ref_len, float):
                 min_ref_len = int(min_ref_len)
             assert isinstance(min_ref_len, int) and min_ref_len > 0,\
                 f"min_ref_len must be given as a positive integer, but got {min_ref_len}"
-            assert ref_len is not None, "if min_ref_len is given, please also give ref_len!"
 
             # reference length file reading, List[str] or str -> Dict[str, str]
+            if ref_len is None:
+                ref_len = [os.path.join(m_d, 'idx2wav_len') for m_d in metadata_dir]
             self.ref_len_dict = load_idx2data_file(ref_len, data_type=int)
 
             # check whether the keys of spk_feat and ref_len match each other
@@ -200,10 +235,6 @@ class RandomSpkFeatDataset(SpeechTextDataset):
             redundant_keys = spk_feat_keys.difference(ref_len_keys)
             assert len(redundant_keys) == 0, \
                 f"There are {len(redundant_keys)} keys that exist in spk_feat but not in ref_len! " \
-                f"Please check your data_cfg."
-            redundant_keys = ref_len_keys.difference(spk_feat_keys)
-            assert len(redundant_keys) == 0, \
-                f"There are {len(redundant_keys)} keys that exist in ref_len but not in spk_feat! " \
                 f"Please check your data_cfg."
 
             self.ref_len_dict = {key: value for key, value in self.ref_len_dict.items() if value > min_ref_len}
@@ -229,19 +260,28 @@ class RandomSpkFeatDataset(SpeechTextDataset):
         # process 'feat' and 'text' by the parent class
         main_data = super(RandomSpkFeatDataset, self).extract_main_data_fn(main_data)
 
-        for _ in range(self.mixup_number):
+        # used for the same gender mixup
+        ref_gender = None
+        chosen_spk_feat_ids = []
+        while len(chosen_spk_feat_ids) < self.mixup_number:
             # randomly pick up a speaker embedding feature vector
             spk_feat_idx = self.spk_feat_list[random.randint(0, self.spk_feat_num - 1)]
+            if self.same_gender:
+                curr_gender = self.gender_info_dict[spk_feat_idx]
+                # record the current gender as the reference gender
+                if ref_gender is None:
+                    ref_gender = curr_gender
+                # go to the next one if the current gender is different from the reference gender
+                elif curr_gender != ref_gender:
+                    continue
+
             if 'spk_feat' not in main_data.keys():
                 main_data['spk_feat'] = read_data_by_path(self.spk_feat_dict[spk_feat_idx], return_tensor=True)
             else:
                 main_data['spk_feat'] += read_data_by_path(self.spk_feat_dict[spk_feat_idx], return_tensor=True)
+            chosen_spk_feat_ids.append(spk_feat_idx)
 
-            if 'spk_feat_ids' not in main_data.keys():
-                main_data['spk_feat_ids'] = spk_feat_idx
-            else:
-                main_data['spk_feat_ids'] += f'+{spk_feat_idx}'
         # take the average of the chose speaker embedding features
         main_data['spk_feat'] /= self.mixup_number
-
+        main_data['spk_feat_ids'] = '+'.join(chosen_spk_feat_ids)
         return main_data

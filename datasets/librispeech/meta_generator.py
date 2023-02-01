@@ -5,9 +5,11 @@
 """
 import argparse
 import os
+
 from functools import partial
 from multiprocessing import Pool
 from typing import Dict, List
+from tqdm import tqdm
 
 from datasets.meta_generator import SpeechTextMetaGenerator
 from speechain.utilbox.dump_util import asr_text_process
@@ -149,6 +151,28 @@ class LibriSpeechMetaGenerator(SpeechTextMetaGenerator):
             meta_dict[subset]['idx2gen'] = {idx: spk2gen[spk] for idx, spk in meta_dict[subset]['idx2spk'].items()}
             # collect the speaker list by the sorted idx2spk
             meta_dict[subset]['spk_list'] = sorted(set([i for i in meta_dict[subset]['idx2spk'].values()]))
+
+        # --- Process the Additional Text Data for Language Model --- #
+        lm_text_path = os.path.join(os.path.dirname(src_path), 'lm_text')
+        proc_text_path = os.path.join(lm_text_path, f'{txt_format}_lm_text')
+        if not os.path.exists(proc_text_path):
+            print("Start to process the additional LM text corpus......")
+            with open(os.path.join(lm_text_path, 'librispeech-lm-norm.txt'), mode='r') as f:
+                ori_lm_text = f.readlines()
+
+            # make a specific row for each sentence and attach the sentence index at the beginning
+            proc_lm_text, index = [], 0
+            for _ori_text in tqdm(ori_lm_text):
+                _proc_text = asr_text_process(_ori_text, txt_format)
+                if _proc_text != '':
+                    proc_lm_text.append(f'{index} {_proc_text}\n')
+                    index += 1
+
+            with open(proc_text_path, mode='w+') as f:
+                f.writelines(proc_lm_text)
+            print(f"Processed LM text has been saved to {proc_text_path}!")
+        else:
+            print(f"Processed LM text has already existed in {proc_text_path}!")
 
         return meta_dict
 

@@ -35,35 +35,22 @@ class SentencePieceTokenizer(Tokenizer):
                 If not given, the model will automatically selected in the same folder as the given token_vocab
 
         """
-        # initialize the path of the tokenizer model
-        if copy_path is not None:
-            copy_path = parse_path_args(copy_path)
-            if os.path.exists(os.path.join(copy_path, 'token_model')):
-                self.token_model = os.path.join(copy_path, 'token_model')
-            else:
-                # the sentencepiece model file is automatically selected in the same folder as the given vocab
-                if token_model is None:
-                    self.token_model = os.path.join(os.path.dirname(self.token_vocab), 'model')
-                else:
-                    self.token_model = parse_path_args(token_model)
+        # token_model has the highest priority for token_model initialization
+        if token_model is not None:
+            self.token_model = parse_path_args(token_model)
         else:
-            # the sentencepiece model file is automatically selected in the same folder as the given vocab
-            if token_model is None:
-                self.token_model = os.path.join(os.path.dirname(self.token_vocab), 'model')
+            # built-in token_model in the same directory of self.token_vocab has the second highest priority
+            builtin_token_model = os.path.join(os.path.dirname(self.token_vocab), 'model')
+            if os.path.exists(builtin_token_model):
+                self.token_model = builtin_token_model
+            # finally, the backup one in copy_path will be used
             else:
-                self.token_model = parse_path_args(token_model)
+                assert copy_path is not None
+                self.token_model = os.path.join(parse_path_args(copy_path), 'token_model')
 
         # initialize the tokenizer model by the sentencepiece package
         self.sp_model = spm.SentencePieceProcessor()
-        try:
-            self.sp_model.load(self.token_model)
-        # in case that the sp model in copy_path fails to be loaded
-        except RuntimeError:
-            if token_model is None:
-                self.token_model = os.path.join(os.path.dirname(self.token_vocab), 'model')
-            else:
-                self.token_model = parse_path_args(token_model)
-            self.sp_model.load(self.token_model)
+        self.sp_model.load(self.token_model)
 
         # save the backup if copy_path is given
         if copy_path is not None:

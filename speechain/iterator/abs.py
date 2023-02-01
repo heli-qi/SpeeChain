@@ -130,7 +130,7 @@ class Iterator(ABC):
         # initialize the data lengths if given
         if data_len is not None:
             # remain the original order of the data indices if is_descending not specified
-            self.data_len = load_idx2data_file(data_len, int) if isinstance(data_len, str) else data_len
+            self.data_len = load_idx2data_file(data_len, int) if not isinstance(data_len, Dict) else data_len
 
             # check the data index in data_len and self.dataset
             data_len_keys, dataset_keys = set(self.data_len.keys()), set(self.dataset.get_data_index())

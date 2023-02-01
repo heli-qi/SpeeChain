@@ -6,7 +6,7 @@
 # Validation: dev-clean of LibriSpeech
 # Testing: test-clean & test-other of LibriSpeech
 # Authors: Heli Qi
-# Required GPUs: 1 × NVIDIA RTX A6000(49GB)
+# Required GPUs: 2 × NVIDIA RTX A6000(49GB)
 # Required Time: up to 16 hours
 # ############################################################################
 
@@ -36,8 +36,8 @@ batch_len: 1.8e7
 
 # model-related
 label_smoothing: 0.2
-d_model: 256
-num_heads: 4
+d_model: 512
+num_heads: 8
 fdfwd_dim: 2048
 dropout: 0.1
 
@@ -60,7 +60,7 @@ ngpu: 1 # please change ngpu based on the situation of your machine
 gpus: null # null means the GPUs with the largest free memory will be used
 
 # training-related
-train: True
+train: False
 best_model_selection: !tuple (valid, accuracy, max, 10)
 early_stopping_patience: 10
 
@@ -69,7 +69,7 @@ visual_snapshot_number: 3
 visual_snapshot_interval: 5
 
 # testing-related
-test: False
+test: True
 test_model: 10_valid_accuracy_average
 
 # These arguments are shared by data_cfg and train_cfg
@@ -87,12 +87,7 @@ infer_cfg:
   shared_args:
     beam_size: 16
   exclu_args:
-#    - temperature: 1.1
-#    - temperature: 1.3
-#    - temperature: 1.5
     - temperature: 1.7
-#    - temperature: 1.9
-
 
 
 ##############################
@@ -132,7 +127,6 @@ data_cfg:
       data_len: !ref <librispeech_data_root>/<librispeech_wav_format>/<valid_set>/idx2wav_len
 
   test:
-    # LibriSpeech test sets
     test-clean:
       type: abs.Iterator
       conf:
@@ -163,37 +157,6 @@ data_cfg:
           speaker: !ref <librispeech_data_root>/<librispeech_wav_format>/test-other/idx2spk
           gender: !ref <librispeech_data_root>/<librispeech_wav_format>/test-other/idx2gen
 
-    # LibriTTS test sets
-    libritts_test-clean:
-      type: abs.Iterator
-      conf:
-        dataset_type: speech_text.SpeechTextDataset
-        dataset_conf:
-          main_data:
-            feat: !ref <libritts_data_root>/<libritts_wav_format>/test-clean/idx2wav
-            text: !ref <libritts_data_root>/<libritts_wav_format>/test-clean/idx2<txt_format>_text
-
-        data_len: !ref <libritts_data_root>/<libritts_wav_format>/test-clean/idx2wav_len
-        shuffle: False
-        group_info:
-          speaker: !ref <libritts_data_root>/<libritts_wav_format>/test-clean/idx2spk
-          gender: !ref <libritts_data_root>/<libritts_wav_format>/test-clean/idx2gen
-
-    libritts_test-other:
-      type: abs.Iterator
-      conf:
-        dataset_type: speech_text.SpeechTextDataset
-        dataset_conf:
-          main_data:
-            feat: !ref <libritts_data_root>/<libritts_wav_format>/test-other/idx2wav
-            text: !ref <libritts_data_root>/<libritts_wav_format>/test-other/idx2<txt_format>_text
-
-        data_len: !ref <libritts_data_root>/<libritts_wav_format>/test-other/idx2wav_len
-        shuffle: False
-        group_info:
-          speaker: !ref <libritts_data_root>/<libritts_wav_format>/test-other/idx2spk
-          gender: !ref <libritts_data_root>/<libritts_wav_format>/test-other/idx2gen
-
 
 
 ####################################
@@ -206,6 +169,8 @@ train_cfg:
       customize_conf:
         token_type: !ref <token_type>
         token_vocab: !ref <librispeech_data_root>/<token_type>/<train_set>/<token_num>/<txt_format>/vocab
+        lm_model_cfg: recipes/lm/libritts_librispeech/train-clean-460/exp/bpe1k_lm-small_transformer-v5_accum1_20gb/train_cfg.yaml
+        lm_model_path: recipes/lm/libritts_librispeech/train-clean-460/exp/bpe1k_lm-small_transformer-v5_accum1_20gb/models/10_valid_text_ppl_average.pth
 
     module_conf:
       frontend:

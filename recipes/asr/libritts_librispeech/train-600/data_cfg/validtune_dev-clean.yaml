@@ -15,6 +15,7 @@ valid_dset: &valid_dset dev-clean
 
 wav_format: wav
 txt_format: librispeech
+token_num: full_tokens
 
 
 

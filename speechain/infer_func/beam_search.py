@@ -9,7 +9,7 @@
 """
 import torch
 
-from speechain.infer_func.ctc_decoding import CTCPrefixScorer
+from speechain.model.lm import LM
 
 eps = 1e-10
 
@@ -107,7 +107,7 @@ class BeamHypotheses(object):
 
 def beam_searching(enc_feat: torch.Tensor,
                    enc_feat_mask: torch.Tensor,
-                   decode_one_step,
+                   asr_decode_fn,
                    vocab_size: int,
                    sos_eos: int = None,
                    padding_idx: int = 0,
@@ -119,6 +119,9 @@ def beam_searching(enc_feat: torch.Tensor,
                    eos_threshold: float = 1.5,
                    ctc_weight: float = 0.0,
                    ctc_decode_fn = None,
+                   lm_weight: float = 0.0,
+                   lm_temperature: float = 1.0,
+                   lm_decode_fn: LM = None,
                    sent_per_beam: int = 1):
     """
     Batch version of beam searching to enable parallel computation. The basic idea is reshaping batch_size sentences
@@ -136,7 +139,7 @@ def beam_searching(enc_feat: torch.Tensor,
             The final hidden representations from the encoder.
         enc_feat_mask: (batch_size, 1, feat_maxlen)
             The masks for the encoder representations.
-        decode_one_step:
+        asr_decode_fn:
             The function that decodes the hypothesis for one time step and get the next prediction.
         vocab_size: int
             The number of tokens in the vocabulary dictionary
@@ -177,6 +180,12 @@ def beam_searching(enc_feat: torch.Tensor,
             The weight putted on the CTC scores at each decoding step.
         ctc_decode_fn: = None
             The CTC forward function for decoding the encoder hidden features.
+        lm_weight: float = 0.0
+            The weight putted on the LM scores at each decoding step.
+        lm_temperature: float = 1.0
+            The temperature coefficient used for calculating the log-softmax probability for the LM decoder.
+        lm_decode_fn: LM = None
+            The LM forward function for decoding the current partial hypothesis.
         sent_per_beam: int
             The number of sentences in each beam that are returned in this function.
             sent_per_beam > 1 is mainly used for data augmentation (under development).
@@ -187,7 +196,8 @@ def beam_searching(enc_feat: torch.Tensor,
         raise NotImplementedError("Currently, sent_per_beam > 1 is not supported....")
     if ctc_weight > 0:
         raise NotImplementedError("Currently, ctc-attention joint decoding is not supported....")
-    assert 0 <= ctc_weight < 1, f"ctc_weight should be a float number in [0, 1), but got ctc_weight={ctc_weight}!"
+    assert ctc_weight >= 0, f"ctc_weight should be a non-negative float number, but got ctc_weight={ctc_weight}!"
+    assert lm_weight >= 0, f"lm_weight should be a non-negative float number, but got lm_weight={lm_weight}!"
 
     # --- 1. Reference Initialization --- #
     batch_size = enc_feat.size(0)
@@ -217,15 +227,7 @@ def beam_searching(enc_feat: torch.Tensor,
     enc_feat_mask = enc_feat_mask.view(-1, enc_feat_mask.size(2), enc_feat_mask.size(3)).contiguous()
 
     # --- 3. CTC Initialization --- #
-    if ctc_weight > 0:
-        assert ctc_decode_fn is not None
-        ctc_scorer = CTCPrefixScorer(ctc_logits=ctc_decode_fn(enc_feat), enc_feat_len=enc_feat_len,
-                                     batch_size=batch_size, beam_size=beam_size,
-                                     blank_index=padding_idx, eos_index=sos_eos)
-        ctc_memory = None
-    else:
-        ctc_scorer = None
-        ctc_memory = None
+    # --- Unimplemented~~~~~~~~~~~~ #
 
     # --- 4. Registers Initialization --- #
     # build a hypothesis container for each sentence in the batch
@@ -242,21 +244,23 @@ def beam_searching(enc_feat: torch.Tensor,
     while hypo_text_len.max() < hypo_maxlen:
         # --- 5.1. Attention-based Decoder Forward --- #
         # (batch_size × beam_size, curr_len) -> (batch_size × beam_size, curr_len, vocab_size)
-        curr_outputs = decode_one_step(enc_feat=enc_feat, enc_feat_mask=enc_feat_mask,
-                                       text=hypo_text, text_len=hypo_text_len)[0].detach()
-
+        curr_outputs = asr_decode_fn(enc_feat=enc_feat, enc_feat_mask=enc_feat_mask,
+                                     text=hypo_text, text_len=hypo_text_len)[0].detach()
         # (batch_size × beam_size, curr_len, vocab_size) -> (batch_size × beam_size, vocab_size)
         curr_outputs = curr_outputs[:, -1, :]
         next_token_scores = torch.log_softmax(curr_outputs / temperature, dim=-1)
 
         # --- 5.2. CTC Scorer Forward --- #
-        if ctc_weight > 0:
-            if hypo_text.size(1) > 1:
-                ctc_prefix = hypo_text[:, 1:]
-            else:
-                ctc_prefix = torch.empty(hypo_text.size(0), 0, device=cuda_device)
-            ctc_scores, ctc_memory = ctc_scorer.forward_step(ctc_prefix, ctc_memory)
-            next_token_scores = (1 - ctc_weight) * next_token_scores + ctc_weight * ctc_scores
+        # --- Unimplemented~~~~~~~~~~~~~~ #
+
+        # --- 5.3. LM Forward --- #
+        if lm_weight > 0:
+            # (batch_size × beam_size, curr_len) -> (batch_size × beam_size, curr_len, vocab_size)
+            lm_outputs = lm_decode_fn(text=hypo_text, text_len=hypo_text_len)[0].detach()
+            # (batch_size × beam_size, curr_len, vocab_size) -> (batch_size × beam_size, vocab_size)
+            lm_outputs = lm_outputs[:, -1, :]
+            lm_next_token_scores = torch.log_softmax(lm_outputs / lm_temperature, dim=-1)
+            next_token_scores = next_token_scores + lm_weight * lm_next_token_scores
 
         # Calculate the score of the obtained token sequences so far
         next_scores = next_token_scores + beam_scores.unsqueeze(-1).expand_as(next_token_scores)

@@ -17,13 +17,14 @@ function print_help_message {
     [--train_result_path TRAIN_RESULT_PATH] \\              # The value of train_result_path given to runner.py (default: none)
     [--test_result_path TEST_RESULT_PATH] \\                # The value of train_result_path given to runner.py (default: none)
     [--test_model TEST_MODEL] \\                            # The value of test_model given to runner.py (default: none)
-    --exp_cfg EXP_CFG \\                                    # The name of your specified configuration file in ${SPEECHAIN_ROOT}/recipes/offline_tts2asr/libritts_librispeech/train-clean-100-360/exp_cfg
-    [--data_cfg DATA_CFG] \\                                # The name of your specified configuration file in ${SPEECHAIN_ROOT}/recipes/offline_tts2asr/libritts_librispeech/train-clean-100-360/data_cfg (default: none)
-    [--train_cfg TRAIN_CFG] \\                              # The name of your specified configuration file in ${SPEECHAIN_ROOT}/recipes/offline_tts2asr/libritts_librispeech/train-clean-100-360/train_cfg (default: none)
+    --exp_cfg EXP_CFG \\                                    # The name of your specified configuration file in ${SPEECHAIN_ROOT}/recipes/asr/libritts_librispeech/train-600/exp_cfg
+    [--data_cfg DATA_CFG] \\                                # The name of your specified configuration file in ${SPEECHAIN_ROOT}/recipes/asr/libritts_librispeech/train-600/data_cfg (default: none)
+    [--train_cfg TRAIN_CFG] \\                              # The name of your specified configuration file in ${SPEECHAIN_ROOT}/recipes/asr/libritts_librispeech/train-600/train_cfg (default: none)
     [--infer_cfg INFER_CFG] \\                              # The name of your specified configuration file in ${SPEECHAIN_ROOT}/config/asr/ (default: none)
-    [--num_workers NUM_WORKERS] \\                          # The value of num_workers given to runner.py (default: 1)
-    [--ngpu NGPU] \\                                        # The value of ngpu given to runner.py (default: 1)
-    [--gpus GPUS] \\                                        # The value of gpus given to runner.py (default: none)
+    [--num_workers NUM_WORKERS] \\                          # The value of 'num_workers' given to runner.py (default: none)
+    [--accum_grad ACCUM_GRAD] \\                            # The value of 'accum_grad' given to runner.py (default: none)
+    [--ngpu NGPU] \\                                        # The value of 'ngpu' given to runner.py (default: none)
+    [--gpus GPUS] \\                                        # The value of 'gpus' given to runner.py (default: none)
     --train false or true \\                                # Whether to activate training mode (default: false)
     --test false or true                                   # Whether to activate testing mode (default: false)" >&2
   exit 1
@@ -50,6 +51,7 @@ train_cfg=
 infer_cfg=
 
 num_workers=
+accum_grad=
 ngpu=
 gpus=
 
@@ -111,6 +113,10 @@ while getopts ":h-:" optchar; do
           val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
           num_workers=${val}
           ;;
+        accum_grad)
+          val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
+          accum_grad=${val}
+          ;;
         ngpu)
           val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
           ngpu=${val}
@@ -142,9 +148,9 @@ done
 # --- 1. Argument Initialization --- #
 #
 args="
-  --task offline_tts2asr \
+  --task asr \
   --dataset libritts_librispeech \
-  --subset train-clean-100-360 \
+  --subset train-600 \
   --dry_run ${dry_run} \
   --no_optim ${no_optim} \
   --resume ${resume} \
@@ -162,6 +168,10 @@ fi
 #
 if [ -n "${num_workers}" ];then
   args="${args} --num_workers ${num_workers}"
+fi
+#
+if [ -n "${accum_grad}" ];then
+  args="${args} --accum_grad ${accum_grad}"
 fi
 #
 if [ -n "${gpus}" ];then

@@ -2,11 +2,11 @@
 # Model: Transformer-ASR
 # Tokens: BPE 1k
 # losses: 0.2 Label Smooth
-# Training: train-clean-100 of LibriSpeech & train-clean-360 of 16khz-downsampled LibriTTS
+# Training: train-clean-100 of LibriSpeech & 16khz-downsampled LibriTTS and train-other-500 of 16khz-downsampled LibriTTS
 # Validation: dev-clean of LibriSpeech
 # Testing: test-clean & test-other of LibriSpeech
 # Authors: Heli Qi
-# Required GPUs: 4 × GeForce GTX 1080 Ti(11GB)
+# Required GPUs: 2 × NVIDIA RTX A6000(49GB)
 # Required Time: up to 16 hours
 # ############################################################################
 
@@ -18,8 +18,9 @@
 dataset_path: datasets/
 
 # data-related
-train_set: train-960
-valid_set: dev
+shared_train_set: train-clean-100
+libritts_train_set: train-other-500
+valid_set: dev-clean
 
 # waveform-related
 librispeech_wav_format: wav
@@ -29,10 +30,10 @@ sample_rate: 16000
 # tokenizer-related
 txt_format: librispeech
 token_type: sentencepiece
-token_num: bpe5k
+token_num: bpe1k
 
 # batch-related values
-batch_len: 3.6e7
+batch_len: 1.2e7
 
 # model-related
 label_smoothing: 0.2
@@ -56,11 +57,11 @@ ft_factor: 1.0
 grad_clip: 5.0
 
 # multi-GPU-related
-ngpu: 4 # please change ngpu based on the situation of your machine
+ngpu: 1 # please change ngpu based on the situation of your machine
 gpus: null # null means the GPUs with the largest free memory will be used
 
 # training-related
-train: True
+train: False
 best_model_selection: !tuple (valid, accuracy, max, 10)
 early_stopping_patience: 10
 
@@ -69,7 +70,7 @@ visual_snapshot_number: 3
 visual_snapshot_interval: 5
 
 # testing-related
-test: False
+test: True
 test_model: 10_valid_accuracy_average
 
 # These arguments are shared by data_cfg and train_cfg
@@ -87,12 +88,11 @@ infer_cfg:
   shared_args:
     beam_size: 16
   exclu_args:
-    - temperature: 1.1
-    - temperature: 1.3
+#    - temperature: 1.1
+#    - temperature: 1.3
     - temperature: 1.5
-    - temperature: 1.7
-    - temperature: 1.9
-
+#    - temperature: 1.7
+#    - temperature: 1.9
 
 
 ##############################
@@ -106,15 +106,18 @@ data_cfg:
       dataset_conf:
         main_data:
           feat:
-            - !ref <librispeech_data_root>/<librispeech_wav_format>/<train_set>/idx2wav
-            - !ref <libritts_data_root>/<libritts_wav_format>/<train_set>/idx2wav
+            - !ref <librispeech_data_root>/<librispeech_wav_format>/<shared_train_set>/idx2wav
+            - !ref <libritts_data_root>/<libritts_wav_format>/<shared_train_set>/idx2wav
+            - !ref <libritts_data_root>/<libritts_wav_format>/<libritts_train_set>/idx2wav
           text:
-            - !ref <librispeech_data_root>/<librispeech_wav_format>/<train_set>/idx2<txt_format>_text
-            - !ref <libritts_data_root>/<libritts_wav_format>/<train_set>/idx2<txt_format>_text
+            - !ref <librispeech_data_root>/<librispeech_wav_format>/<shared_train_set>/idx2<txt_format>_text
+            - !ref <libritts_data_root>/<libritts_wav_format>/<shared_train_set>/idx2<txt_format>_text
+            - !ref <libritts_data_root>/<libritts_wav_format>/<libritts_train_set>/idx2<txt_format>_text
 
       data_len:
-        - !ref <librispeech_data_root>/<librispeech_wav_format>/<train_set>/idx2wav_len
-        - !ref <libritts_data_root>/<libritts_wav_format>/<train_set>/idx2wav_len
+        - !ref <librispeech_data_root>/<librispeech_wav_format>/<shared_train_set>/idx2wav_len
+        - !ref <libritts_data_root>/<libritts_wav_format>/<shared_train_set>/idx2wav_len
+        - !ref <libritts_data_root>/<libritts_wav_format>/<libritts_train_set>/idx2wav_len
       shuffle: True
       is_descending: True
       batch_len: !ref <batch_len>
@@ -173,7 +176,9 @@ train_cfg:
     model_conf:
       customize_conf:
         token_type: !ref <token_type>
-        token_vocab: !ref <librispeech_data_root>/<token_type>/<train_set>/<token_num>/<txt_format>/vocab
+        token_vocab: !ref <librispeech_data_root>/<token_type>/<shared_train_set>/<token_num>/<txt_format>/vocab
+        lm_model_cfg: recipes/lm/libritts_librispeech/train-clean-460/exp/bpe1k_lm-small_transformer-v5_accum1_20gb/train_cfg.yaml
+        lm_model_path: recipes/lm/libritts_librispeech/train-clean-460/exp/bpe1k_lm-small_transformer-v5_accum1_20gb/models/10_valid_text_ppl_average.pth
 
     module_conf:
       frontend:

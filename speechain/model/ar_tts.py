@@ -899,8 +899,8 @@ class MultiDomainARTTS(ARTTS):
 
         Args:
             loss_weights:
-            ce_loss:
-            ctc_loss:
+            feat_loss:
+            stop_loss:
             att_guid_loss:
             **kwargs:
 

@@ -16,6 +16,7 @@ function print_help_message {
     [--resume false or true] \\                             # Whether to activate resuming mode (default: false)
     [--train_result_path TRAIN_RESULT_PATH] \\              # The value of train_result_path given to runner.py (default: none)
     [--test_result_path TEST_RESULT_PATH] \\                # The value of train_result_path given to runner.py (default: none)
+    [--test_model TEST_MODEL] \\                            # The value of test_model given to runner.py (default: none)
     --exp_cfg EXP_CFG \\                                    # The name of your specified configuration file in ${SPEECHAIN_ROOT}/recipes/tts/libritts/train-clean-460/exp_cfg
     [--data_cfg DATA_CFG] \\                                # The name of your specified configuration file in ${SPEECHAIN_ROOT}/recipes/tts/libritts/train-clean-460/data_cfg (default: none)
     [--train_cfg TRAIN_CFG] \\                              # The name of your specified configuration file in ${SPEECHAIN_ROOT}/recipes/tts/libritts/train-clean-460/train_cfg (default: none)
@@ -42,6 +43,7 @@ train=false
 test=false
 train_result_path=
 test_result_path=
+test_model=
 
 exp_cfg=
 data_cfg=
@@ -86,6 +88,10 @@ while getopts ":h-:" optchar; do
         test_result_path)
           val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
           test_result_path=${val}
+          ;;
+        test_model)
+          val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
+          test_model=${val}
           ;;
         exp_cfg)
           val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
@@ -199,6 +205,10 @@ if ${test};then
   #
   if [ -n "${test_result_path}" ];then
     args="${args} --test_result_path ${test_result_path}"
+  fi
+  #
+  if [ -n "${test_model}" ];then
+    args="${args} --test_model ${test_model}"
   fi
 fi
 

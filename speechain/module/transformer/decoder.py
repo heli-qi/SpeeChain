@@ -139,9 +139,10 @@ class TransformerDecoder(Module):
 
     def module_init(self,
                     posenc_type: str = 'mix',
-                    posenc_scale: bool = False,
                     posenc_maxlen: int = 5000,
                     posenc_dropout: float = 0.1,
+                    posenc_scale: bool = False,
+                    posenc_init_alpha: float = 1.0,
                     emb_layernorm: bool = False,
                     emb_scale: bool = True,
                     d_model: int = 512,
@@ -157,17 +158,20 @@ class TransformerDecoder(Module):
         Args:
             posenc_type: str
                 Specify the positional encoding type you would like to use in your Transformer blocks.
+            posenc_maxlen: int
+                Maximal length when calculating the positional encoding.
+                Usually, the default value of this argument is enough for the research.
+            posenc_dropout: float
+                The dropout rate for the Dropout layer after adding the positional encoding to the input
             posenc_scale: bool
                 Controls whether the positional encodings are scaled up by a trainable scalar before adding into the
                 embedded features or not.
                 Reference:
                     'Neural Speech Synthesis with Transformer Network'
                     https://ojs.aaai.org/index.php/AAAI/article/view/4642/4520
-            posenc_maxlen: int
-                Maximal length when calculating the positional encoding.
-                Usually, the default value of this argument is enough for the research.
-            posenc_dropout: float
-                The dropout rate for the Dropout layer after adding the positional encoding to the input
+            posenc_init_alpha: float = 1.0
+                The initial value of the alpha used for positional encoding scaling.
+                Only effective when posenc_scale is True.
             emb_layernorm: bool
                 Controls whether the embedding vectors are normalized by LayerNorm before adding into the positional
                 encoding or not.
@@ -223,6 +227,7 @@ class TransformerDecoder(Module):
                                          emb_scale=emb_scale,
                                          emb_layernorm=emb_layernorm,
                                          posenc_scale=posenc_scale,
+                                         init_alpha=posenc_init_alpha,
                                          max_len=posenc_maxlen,
                                          dropout=posenc_dropout)
 

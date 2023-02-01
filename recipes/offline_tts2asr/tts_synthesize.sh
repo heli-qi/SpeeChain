@@ -33,6 +33,7 @@ function print_help_message {
       # Group4: Speaker Embedding
       [--rand_spk_emb RAND_SPK_EMB] \\                       # Whether to randomly generate the speaker embedding feature for TTS synthesis. (default: false)
       [--spk_emb_mixup SPK_FEAT_MIXUP] \\                    # Whether to conduct speaker embedding mixup. (default: false)
+      [--same_gender_mixup SAME_GENDER_MIXUP] \\             # Whether to conduct the mixup for the speakers with the same gender. (default: true)
       [--mixup_number MIXUP_NUMBER] \\                       # The number of speaker embedding features used for mixup. (default: 2)
       [--spk_emb_dataset SPK_EMB_DATASET] \\                 # The dataset where your target speaker embedding features are placed. If not given, this argument will be the same as 'tts_syn_dataset'. (default: none)
       [--spk_emb_subset SPK_EMB_SUBSET] \\                   # The subset where your target speaker embedding features are placed. If not given, this argument will be the same as 'tts_syn_subset'. (default: none)
@@ -69,6 +70,7 @@ min_ref_second=3
 
 rand_spk_emb=false
 spk_emb_mixup=false
+same_gender_mixup=true
 mixup_number=2
 spk_emb_dataset=
 spk_emb_subset=
@@ -118,6 +120,10 @@ while getopts ":h-:" optchar; do
         spk_emb_mixup)
           val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
           spk_emb_mixup=${val}
+          ;;
+        same_gender_mixup)
+          val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
+          same_gender_mixup=${val}
           ;;
         mixup_number)
           val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
@@ -317,6 +323,11 @@ if ${rand_spk_emb};then
 elif [ -n "${spk_emb_model}" ];then
   if ${spk_emb_mixup};then
     data_args="${data_args}_mixup=${mixup_number}"
+    if ${same_gender_mixup};then
+      data_args="${data_args}-same-gender"
+    else
+      data_args="${data_args}-diff-gender"
+    fi
   fi
   data_args="${data_args}_spk-emb=${spk_emb_dataset}-${spk_emb_subset}-${spk_emb_model}"
 fi
@@ -362,7 +373,10 @@ fi
 
 # if 'spk_emb_mixup' is set to true, attach 'mixup_number' in 'dataset_conf'
 if ${spk_emb_mixup};then
-  data_args="${data_args},mixup_number:${mixup_number}"
+  data_args="${data_args},mixup_number:${mixup_number},same_gender:${same_gender_mixup}"
+  if ${same_gender_mixup};then
+    data_args="${data_args},same_gender:${same_gender_mixup}"
+  fi
 fi
 
 # if 'long_filter' is set to true, attach 'data_selection' in 'dataset_conf'

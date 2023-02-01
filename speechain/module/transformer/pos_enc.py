@@ -25,6 +25,7 @@ class PositionalEncoding(Module):
                     emb_scale: bool = True,
                     emb_layernorm: bool = False,
                     posenc_scale: bool = False,
+                    init_alpha: float = 1.0,
                     max_len: int = 5000,
                     dropout: float = 0.0):
         """
@@ -67,6 +68,9 @@ class PositionalEncoding(Module):
                 Reference:
                     'Neural Speech Synthesis with Transformer Network'
                     https://ojs.aaai.org/index.php/AAAI/article/view/4642/4520
+            init_alpha: float
+                The initial value of the alpha used for positional encoding scaling.
+                Only effective when posenc_scale is True.
             max_len: int
                 The maximum length of the input feature sequences.
             dropout: float
@@ -83,8 +87,10 @@ class PositionalEncoding(Module):
         self.emb_scale = emb_scale
         if emb_layernorm:
             self.emb_layernorm = torch.nn.LayerNorm(d_model)
+
+        self.init_alpha = init_alpha if isinstance(init_alpha, float) else float(init_alpha)
         if posenc_scale:
-            self.alpha = torch.nn.Parameter(torch.tensor(1.0))
+            self.alpha = torch.nn.Parameter(torch.tensor(self.init_alpha))
 
         # positional encoding matrix
         self.update_posenc(max_len, d_model)
@@ -97,7 +103,7 @@ class PositionalEncoding(Module):
         Make sure that the scalar value is not influenced by different model initialization methods.
         """
         if hasattr(self, 'alpha'):
-            self.alpha.data = torch.tensor(1.0)
+            self.alpha.data = torch.tensor(self.init_alpha)
 
     def update_posenc(self, max_len: int, d_model: int):
         """

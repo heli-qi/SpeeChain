@@ -103,19 +103,19 @@ def load_idx2data_file(file_path: str or List[str], data_type: type = str, separ
     """
 
     def load_single_file(_file_path: str):
+        assert os.path.exists(_file_path), f"{_file_path} doesn't exist!"
         # str -> (n,) np.ndarray. First read the content of the given file one line a time.
-        with open(parse_path_args(_file_path), mode='r') as f:
+        with open(_file_path, mode='r') as f:
             data = f.readlines()
-        # (n,) np.ndarray -> (n, 2) np.ndarray. Then, the index and sentence are separated by the first blank
-        data = np.array([row.replace('\n', '').split(separator, 1) if do_separate else row.replace('\n', '')
-                         for row in data], dtype=np.str)
+        # (n,) List -> (n, 2) List or (n,) List. Then, the index and sentence are separated by the first blank
+        data = [row.replace('\n', '').split(separator, 1) if do_separate else row.replace('\n', '') for row in data]
 
-        if len(data.shape) == 2:
-            # (n, 2) np.ndarray -> Dict[str, str]
-            return dict(zip(data[:, 0], data[:, 1].astype(data_type)))
+        if isinstance(data[0], List):
+            # (n, 2) List -> Dict[str, data_type]
+            return {i: data_type(d) for i, d in data}
         else:
-            # (n,) np.ndarray -> Dict[str, str]
-            return dict(enumerate(data))
+            # (n,) List -> Dict[str, data_type]
+            return {i: data_type(d) for i, d in enumerate(data)}
 
     if not isinstance(file_path, List):
         file_path = [file_path]

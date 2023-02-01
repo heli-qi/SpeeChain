@@ -86,22 +86,31 @@ class Dataset(torch.utils.data.Dataset, ABC):
                 # non-meta selection
                 if len(i) == 2:
                     selection_mode, selection_num, meta_info = i[0], i[1], None
-                    assert selection_mode in ['random', 'order', 'rev_order']
+                    assert selection_mode in ['random', 'order', 'rev_order'], \
+                        f"If the metadata is not given in data_selection, the selection mode must be one of " \
+                        f"['random', 'order', 'rev_order'], but got {selection_mode}"
                 # meta-required selection
                 elif len(i) == 3:
                     selection_mode, selection_num, meta_info = i[0], i[1], i[2]
-                    assert selection_mode in ['min', 'max', 'middle']
+                    assert selection_mode in ['min', 'max', 'middle', 'group'], \
+                        f"If the metadata is given in data_selection, the selection mode must be one of " \
+                        f"['min', 'max', 'middle', 'group'], but got {selection_mode}"
                 else:
                     raise ValueError("The elements of data_selection should be either a bi-list or tri-list, "
                                      f"but got {i}!")
 
+                # for the strings whose contents are not numerical, turn into a list for identification
+                if isinstance(selection_num, str):
+                    if not selection_num.isdigit() and not selection_num.replace('.', '').isdigit():
+                        selection_num = [selection_num]
+
                 assert (isinstance(selection_num, float) and 0 < selection_num < 1) or \
                        (isinstance(selection_num, int) and -len(self.data_index) < selection_num < 0) or \
-                       isinstance(selection_num, str), \
+                       isinstance(selection_num, (str, List)), \
                     f"Data selection number should be either a float number between 0 and 1, a negative integer, " \
-                    f"or a number in the string format. But got selection_num={selection_num}"
+                    f", a string, or a list of strings. But got selection_num={selection_num}"
 
-                if not isinstance(selection_num, str) and selection_num < 0:
+                if isinstance(selection_num, (int, float)) and selection_num < 0:
                     assert -selection_num < len(self.data_index), \
                         "The data selection amount cannot be larger than the total number of data instances. " \
                         f"You have {len(self.data_index)} instances but give selection_num={-selection_num}."
@@ -210,8 +219,14 @@ class Dataset(torch.utils.data.Dataset, ABC):
             meta_info = load_idx2data_file(meta_info)
             meta_info = np.array([[key, value] for key, value in meta_info.items()])
             # initialize the sorted indices and metadata values of the data instances
-            meta_sorted_data = meta_info[:, 0][np.argsort(meta_info[:, 1].astype(float))]
-            meta_sorted_value = np.sort(meta_info[:, 1].astype(float))
+            try:
+                meta_sorted_data = meta_info[:, 0][np.argsort(meta_info[:, 1].astype(float))]
+                meta_sorted_value = np.sort(meta_info[:, 1].astype(float))
+            # ValueError means the second column cannot be converted into float numbers
+            except ValueError:
+                meta_sorted_data = meta_info[:, 0]
+                meta_sorted_value = meta_info[:, 1]
+
             # retain only the intersection of data instances in case that there is an index mismatch
             retain_flags = np.in1d(meta_sorted_data, sorted_data)
             meta_sorted_data, meta_sorted_value = meta_sorted_data[retain_flags], meta_sorted_value[retain_flags]
@@ -233,9 +248,9 @@ class Dataset(torch.utils.data.Dataset, ABC):
                         (meta_sorted_data[:int((meta_sorted_data.shape[0] - selection_num) / 2)],
                          meta_sorted_data[-int((meta_sorted_data.shape[0] - selection_num) / 2):]), axis=0)
                 else:
-                    raise ValueError
+                    raise RuntimeError
 
-            # select the data instances by a certain threshold
+            # select the data instances by a given threshold
             elif isinstance(selection_num, str):
                 selection_num = float(selection_num)
                 # 'min' means the instances whose metadata is lower than the given threshold will be selected
@@ -246,10 +261,15 @@ class Dataset(torch.utils.data.Dataset, ABC):
                     removed_sorted_data = meta_sorted_data[meta_sorted_value < selection_num]
                 # 'middle' is not supported for the threshold selection
                 else:
-                    raise ValueError
+                    raise RuntimeError
+
+            # other strings mean the target groups of data instances
+            elif isinstance(selection_num, List):
+                removed_sorted_data = meta_sorted_data[
+                    [True if value not in selection_num else False for value in meta_sorted_value]]
 
             else:
-                raise TypeError
+                raise RuntimeError
 
             # remove the undesired instances from the accessible instance indices
             sorted_data = np.setdiff1d(sorted_data, removed_sorted_data)

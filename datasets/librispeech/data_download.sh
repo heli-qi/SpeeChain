@@ -127,7 +127,6 @@ for (( n=0; n < ${#subsets[*]}; n++ )); do
     if [ ! -d "${download_path}/data/LibriSpeech/${set}" ]; then
       echo "Unzip the downloaded data ${download_path}/data/${set}.tar.gz to ${download_path}/data/LibriSpeech/${set}"
       tar -zxvf ${download_path}/data/"${set}".tar.gz -C ${download_path}/data
-
     else
       echo "${download_path}/data/LibriSpeech/${set} has already existed. Skipping data unzipping~~~"
     fi
@@ -152,6 +151,30 @@ for (( n=0; n < ${#subsets[*]}; n++ )); do
     rm ${download_path}/data/"${set}".tar.gz
   fi
 done
+
+# skip the Language Model corpus that has already been downloaded and unzipped
+if [ ! -d "${download_path}/data/lm_text" ];then
+  mkdir -p ${download_path}/data/lm_text
+
+  # download the data package if it doesn't exist
+  if [ ! -f "${download_path}/data/librispeech-lm-norm.txt.gz" ]; then
+    echo "Download data from https://www.openslr.org/resources/12/${set}.tar.gz to ${download_path}/data/${set}.tar.gz"
+    wget -P ${download_path}/data https://www.openslr.org/resources/11/librispeech-lm-norm.txt.gz
+  else
+    echo "${download_path}/data/librispeech-lm-norm.txt.gz has already existed. Skipping data downloading~~~"
+  fi
+
+  # unzip the downloaded data package
+  if [ ! -f "${download_path}/data/lm_text/librispeech-lm-norm.txt" ]; then
+    echo "Unzip the downloaded data ${download_path}/data/librispeech-lm-norm.txt.gz to ${download_path}/data/lm_text/librispeech-lm-norm"
+    gzip -dv ${download_path}/data/librispeech-lm-norm.txt.gz
+    mv ${download_path}/data/librispeech-lm-norm.txt ${download_path}/data/lm_text
+  else
+    echo "${download_path}/data/lm_text/librispeech-lm-norm has already existed. Skipping data unzipping~~~"
+  fi
+else
+  echo "${download_path}/data/lm_text has already existed. Skipping data downloading and unzipping~~~"
+fi
 
 # Finally, remove the folder named LibriSpeech if needed
 if [ -d "${download_path}/data/LibriSpeech" ];then

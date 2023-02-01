@@ -24,7 +24,7 @@ class Tokenizer(ABC):
 
     """
 
-    def __init__(self, token_vocab: str, copy_path: str = None, **tokenizer_conf):
+    def __init__(self, token_vocab: str = None, copy_path: str = None, **tokenizer_conf):
         """
         This function registers some shared member variables for all _Tokenizer_ subclasses:
         1. `self.idx2token`: the mapping Dict from the token index to token string.
@@ -44,32 +44,23 @@ class Tokenizer(ABC):
             **tokenizer_conf:
                 The arguments used by tokenizer_init_fn() for your customized Tokenizer initialization.
         """
-        # initialize the path of the token vocabulary
-        if copy_path is not None:
-            copy_path = parse_path_args(copy_path)
-            if os.path.exists(os.path.join(copy_path, 'token_vocab')):
-                self.token_vocab = os.path.join(copy_path, 'token_vocab')
-            else:
-                self.token_vocab = parse_path_args(token_vocab)
-        else:
+        assert token_vocab is not None or copy_path is not None, \
+            "token_vocab and copy_path cannot be None at the same time! Please specify at least one of them."
+
+        # token_vocab has the higher priority than copy_path for vocabulary initialization
+        if token_vocab is not None:
             self.token_vocab = parse_path_args(token_vocab)
+        # if token_vocab is not given, the backup on in copy_path will be used
+        else:
+            self.token_vocab = os.path.join(parse_path_args(copy_path), 'token_vocab')
 
         # register token-related variables
         self.idx2token = load_idx2data_file(self.token_vocab, do_separate=False)
-        try:
-            self.token2idx = dict(map(reversed, self.idx2token.items()))
-            self.vocab_size = len(self.token2idx)
-            self.sos_eos_idx = self.token2idx['<sos/eos>']
-            self.ignore_idx = self.token2idx['<blank>']
-            self.unk_idx = self.token2idx['<unk>']
-        except KeyError:
-            self.token_vocab = parse_path_args(token_vocab)
-            self.idx2token = load_idx2data_file(self.token_vocab, do_separate=False)
-            self.token2idx = dict(map(reversed, self.idx2token.items()))
-            self.vocab_size = len(self.token2idx)
-            self.sos_eos_idx = self.token2idx['<sos/eos>']
-            self.ignore_idx = self.token2idx['<blank>']
-            self.unk_idx = self.token2idx['<unk>']
+        self.token2idx = dict(map(reversed, self.idx2token.items()))
+        self.vocab_size = len(self.token2idx)
+        self.sos_eos_idx = self.token2idx['<sos/eos>']
+        self.ignore_idx = self.token2idx['<blank>']
+        self.unk_idx = self.token2idx['<unk>']
 
         # save the backup if copy_path is given
         if copy_path is not None:

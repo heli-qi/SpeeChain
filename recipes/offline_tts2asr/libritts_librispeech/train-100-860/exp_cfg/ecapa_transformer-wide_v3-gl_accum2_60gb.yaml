@@ -6,15 +6,16 @@
 # Validation: dev-clean of LibriSpeech
 # Testing: test-clean & test-other of LibriSpeech
 # Authors: Heli Qi
-# Required GPUs: 2 × GeForce RTX 3090(24GB)
-# Required Time: up to 7 hours
+# Required GPUs: 3 × GeForce RTX A5000(49GB)
+# Required Time: up to 9 hours
 # ############################################################################
 
 
 ###################################
 # Experiment Parameters and setup #
 ###################################
-# if your dumped dataset is outside the toolkit folder, please change dataset_path. There should be a folder named 'libritts' in dataset_path
+# if your dumped dataset is outside the toolkit folder, please change real_dataset_path & syn_dataset_path.
+# There should be a folder named 'libritts' in dataset_path
 real_dataset_path: datasets/
 syn_dataset_path: recipes/offline_tts2asr/tts_syn_speech/
 
@@ -24,7 +25,7 @@ real_train_set: train-clean-100
 syn_dataset: libritts
 syn_train_set1: train-clean-360
 syn_train_set2: train-other-500
-syn_wav_folder: seed=0_spk-emb=libritts-train-clean-100-ecapa_model=recipes%tts%libritts%train-clean-100%exp%16khz_ecapa_g2p_transformer_v1_accum1_20gb
+syn_wav_folder: seed=0_spk-emb=libritts-train-clean-100-ecapa_model=recipes%tts%libritts%train-clean-100%exp%16khz_ecapa_g2p_transformer-v3_accum1_20gb
 valid_set: dev-clean
 
 real_data_root: !ref <real_dataset_path>/<real_dataset>/data
@@ -34,7 +35,7 @@ syn_text_root: !ref <real_dataset_path>/<syn_dataset>/data
 
 # waveform-related
 real_wav_format: wav
-syn_wav_vocoder: hifigan
+syn_wav_vocoder: gl
 sample_rate: 16000
 
 # tokenizer-related
@@ -43,8 +44,8 @@ token_type: sentencepiece
 token_num: bpe1k
 
 # batch-related values
-real_batch_len: 6e6
-syn_batch_len: 2.7e7
+real_batch_len: 2.8e6
+syn_batch_len: 1.2e7
 
 # model-related
 norm_type: global
@@ -64,12 +65,12 @@ pin_memory: True
 non_blocking: True
 
 # gradient-related
-accum_grad: 1
+accum_grad: 2
 ft_factor: 1.0
 grad_clip: 5.0
 
 # multi-GPU-related
-ngpu: 1 # please change ngpu based on the situation of your machine
+ngpu: 3 # please change ngpu based on the situation of your machine
 gpus: null # null means the GPUs with the largest free memory will be used
 
 # training-related
@@ -84,7 +85,7 @@ visual_snapshot_interval: 5
 
 # testing-related
 test: False
-test_model: 10_valid_accuracy_average
+test_model: !ref <early_stopping_patience>_valid_accuracy_average
 
 
 

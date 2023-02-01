@@ -12,6 +12,7 @@
 # if your dumped dataset is outside the toolkit folder, please change dataset_path. There should be a folder named 'libritts' in dataset_path
 dataset_path: datasets/
 dataset: ljspeech
+valid_set: &valid_set valid
 
 wav_format: wav
 txt_format: normal
@@ -24,13 +25,13 @@ token_num: full_tokens
 ##############################
 data_root: !ref <dataset_path>/<dataset>/data
 test:
-    dev-clean:
+    *valid_set :
         type: abs.Iterator
         conf:
             dataset_type: speech_text.SpeechTextDataset
             dataset_conf:
                 main_data:
-                    text: !ref <data_root>/g2p/dev-clean/<token_num>/<txt_format>/idx2text
+                    text: !ref <data_root>/g2p/<valid_set>/<token_num>/<txt_format>/idx2text
 
             shuffle: False
-            data_len: !ref <data_root>/<wav_format>/dev-clean/idx2wav_len
+            data_len: !ref <data_root>/<wav_format>/<valid_set>/idx2wav_len

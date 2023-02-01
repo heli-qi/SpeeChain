@@ -1,0 +1,273 @@
+##############################################################################
+# Model: Transformer-TTS with reduction factor=4
+# Tokens: Phoneme by G2P
+# losses: Default
+# Training: train-clean-100 of 16khz-downsampled LibriTTS
+# Validation: dev-clean of 16khz-downsampled LibriTTS
+# Testing: test-clean & test-other of 16khz-downsampled LibriTTS
+# Authors: Heli Qi
+# Required GPUs: 2 × GeForce GTX 1080 Ti(11GB) or 1 × GeForce RTX 3090(24GB)
+# Required Time: up to 23 hours
+# ############################################################################
+
+
+###################################
+# Experiment Parameters and setup #
+###################################
+# dataset-related
+# if your dumped dataset is outside the toolkit folder, please change dataset_path. There should be a folder named 'libritts' in dataset_path
+dataset_path: datasets/
+dataset: libritts
+train_set: train-clean-100
+valid_set: dev-clean
+
+# waveform-related
+wav_format: wav16000
+sample_rate: 16000
+
+# tokenizer-related
+txt_format: normal
+token_type: g2p
+token_num: full_tokens
+
+# dataloader-related
+batch_len: 1.3e7
+
+# model-related
+reduction_factor: 4
+spk_emb_model: ecapa
+spk_emb_dim: 192
+norm_type: global
+layer_num: 6
+head_num: 8
+d_model: 512
+fdfwd_dim: 2048
+dropout: 0.5
+trmf_dropout: 0.1
+
+# optimizer-related
+warmup_steps: 8000
+
+# running-related
+seed: 0
+num_workers: 1
+pin_memory: True
+non_blocking: True
+
+# gradient-related
+accum_grad: 1
+ft_factor: 1.0
+grad_clip: 1.0
+
+# multi-GPU-related
+ngpu: 1 #2 # please change ngpu based on the situation of your machine
+gpus: null # null means the GPUs with the largest free memory will be used
+
+# training-related
+train: False
+num_epochs: 1000
+best_model_selection: !tuple (train, loss, min, 10)
+early_stopping_patience: 10
+valid_per_epochs: 10
+
+# snapshot-related
+visual_snapshot_number: 3
+visual_snapshot_interval: 10
+
+# testing-related
+test: True
+test_model: !ref <early_stopping_patience>_train_loss_average
+
+# This argument is shared by data_cfg and train_cfg
+data_root: !ref <dataset_path>/<dataset>/data
+
+
+
+##############################
+# Data Loading Configuration #
+##############################
+data_cfg:
+  train:
+    type: block.BlockIterator
+    conf:
+      dataset_type: speech_text.SpeechTextDataset
+      dataset_conf:
+        main_data:
+          feat: !ref <data_root>/<wav_format>/<train_set>/idx2wav
+          text: !ref <data_root>/g2p/<train_set>/<token_num>/<txt_format>/idx2text
+          spk_feat: !ref <data_root>/<wav_format>/<train_set>/idx2<spk_emb_model>_spk_feat
+        data_selection:
+          - min
+          - 0.95
+          - !ref <data_root>/<wav_format>/<train_set>/idx2wav_len
+
+      data_len: !ref <data_root>/<wav_format>/<train_set>/idx2wav_len
+      shuffle: True
+      is_descending: True
+      batch_len: !ref <batch_len>
+
+  valid:
+    type: abs.Iterator
+    conf:
+      dataset_type: speech_text.SpeechTextDataset
+      dataset_conf:
+        main_data:
+          feat: !ref <data_root>/<wav_format>/<valid_set>/idx2wav
+          text: !ref <data_root>/g2p/<valid_set>/<token_num>/<txt_format>/idx2text
+          spk_feat: !ref <data_root>/<wav_format>/<valid_set>/idx2<spk_emb_model>_spk_feat
+        data_selection:
+          - min
+          - 0.95
+          - !ref <data_root>/<wav_format>/<valid_set>/idx2wav_len
+
+      shuffle: False
+      data_len: !ref <data_root>/<wav_format>/<valid_set>/idx2wav_len
+
+  test:
+    test-clean:
+      type: abs.Iterator
+      conf:
+        dataset_type: speech_text.RandomSpkFeatDataset
+        dataset_conf:
+          main_data:
+            text: !ref <data_root>/g2p/test-clean/<token_num>/<txt_format>/idx2text
+          spk_feat: !ref <data_root>/<wav_format>/<train_set>/idx2<spk_emb_model>_spk_feat
+
+        shuffle: False
+        data_len: !ref <data_root>/<wav_format>/test-clean/idx2wav_len
+
+    test-other:
+      type: abs.Iterator
+      conf:
+        dataset_type: speech_text.RandomSpkFeatDataset
+        dataset_conf:
+          main_data:
+            text: !ref <data_root>/g2p/test-other/<token_num>/<txt_format>/idx2text
+          spk_feat: !ref <data_root>/<wav_format>/<train_set>/idx2<spk_emb_model>_spk_feat
+
+        shuffle: False
+        data_len: !ref <data_root>/<wav_format>/test-other/idx2wav_len
+
+
+
+####################################
+# Model Construction Configuration #
+####################################
+train_cfg:
+  model:
+    model_type: ar_tts.ARTTS
+    model_conf:
+      customize_conf:
+        token_type: !ref <token_type>
+        token_vocab: !ref <data_root>/<token_type>/<train_set>/<token_num>/<txt_format>/vocab
+        reduction_factor: !ref <reduction_factor>
+        return_att_head_num: 2
+        return_att_layer_num: 2
+
+    module_conf:
+      enc_emb:
+        type: emb
+        conf:
+          embedding_dim: !ref <d_model>
+
+      enc_prenet:
+        type: conv1d
+        conf:
+          conv_dims:
+            - !ref <d_model>
+            - !ref <d_model>
+            - !ref <d_model>
+          conv_kernel: 5
+          conv_batchnorm: true
+          lnr_dims: !ref <d_model>
+
+      encoder:
+        type: transformer
+        conf:
+          posenc_dropout: !ref <trmf_dropout>
+          posenc_scale: true
+          emb_scale: false
+          emb_layernorm: true
+          d_model: !ref <d_model>
+          num_heads: !ref <head_num>
+          num_layers: !ref <layer_num>
+          att_dropout: !ref <trmf_dropout>
+          fdfwd_dim: !ref <fdfwd_dim>
+          fdfwd_dropout: !ref <trmf_dropout>
+          res_dropout: !ref <trmf_dropout>
+          layernorm_first: true
+
+      frontend:
+        type: mel_fbank
+        conf:
+          sr: !ref <sample_rate>
+          mag_spec: True
+          hop_length: 256
+          win_length: 1024
+          n_mels: 80
+          fmin: 0
+          fmax: 8000
+          log_base: null
+          clamp: 1e-5
+
+      normalize:
+        norm_type: !ref <norm_type>
+
+      dec_prenet:
+        type: linear
+        conf:
+          lnr_dims:
+            - 256
+            - 256
+            - !ref <d_model>
+          lnr_dropout: !ref <dropout>
+          zero_centered: True
+
+      spk_emb:
+        spk_emb_dim: !ref <spk_emb_dim>
+        spk_emb_comb: concat
+        spk_emb_scale: false
+        spk_emb_act: Softsign
+
+      decoder:
+        type: transformer
+        conf:
+          posenc_dropout: !ref <trmf_dropout>
+          posenc_scale: true
+          emb_scale: false
+          emb_layernorm: true
+          d_model: !ref <d_model>
+          num_heads: !ref <head_num>
+          num_layers: !ref <layer_num>
+          att_dropout: !ref <trmf_dropout>
+          fdfwd_dim: !ref <fdfwd_dim>
+          fdfwd_dropout: !ref <trmf_dropout>
+          res_dropout: !ref <trmf_dropout>
+          layernorm_first: true
+
+      dec_postnet:
+        type: conv1d
+        conf:
+          conv_dims: !list [512, -1, -1, -1, 0]
+          conv_kernel: 5
+          conv_batchnorm: true
+          conv_activation: Tanh
+          conv_dropout: !ref <dropout>
+
+    criterion_conf:
+      feat_loss:
+        loss_type: L2
+      stop_loss:
+        pos_weight: 5.0
+      att_guid_loss: True
+
+  optim_sches:
+    type: noam.Noamlr
+    conf:
+      optim_type: Adam
+      optim_conf:
+        betas:
+          - 0.9
+          - 0.98
+        eps: 1.0e-9
+      warmup_steps: !ref <warmup_steps>

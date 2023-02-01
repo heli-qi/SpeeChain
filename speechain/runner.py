@@ -82,7 +82,7 @@ class Runner(object):
             "--config",
             type=str,
             # default=None,
-            default="recipes/tts/libritts/train-clean-100/exp_cfg/16khz_ecapa_g2p_transformer_v1_joint-lj_accum1_20gb.yaml",
+            default="recipes/lm/librispeech/lm_text/exp_cfg/bpe1k_lm-large_transformer-v2_accum1_80gb.yaml",
             help="The path of the all-in-one experiment configuration file. You can write all the arguments in this "
                  "all-in-one file instead of giving them to `runner.py` by command lines."
         )
@@ -431,7 +431,7 @@ class Runner(object):
         )
         group.add_argument(
             '--test_model',
-            type=str,
+            type=str2list,
             default=None,
             help="The names of the model you want to evaluate during model testing. "
                  "If given, `{train_result_path}/XXXXX/model/{test_model}.pth` will be used to initialize the parameters "
@@ -1548,7 +1548,8 @@ class Runner(object):
 
         # check the GPU configuration
         assert len(args.gpus) >= args.ngpu, \
-            "The visible GPUs (args.gpus) are fewer than the GPUs you would like to use (args.ngpu)!"
+            f"The visible GPUs {args.gpus} are fewer than the GPUs you would like to use {args.ngpu}! " \
+            f"Please use the argument '--gpus' to directly specify your target GPUs."
         if len(args.gpus) == 1:
             args.gpus = args.gpus[0]
 

@@ -38,7 +38,7 @@ class BCELogits(Criterion):
         """
 
         Args:
-            pred: (batch, text_maxlen, vocab_size)
+            pred: (batch, text_maxlen)
                 The model predictions for the text
             tgt: (batch, text_maxlen)
                 The target text labels.

@@ -21,12 +21,16 @@ from speechain.utilbox.train_util import text2tensor_and_len
 from speechain.module.encoder.asr import ASREncoder
 from speechain.module.decoder.ar_asr import ARASRDecoder
 from speechain.module.postnet.token import TokenPostnet
+from speechain.module.standalone.lm import LanguageModel
 
 from speechain.criterion.cross_entropy import CrossEntropy
 from speechain.criterion.ctc import CTCLoss
 from speechain.criterion.att_guid import AttentionGuidance
 from speechain.criterion.accuracy import Accuracy
 from speechain.criterion.error_rate import ErrorRate
+
+from speechain.utilbox.yaml_util import load_yaml
+from speechain.utilbox.import_util import parse_path_args
 
 
 class ARASR(Model):
@@ -67,7 +71,9 @@ class ARASR(Model):
                     audio_format: str = 'wav',
                     return_att_type: List[str] or str = None,
                     return_att_head_num: int = 2,
-                    return_att_layer_num: int = 2):
+                    return_att_layer_num: int = 2,
+                    lm_model_cfg: Dict or str = None,
+                    lm_model_path: str = None):
         """
         This initialization function contains 4 steps:
         1. `Tokenizer` initialization.
@@ -141,6 +147,11 @@ class ARASR(Model):
             return_att_layer_num: int = 1
                 The number of returned attention layers. If -1, all the attention layers will be returned.
                 RNN can be considered to one-layer attention, so return_att_layer_num > 1 is equivalent to 1 for RNN.
+            lm_model_cfg: Dict or str
+                The configuration for the language model used for joint decoding.
+                Can be either a Dict or a string indicating where the .yaml model configuration file is placed.
+            lm_model_path: str
+                The string indicating where the .pth model parameter file is placed.
 
         """
 
@@ -158,6 +169,7 @@ class ARASR(Model):
         self.sample_rate = sample_rate
         self.audio_format = audio_format.lower()
 
+        # attention-related
         if return_att_type is None:
             self.return_att_type = ['encdec', 'enc', 'dec']
         else:
@@ -170,6 +182,10 @@ class ARASR(Model):
                                  f"but got {self.return_att_type[i]}!")
         self.return_att_head_num = return_att_head_num
         self.return_att_layer_num = return_att_layer_num
+
+        # language model-related, used for lazy initialization during inference
+        self.lm_model_cfg = lm_model_cfg
+        self.lm_model_path = lm_model_path
 
         # --- 2. Module Initialization --- #
         # --- 2.1. Encoder construction --- #
@@ -684,6 +700,24 @@ class ARASR(Model):
             teacher_forcing = infer_conf.pop('teacher_forcing')
         hypo_text, hypo_text_len, feat_token_len_ratio, hypo_text_confid, hypo_att = None, None, None, None, None
 
+        # only initialize the language model when lm_weight is given as a positive float number
+        if 'lm_weight' in infer_conf.keys() and infer_conf['lm_weight'] > 0:
+            assert self.lm_model_cfg is not None or self.lm_model_path is not None, \
+                "If you want to use ASR-LM joint decoding, " \
+                "please give lm_model_cfg and lm_model_path in model['customize_conf']!"
+            # lazily initialize the language model only at the first time
+            if not hasattr(self, 'lm'):
+                if isinstance(self.lm_model_cfg, str):
+                    self.lm_model_cfg = load_yaml(parse_path_args(self.lm_model_cfg))
+                if 'model' in self.lm_model_cfg.keys():
+                    self.lm_model_cfg = self.lm_model_cfg['model']
+                if 'module_conf' in self.lm_model_cfg.keys():
+                    self.lm_model_cfg = self.lm_model_cfg['module_conf']
+
+                self.lm = LanguageModel(vocab_size=self.tokenizer.vocab_size, **self.lm_model_cfg).cuda(self.device)
+                _lm_model_para = torch.load(parse_path_args(self.lm_model_path), map_location=self.device)
+                self.lm.load_state_dict(_lm_model_para)
+
         # --- 1. The 1st Pass: ASR Decoding by Beam Searching --- #
         if not teacher_forcing:
             # copy the input data in advance for data safety
@@ -695,8 +729,9 @@ class ARASR(Model):
             # generate the model hypothesis
             infer_results = beam_searching(enc_feat=enc_feat,
                                            enc_feat_mask=enc_feat_mask,
-                                           decode_one_step=self.decoder,
+                                           asr_decode_fn=self.decoder,
                                            ctc_decode_fn=self.ctc_layer if hasattr(self, 'ctc_layer') else None,
+                                           lm_decode_fn=self.lm if hasattr(self, 'lm') else None,
                                            vocab_size=self.tokenizer.vocab_size,
                                            sos_eos=self.tokenizer.sos_eos_idx,
                                            padding_idx=self.tokenizer.ignore_idx,

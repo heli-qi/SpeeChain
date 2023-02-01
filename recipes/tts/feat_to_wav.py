@@ -41,7 +41,11 @@ class SpeechBrainWrapper:
     def __call__(self, feat: torch.Tensor, feat_len: torch.Tensor):
         wav = self.vocode_func(feat.transpose(-2, -1)).transpose(-2, -1)
         # the lengths of the shorter utterances in the batch are estimated by their feature lengths
-        return wav, (feat_len * (wav.size(1) / feat.size(1))).long()
+        wav_len = (feat_len * (wav.size(1) / feat.size(1))).long()
+        # make sure that the redundant parts are set to silence
+        for i in range(len(wav_len)):
+            wav[i][wav_len[i]:] = 0
+        return wav, wav_len
 
 
 def parse():
@@ -49,7 +53,7 @@ def parse():
 
     # Shared Arguments
     group = parser.add_argument_group("Shared Arguments")
-    group.add_argument('--vocoder', type=str, default='hifigan',
+    group.add_argument('--vocoder', type=str, default='gl',
                        help="The type of the vocoder you want to use to generate waveforms. (default: hifigan)")
     group.add_argument('--feat_path', type=str, required=True,
                        help="The path of your TTS experimental folder. All the files named 'idx2feat' will be "
@@ -60,7 +64,8 @@ def parse():
                             "saved to the same directory as your given 'hypo_idx2feat'. (default: None)")
     group.add_argument('--batch_size', type=int, default=1,
                        help="The number of utterances you want to pass to the vocoder in a batch for parallel "
-                            "computation. (default: 1)")
+                            "computation. We recommend you to set this argument to 1 if you want to use hifigan for "
+                            "vocoding for accurate waveform length recording. (default: 1)")
     group.add_argument('--ngpu', type=int, default=0,
                        help="The number of GPUs you want to use to generate waveforms. If not given, the vocoding "
                             "process will be done by CPUs. (default: 0)")
@@ -100,7 +105,8 @@ def proc_curr_batch(curr_batch: List, device: str, sample_rate: int, save_path: 
     # recover acoustic features back to waveforms
     wav, wav_len = feat_to_wav_func(feat, feat_len)
     idx2wav = save_data_by_format(file_format='wav', save_path=save_path, sample_rate=sample_rate,
-                                  file_name_list=idx_list, file_content_list=[w for w in wav])
+                                  file_name_list=idx_list,
+                                  file_content_list=[wav[i][:wav_len[i]] for i in range(len(wav))])
     idx2wav_len = dict(zip(idx_list, wav_len.tolist()))
 
     return idx2wav, idx2wav_len

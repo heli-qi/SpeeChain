@@ -6,33 +6,34 @@
 # Validation: dev-clean of LibriSpeech
 # Testing: test-clean & test-other of LibriSpeech
 # Authors: Heli Qi
-# Required GPUs: 2 × GeForce RTX 3090(24GB)
-# Required Time: up to 7 hours
+# Required GPUs: 1 × NVIDIA RTX A5000(49GB) or 2 × NVIDIA RTX A5000(24GB）
+# Required Time: up to 5 hours
 # ############################################################################
 
 
 ###################################
 # Experiment Parameters and setup #
 ###################################
-# if your dumped dataset is outside the toolkit folder, please change dataset_path. There should be a folder named 'libritts' in dataset_path
+# if your dumped dataset is outside the toolkit folder, please change real_dataset_path & syn_dataset_path.
+# There should be a folder named 'libritts' in dataset_path
 real_dataset_path: datasets/
 syn_dataset_path: recipes/offline_tts2asr/tts_syn_speech/
 
 # data-related
-real_dataset: librispeech
 real_train_set: train-clean-100
 syn_dataset: libritts
-syn_train_set: train-clean-360
-syn_wav_folder: seed=0_spk-emb=libritts-train-clean-100-ecapa_model=recipes%tts%libritts%train-clean-100%exp%16khz_ecapa_g2p_transformer_v1_accum1_20gb
+syn_train_set: train-other-500
+syn_wav_folder: seed=0_spk-emb=libritts-train-clean-100-ecapa_model=recipes%tts%libritts%train-clean-100%exp%16khz_ecapa_g2p_transformer-v3_accum1_20gb
 valid_set: dev-clean
 
-real_data_root: !ref <real_dataset_path>/<real_dataset>/data
-syn_wav_root: !ref <syn_dataset_path>/<syn_dataset>/<syn_train_set>/default_inference/10_train_loss_average/<syn_wav_folder>
-syn_text_root: !ref <real_dataset_path>/<syn_dataset>/data
+librispeech_data_root: !ref <real_dataset_path>/librispeech/data
+libritts_data_root: !ref <real_dataset_path>/libritts/data
+syn_data_root: !ref <syn_dataset_path>/<syn_dataset>/<syn_train_set>/default_inference/10_train_loss_average/<syn_wav_folder>
 
 # waveform-related
-real_wav_format: wav
-syn_wav_vocoder: hifigan
+librispeech_wav_format: wav
+libritts_wav_format: wav16000
+syn_wav_vocoder: gl
 sample_rate: 16000
 
 # tokenizer-related
@@ -41,11 +42,11 @@ token_type: sentencepiece
 token_num: bpe1k
 
 # batch-related values
-real_batch_len: 6e6
-syn_batch_len: 1e7
+real_batch_len: 4.4e6
+syn_batch_len: 7.5e6
 
 # model-related
-norm_type: group
+norm_type: global
 label_smoothing: 0.2
 d_model: 512
 num_heads: 8
@@ -62,29 +63,26 @@ pin_memory: True
 non_blocking: True
 
 # gradient-related
-accum_grad: 1
+accum_grad: 2
 ft_factor: 1.0
 grad_clip: 5.0
 
 # multi-GPU-related
-ngpu: 2 # please change ngpu based on the situation of your machine
+ngpu: 3 # please change ngpu based on the situation of your machine
 gpus: null # null means the GPUs with the largest free memory will be used
 
 # training-related
-train: True
-# here valid dataloader gives real_accuracy rather than the usual accuracy
-best_model_selection: !tuple (valid, real_accuracy, max, 10)
+train: False
+best_model_selection: !tuple (valid, accuracy, max, 10)
 early_stopping_patience: 10
-last_model_number: !ref <early_stopping_patience>
 
 # snapshot-related
 visual_snapshot_number: 3
 visual_snapshot_interval: 5
 
 # testing-related
-test: False
-# here valid dataloader gives real_accuracy rather than the usual accuracy
-test_model: 10_valid_real_accuracy_average
+test: True
+test_model: !ref <early_stopping_patience>_valid_accuracy_average
 
 
 
@@ -97,11 +95,11 @@ infer_cfg:
   shared_args:
     beam_size: 16
   exclu_args:
-    - temperature: 1.1
+#    - temperature: 1.1
     - temperature: 1.3
-    - temperature: 1.5
-    - temperature: 1.7
-    - temperature: 1.9
+#    - temperature: 1.5
+#    - temperature: 1.7
+#    - temperature: 1.9
 
 
 
@@ -116,10 +114,16 @@ data_cfg:
         dataset_type: speech_text.SpeechTextDataset
         dataset_conf:
           main_data:
-            feat: !ref <real_data_root>/<real_wav_format>/<real_train_set>/idx2wav
-            text: !ref <real_data_root>/<real_wav_format>/<real_train_set>/idx2<txt_format>_text
+            feat:
+              - !ref <librispeech_data_root>/<librispeech_wav_format>/<real_train_set>/idx2wav
+              - !ref <libritts_data_root>/<libritts_wav_format>/<real_train_set>/idx2wav
+            text:
+              - !ref <librispeech_data_root>/<librispeech_wav_format>/<real_train_set>/idx2<txt_format>_text
+              - !ref <libritts_data_root>/<libritts_wav_format>/<real_train_set>/idx2<txt_format>_text
 
-        data_len: !ref <real_data_root>/<real_wav_format>/<real_train_set>/idx2wav_len
+        data_len:
+          - !ref <librispeech_data_root>/<librispeech_wav_format>/<real_train_set>/idx2wav_len
+          - !ref <libritts_data_root>/<libritts_wav_format>/<real_train_set>/idx2wav_len
         shuffle: True
         is_descending: True
         batch_len: !ref <real_batch_len>
@@ -130,65 +134,60 @@ data_cfg:
         dataset_type: speech_text.SpeechTextDataset
         dataset_conf:
           main_data:
-            feat: !ref <syn_wav_root>/idx2<syn_wav_vocoder>_wav
-            text: !ref <syn_text_root>/<real_wav_format>/<syn_train_set>/idx2<txt_format>_text
+            feat: !ref <syn_data_root>/idx2<syn_wav_vocoder>_wav
+            text: !ref <real_dataset_path>/<syn_dataset>/data/<libritts_wav_format>/<syn_train_set>/idx2<txt_format>_text
           data_selection:
             - min
-            - !str 9
-            - !ref <syn_wav_root>/idx2feat_token_len_ratio
+            - !str 8
+            - !ref <syn_data_root>/idx2feat_token_len_ratio
 
-        data_len: !ref <syn_wav_root>/idx2<syn_wav_vocoder>_wav_len
+        data_len: !ref <syn_data_root>/idx2<syn_wav_vocoder>_wav_len
         shuffle: True
         is_descending: True
         batch_len: !ref <syn_batch_len>
 
-  # valid dataloader also need to have a domain flag for feature normalization during validation
   valid:
-    real:
+    type: abs.Iterator
+    conf:
+      dataset_type: speech_text.SpeechTextDataset
+      dataset_conf:
+        main_data:
+          feat: !ref <librispeech_data_root>/<librispeech_wav_format>/<valid_set>/idx2wav
+          text: !ref <librispeech_data_root>/<librispeech_wav_format>/<valid_set>/idx2<txt_format>_text
+
+      shuffle: False
+      data_len: !ref <librispeech_data_root>/<librispeech_wav_format>/<valid_set>/idx2wav_len
+
+  test:
+    test-clean:
       type: abs.Iterator
       conf:
         dataset_type: speech_text.SpeechTextDataset
         dataset_conf:
           main_data:
-            feat: !ref <real_data_root>/<real_wav_format>/<valid_set>/idx2wav
-            text: !ref <real_data_root>/<real_wav_format>/<valid_set>/idx2<txt_format>_text
+            feat: !ref <librispeech_data_root>/<librispeech_wav_format>/test-clean/idx2wav
+            text: !ref <librispeech_data_root>/<librispeech_wav_format>/test-clean/idx2<txt_format>_text
 
+        data_len: !ref <librispeech_data_root>/<librispeech_wav_format>/test-clean/idx2wav_len
         shuffle: False
-        data_len: !ref <real_data_root>/<real_wav_format>/<valid_set>/idx2wav_len
-
-  # test dataloaders also need to have a domain flag for feature normalization during testing
-  test:
-    test-clean:
-      real:
-        type: abs.Iterator
-        conf:
-          dataset_type: speech_text.SpeechTextDataset
-          dataset_conf:
-            main_data:
-              feat: !ref <real_data_root>/<real_wav_format>/test-clean/idx2wav
-              text: !ref <real_data_root>/<real_wav_format>/test-clean/idx2<txt_format>_text
-
-          data_len: !ref <real_data_root>/<real_wav_format>/test-clean/idx2wav_len
-          shuffle: False
-          group_info:
-            speaker: !ref <real_data_root>/<real_wav_format>/test-clean/idx2spk
-            gender: !ref <real_data_root>/<real_wav_format>/test-clean/idx2gen
+        group_info:
+          speaker: !ref <librispeech_data_root>/<librispeech_wav_format>/test-clean/idx2spk
+          gender: !ref <librispeech_data_root>/<librispeech_wav_format>/test-clean/idx2gen
 
     test-other:
-      real:
-        type: abs.Iterator
-        conf:
-          dataset_type: speech_text.SpeechTextDataset
-          dataset_conf:
-            main_data:
-              feat: !ref <real_data_root>/<real_wav_format>/test-other/idx2wav
-              text: !ref <real_data_root>/<real_wav_format>/test-other/idx2<txt_format>_text
+      type: abs.Iterator
+      conf:
+        dataset_type: speech_text.SpeechTextDataset
+        dataset_conf:
+          main_data:
+            feat: !ref <librispeech_data_root>/<librispeech_wav_format>/test-other/idx2wav
+            text: !ref <librispeech_data_root>/<librispeech_wav_format>/test-other/idx2<txt_format>_text
 
-          data_len: !ref <real_data_root>/<real_wav_format>/test-other/idx2wav_len
-          shuffle: False
-          group_info:
-            speaker: !ref <real_data_root>/<real_wav_format>/test-other/idx2spk
-            gender: !ref <real_data_root>/<real_wav_format>/test-other/idx2gen
+        data_len: !ref <librispeech_data_root>/<librispeech_wav_format>/test-other/idx2wav_len
+        shuffle: False
+        group_info:
+          speaker: !ref <librispeech_data_root>/<librispeech_wav_format>/test-other/idx2spk
+          gender: !ref <librispeech_data_root>/<librispeech_wav_format>/test-other/idx2gen
 
 
 
@@ -201,7 +200,7 @@ train_cfg:
     model_conf:
       customize_conf:
         token_type: !ref <token_type>
-        token_vocab: !ref <real_data_root>/<token_type>/<real_train_set>/<token_num>/<txt_format>/vocab
+        token_vocab: !ref <librispeech_data_root>/<token_type>/<real_train_set>/<token_num>/<txt_format>/vocab
 
     module_conf:
       frontend:
