@@ -4,7 +4,7 @@
     Date: 2022.11
 """
 import warnings
-
+import json
 import numpy as np
 import h5py
 import os
@@ -104,18 +104,36 @@ def load_idx2data_file(file_path: str or List[str], data_type: type = str, separ
 
     def load_single_file(_file_path: str):
         assert os.path.exists(_file_path), f"{_file_path} doesn't exist!"
-        # str -> (n,) np.ndarray. First read the content of the given file one line a time.
-        with open(_file_path, mode='r') as f:
-            data = f.readlines()
-        # (n,) List -> (n, 2) List or (n,) List. Then, the index and sentence are separated by the first blank
-        data = [row.replace('\n', '').split(separator, 1) if do_separate else row.replace('\n', '') for row in data]
 
-        if isinstance(data[0], List):
-            # (n, 2) List -> Dict[str, data_type]
-            return {i: data_type(d) for i, d in data}
+        # non-json metadata file
+        if not _file_path.endswith('.json'):
+            # str -> (n,) List. First read the content of the given file one line a time.
+            with open(_file_path, mode='r') as f:
+                data = f.readlines()
+            # (n,) List -> (n, 2) List or (n,) List. Then, the index and sentence are separated by the first blank
+            data = [row.replace('\n', '').split(separator, 1) if do_separate else row.replace('\n', '') for row in data]
+
+            if isinstance(data[0], List):
+                # (n, 2) List -> Dict[str, data_type]
+                return {key: data_type(value) for key, value in data}
+            else:
+                # (n,) List -> Dict[str, data_type]
+                return {key: data_type(value) for key, value in enumerate(data)}
+        # .json metadata file
         else:
-            # (n,) List -> Dict[str, data_type]
-            return {i: data_type(d) for i, d in enumerate(data)}
+            # str -> (n,) np.ndarray. First read the content of the .json file into a string.
+            with open(_file_path, mode='r') as f:
+                json_data = f.read()
+                data = json.loads(json_data)
+
+            for key, value in data.items():
+                if isinstance(value, List):
+                    data[key] = [data_type(i) for i in value]
+                elif isinstance(value, Dict):
+                    data[key] = {k: data_type(v) for k, v in value}
+                else:
+                    data[key] = data_type(value)
+            return data
 
     if not isinstance(file_path, List):
         file_path = [file_path]
@@ -204,7 +222,9 @@ def search_file_in_subfolder(curr_query: str, tgt_match_fn=None):
     if os.path.isfile(curr_query):
         dir_name, node_name = '/'.join(curr_query.split('/')[:-1]), curr_query.split('/')[-1]
         if tgt_match_fn is None or tgt_match_fn(node_name):
-            return candidates + [curr_query]
+            # skip the soft link, only return the existing file
+            if not os.path.islink(curr_query):
+                return candidates + [curr_query]
         else:
             raise RuntimeError(f"Your input query is the path of a file {curr_query} and it doesn't match your target!")
 
@@ -214,6 +234,8 @@ def search_file_in_subfolder(curr_query: str, tgt_match_fn=None):
         if os.path.isdir(node_path):
             candidates = candidates + search_file_in_subfolder(node_path, tgt_match_fn)
         elif tgt_match_fn is None or tgt_match_fn(node_name):
-            candidates = candidates + [node_path]
+            # skip the soft link, only return the existing file
+            if not os.path.islink(node_path):
+                candidates = candidates + [node_path]
 
     return candidates

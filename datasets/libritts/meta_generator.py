@@ -10,7 +10,7 @@ from functools import partial
 from typing import Dict, List
 
 from datasets.meta_generator import SpeechTextMetaGenerator
-from speechain.utilbox.dump_util import tts_text_process
+from speechain.utilbox.dump_util import en_text_process
 
 
 class LibriTTSMetaGenerator(SpeechTextMetaGenerator):
@@ -96,7 +96,7 @@ class LibriTTSMetaGenerator(SpeechTextMetaGenerator):
                 # record the speaker ID
                 idx2data['idx2spk'][idx] = spk
                 # record the processed text
-                idx2data[f'idx2{txt_format}_text'][idx] = tts_text_process(sent, txt_format)
+                idx2data[f'idx2{txt_format}_text'][idx] = en_text_process(sent, txt_format)
 
         return idx2data
 

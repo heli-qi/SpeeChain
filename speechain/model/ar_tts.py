@@ -44,14 +44,14 @@ class ARTTS(Model):
     def module_init(self,
                     token_type: str,
                     token_vocab: str,
-                    frontend: Dict,
                     enc_emb: Dict,
                     enc_prenet: Dict,
                     encoder: Dict,
                     dec_prenet: Dict,
                     decoder: Dict,
                     dec_postnet: Dict,
-                    normalize: Dict = None,
+                    frontend: Dict = None,
+                    normalize: Dict or bool = True,
                     spk_list: str = None,
                     spk_emb: Dict = None,
                     sample_rate: int = 22050,
@@ -248,9 +248,9 @@ class ARTTS(Model):
         ]
 
     def criterion_init(self,
-                       feat_loss: Dict[str, Any] = None,
-                       stop_loss: Dict[str, Any] = None,
-                       att_guid_loss: Dict[str, Any] or bool = None):
+                       feat_loss: Dict = None,
+                       stop_loss: Dict = None,
+                       att_guid_loss: Dict or bool = None):
         """
         This function initializes all the necessary Criterion members for an autoregressive TTS:
             1. `speechain.criterion.least_error.LeastError` for acoustic feature prediction loss calculation.
@@ -298,23 +298,10 @@ class ARTTS(Model):
         self.stop_fbeta = FBetaScore(beta=2)
 
     def batch_preprocess_fn(self, batch_data: Dict):
-        """
-
-        Args:
-            batch_data:
-
-        Returns:
-
-        """
 
         def process_strings(data_dict: Dict):
             """
             turn the text and speaker strings into tensors and get their lengths
-
-            Args:
-                data_dict:
-
-            Returns:
 
             """
             # --- Process the Text String and its Length --- #
@@ -417,11 +404,8 @@ class ARTTS(Model):
 
         # initialize the TTS output to be the decoder predictions
         outputs = dict(
-            pred_stop=pred_stop,
-            pred_feat_before=pred_feat_before,
-            pred_feat_after=pred_feat_after,
-            tgt_feat=tgt_feat,
-            tgt_feat_len=tgt_feat_len
+            pred_feat_before=pred_feat_before, pred_feat_after=pred_feat_after,
+            pred_stop=pred_stop, tgt_feat=tgt_feat, tgt_feat_len=tgt_feat_len
         )
 
         def shrink_attention(input_att_list):
@@ -488,10 +472,6 @@ class ARTTS(Model):
             **kwargs:
                 Unnecessary arguments for criterion calculation.
 
-        Returns:
-            losses:
-            metric:
-
         """
         # --- Losses Calculation --- #
         # the external feature loss function has the higher priority
@@ -551,52 +531,6 @@ class ARTTS(Model):
             return losses, metrics
         else:
             return metrics
-
-    def matrix_snapshot(self, vis_logs: List, hypo_attention: Dict, subfolder_names: List[str] or str, epoch: int):
-
-        if isinstance(subfolder_names, str):
-            subfolder_names = [subfolder_names]
-        keys = list(hypo_attention.keys())
-
-        # process the input data by different data types
-        if isinstance(hypo_attention[keys[0]], Dict):
-            for key, value in hypo_attention.items():
-                self.matrix_snapshot(vis_logs=vis_logs, hypo_attention=value,
-                                     subfolder_names=subfolder_names + [key], epoch=epoch)
-
-        # snapshot the information in the materials
-        elif isinstance(hypo_attention[keys[0]], np.ndarray):
-            vis_logs.append(
-                dict(
-                    plot_type='matrix', materials=hypo_attention, epoch=epoch,
-                    sep_save=False, data_save=True, subfolder_names=subfolder_names
-                )
-            )
-
-    def attention_reshape(self, hypo_attention: Dict, prefix_list: List = None) -> Dict:
-
-        if prefix_list is None:
-            prefix_list = []
-
-        # process the input data by different data types
-        if isinstance(hypo_attention, Dict):
-            return {key: self.attention_reshape(value, prefix_list + [key]) for key, value in hypo_attention.items()}
-        elif isinstance(hypo_attention, List):
-            return {str(index - len(hypo_attention)): self.attention_reshape(
-                hypo_attention[index], prefix_list + [str(index - len(hypo_attention))])
-                for index in range(len(hypo_attention) - 1, -1, -1)}
-        elif isinstance(hypo_attention, torch.Tensor):
-            hypo_attention = hypo_attention.squeeze()
-            if hypo_attention.is_cuda:
-                hypo_attention = hypo_attention.detach().cpu()
-
-            if hypo_attention.dim() == 2:
-                return {'.'.join(prefix_list + [str(0)]): hypo_attention.numpy()}
-            elif hypo_attention.dim() == 3:
-                return {'.'.join(prefix_list + [str(index)]): element.numpy()
-                        for index, element in enumerate(hypo_attention)}
-            else:
-                raise RuntimeError
 
     def visualize(self,
                   epoch: int,
@@ -824,14 +758,15 @@ class ARTTS(Model):
                 )
                 hypo_feat = infer_results['pred_feat_before' if use_before else 'pred_feat_after']
                 hypo_feat_len = infer_results['tgt_feat_len']
-                # hypo_feat_len recovery by reduction_factor
+                # hypo_feat & hypo_feat_len recovery by reduction_factor
                 if self.reduction_factor > 1:
                     batch_size, feat_dim = hypo_feat.size(0), hypo_feat.size(-1)
                     hypo_feat = hypo_feat.reshape(
                         batch_size, hypo_feat.size(1) * self.reduction_factor, feat_dim // self.reduction_factor
                     )
                     hypo_feat_len *= self.reduction_factor
-                feat_token_len_ratio = hypo_feat_len / text_len
+                # remove the sos at the beginning and eos at the end
+                feat_token_len_ratio = hypo_feat_len / (text_len - 2)
 
         # --- 1.3. The 3rd Pass: denormalize the acoustic feature if needed --- #
         if hasattr(self.decoder, 'normalize'):
@@ -844,7 +779,6 @@ class ARTTS(Model):
             # the sampling rate of the generated waveforms is obtained from the frontend of the decoder
             feat=dict(format='npz', sample_rate=self.sample_rate, content=to_cpu(hypo_feat, tgt='numpy')),
             feat_len=dict(format='txt', content=to_cpu(hypo_feat_len)),
-            # text_len=dict(format='txt', content=to_cpu(text_len)),
             feat_token_len_ratio=dict(format='txt', content=to_cpu(feat_token_len_ratio))
         )
 

@@ -78,7 +78,9 @@ class FeatureNormalization(Module):
         """
 
         Args:
-            feat: (batch, length, channel)
+            feat: (batch, length, channel) or (batch, length)
+                The normalization will be done on the channel dimension.
+                If the feat is in the shape of (batch, length), it will be extended to (batch, length, 1)
             feat_len: (batch)
             group_ids: (batch)
             epoch:
@@ -90,8 +92,13 @@ class FeatureNormalization(Module):
             assert group_ids is not None, \
                 "You are using group-level feature normalization, but group_ids is not given. " \
                 "Please check 'data_cfg' in your configuration."
-
-        batch_size = feat.size(0)
+        # para preparation
+        batch_size, squeeze_flag = feat.size(0), False
+        if len(feat.shape) == 2:
+            feat, squeeze_flag = feat.unsqueeze(-1), True
+        elif len(feat.shape) != 3:
+            raise RuntimeError(f"{self.__class__.__name__} only accepts the input vectors in the shape of "
+                               f"(batch, length, channel) or (batch, length), but got shape={feat.shape}!")
 
         # --- Mean and Standard Variance Initialization --- #
         # calculate the mean values of all channels of all the input utterances
@@ -237,7 +244,7 @@ class FeatureNormalization(Module):
                     feat = feat - self.get_buffer(f"{prefix}_mean") if curr_means is not None else feat
                     feat = feat / self.get_buffer(f"{prefix}_std") if curr_stds is not None else feat
 
-        return feat, feat_len
+        return feat.squeeze(-1) if squeeze_flag else feat, feat_len
 
     @staticmethod
     def gather_scalars(scalar: int, device: torch.device) -> torch.LongTensor:

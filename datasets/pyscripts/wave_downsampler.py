@@ -23,6 +23,7 @@ def parse():
     parser = argparse.ArgumentParser(description='params')
     parser.add_argument('--sample_rate', type=int, default=16000)
     parser.add_argument('--src_file', type=str, required=True)
+    parser.add_argument('--spk_file', type=str, default=None)
     parser.add_argument('--tgt_path', type=str, required=True)
     parser.add_argument('--ncpu', type=int, default=8,
                         help="The number of processes you want to use to save the chunk files. (default: 8)")
@@ -44,9 +45,15 @@ def waveform_downsample(idx2src_wav: List[List[str]], tgt_path: str, sample_rate
     """
     idx2tgt_wav = []
     # loop each source data wav in the given chunk
-    for idx, src_wav_path in tqdm(idx2src_wav):
+    for idx, src_wav_path, spk in tqdm(idx2src_wav):
         file_name = src_wav_path.split('/')[-1]
-        tgt_wav_path = os.path.join(tgt_path, file_name)
+        if spk is not None:
+            os.makedirs(os.path.join(tgt_path, spk), exist_ok=True)
+            tgt_wav_path = os.path.join(tgt_path, spk, file_name)
+        else:
+            os.makedirs(os.path.join(tgt_path, 'wav'), exist_ok=True)
+            tgt_wav_path = os.path.join(tgt_path, 'wav', file_name)
+
         # create the downsampled waveform file
         if not os.path.exists(tgt_wav_path):
             src_wav = librosa.core.load(src_wav_path, sr=sample_rate)[0]
@@ -59,8 +66,10 @@ def waveform_downsample(idx2src_wav: List[List[str]], tgt_path: str, sample_rate
     return idx2tgt_wav
 
 
-def main(src_file: str, tgt_path: str, sample_rate: int, ncpu: int):
+def main(src_file: str, spk_file: str, tgt_path: str, sample_rate: int, ncpu: int):
     src_file, tgt_path = parse_path_args(src_file), parse_path_args(tgt_path)
+    if spk_file is not None:
+        spk_file = parse_path_args(spk_file)
     os.makedirs(tgt_path, exist_ok=True)
 
     # skip the dowmsampling process if there has already been an idx2wav
@@ -68,14 +77,14 @@ def main(src_file: str, tgt_path: str, sample_rate: int, ncpu: int):
     if not os.path.exists(idx2tgt_wav_path):
         # reshape the source waveform paths into individual chunks by the given chunk_size
         idx2src_wav = load_idx2data_file(src_file)
-        idx2src_wav = [[idx, src_wav] for idx, src_wav in idx2src_wav.items()]
+        idx2spk = load_idx2data_file(spk_file) if spk_file is not None else None
+        idx2src_wav = [[idx, idx2src_wav[idx], idx2spk[idx] if idx2spk is not None else None]
+                       for idx in idx2src_wav.keys()]
         func_args = [idx2src_wav[i::ncpu] for i in range(ncpu)]
 
         # saving the downsampled audio files to the disk
         with Pool(ncpu) as executor:
-            os.makedirs(os.path.join(tgt_path, 'wav'), exist_ok=True)
-            waveform_downsample_func = partial(waveform_downsample,
-                                               tgt_path=os.path.join(tgt_path, 'wav'), sample_rate=sample_rate)
+            waveform_downsample_func = partial(waveform_downsample, tgt_path=tgt_path, sample_rate=sample_rate)
             idx2tgt_wav_list_nproc = executor.map(waveform_downsample_func, func_args)
 
         idx2tgt_wav = []

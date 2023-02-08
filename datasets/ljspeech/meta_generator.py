@@ -11,7 +11,7 @@ import os
 import pandas as pd
 
 from datasets.meta_generator import SpeechTextMetaGenerator
-from speechain.utilbox.dump_util import tts_text_process
+from speechain.utilbox.dump_util import en_text_process
 
 
 class LJSpeechMetaGenerator(SpeechTextMetaGenerator):
@@ -83,11 +83,11 @@ class LJSpeechMetaGenerator(SpeechTextMetaGenerator):
             # record the wav file to different subsets by their section number
             sec_num = int(idx.split('-')[0].replace('LJ', ''))
             if sec_num in valid_section:
-                meta_dict['valid'][f'idx2{txt_format}_text'][idx] = tts_text_process(text, txt_format=txt_format)
+                meta_dict['valid'][f'idx2{txt_format}_text'][idx] = en_text_process(text, txt_format=txt_format)
             elif sec_num in test_section:
-                meta_dict['test'][f'idx2{txt_format}_text'][idx] = tts_text_process(text, txt_format=txt_format)
+                meta_dict['test'][f'idx2{txt_format}_text'][idx] = en_text_process(text, txt_format=txt_format)
             else:
-                meta_dict['train'][f'idx2{txt_format}_text'][idx] = tts_text_process(text, txt_format=txt_format)
+                meta_dict['train'][f'idx2{txt_format}_text'][idx] = en_text_process(text, txt_format=txt_format)
 
         # --- 2. Speech and Speaker Data Recording --- #
         wav_path = os.path.join(src_path, "wavs")

@@ -68,6 +68,9 @@ class TTSEncoder(Module):
         encoder['conf'] = dict() if 'conf' not in encoder.keys() else encoder['conf']
         self.encoder = encoder_class(input_size=_prev_output_size, **encoder['conf'])
 
+        # register the output size for assembly
+        self.output_size = self.encoder.output_size
+
     def forward(self, text: torch.Tensor, text_len: torch.Tensor):
         """
 
@@ -85,11 +88,6 @@ class TTSEncoder(Module):
         if hasattr(self, 'prenet'):
             text, text_len = self.prenet(text, text_len)
 
-        # mask generation for the embedded textures
-        text_mask = make_mask_from_len(text_len)
-        if text.is_cuda:
-            text_mask = text_mask.cuda(text.device)
-
         # TTS Encoding
-        text, text_mask, attmat, hidden = self.encoder(text, text_mask)
+        text, text_mask, attmat, hidden = self.encoder(text, make_mask_from_len(text_len))
         return text, text_mask, attmat, hidden

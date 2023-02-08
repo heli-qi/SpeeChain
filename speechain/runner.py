@@ -82,7 +82,7 @@ class Runner(object):
             "--config",
             type=str,
             # default=None,
-            default="recipes/lm/librispeech/lm_text/exp_cfg/bpe1k_lm-large_transformer-v2_accum1_80gb.yaml",
+            default="recipes/tts/ljspeech/exp_cfg/22.05khz_mfa_fastspeech2-v3_accum1_20gb.yaml",
             help="The path of the all-in-one experiment configuration file. You can write all the arguments in this "
                  "all-in-one file instead of giving them to `runner.py` by command lines."
         )
@@ -439,13 +439,6 @@ class Runner(object):
                  "strings of their names in a List. (default: None)"
         )
         group.add_argument(
-            '--test_model_mapping',
-            type=str2dict,
-            default=None,
-            help="The mapping between the model to be tested and the model constructed by 'train_cfg'. "
-                 "This argument is used to deal with the name mismatch between the model parameters. (default: None)"
-        )
-        group.add_argument(
             '--bad_cases_selection',
             type=str2list,
             default=None,
@@ -596,14 +589,14 @@ class Runner(object):
         assert "model_type" in model_cfg.keys(), "Please specify the model_type!"
         assert "model_conf" in model_cfg.keys(), "Please specify the model_conf!"
         assert "module_conf" in model_cfg.keys(), "Please specify the module_conf!"
-        assert "criterion_conf" in model_cfg.keys(), "Please specify the criterion_conf!"
+        if 'criterion_conf' not in model_cfg.keys():
+            model_cfg['criterion_conf'] = None
 
         model_class = import_class('speechain.model.' + model_cfg['model_type'])
         return model_class(model_conf=model_cfg['model_conf'],
                            module_conf=model_cfg['module_conf'],
                            criterion_conf=model_cfg['criterion_conf'],
-                           device=device,
-                           args=args).cuda(device=device)
+                           device=device, args=args).cuda(device=device)
 
     @classmethod
     def build_optim_sches(cls,
@@ -1473,23 +1466,7 @@ class Runner(object):
                     raise RuntimeError(f"{os.path.join(_models_path, '%s.pth' % model_name)} is not found!")
 
                 # load the target model parameters
-                _test_model = torch.load(model_path, map_location=model.device)
-                if args.test_model_mapping is None:
-                    model.load_state_dict(_test_model)
-                else:
-                    assert isinstance(args.test_model_mapping, dict) and len(args.test_model_mapping) >= 1, \
-                        f"test_model_mapping must be given as a dict and cannot be empty! "
-
-                    _src_modules = OrderedDict()
-                    for src, tgt in args.test_model_mapping.items():
-                        # . at the tails is for making the name unique
-                        src, tgt = src + '.', tgt + '.'
-                        for name, para in _test_model.items():
-                            # change the parameter name if needed
-                            if name.startswith(src):
-                                name = name.replace(src, tgt)
-                            _src_modules[name] = para
-                    model.load_state_dict(_src_modules)
+                model.load_state_dict(torch.load(model_path, map_location=model.device))
 
                 # start the testing process
                 cls.test(args=args, test_model=model_name, iterators=iterators, model=model)
@@ -1670,7 +1647,7 @@ class Runner(object):
                 args.infer_cfg = [parse_path_args(cfg) if isinstance(cfg, str) else cfg for cfg in args.infer_cfg]
             elif not isinstance(args.infer_cfg, Dict):
                 raise TypeError("infer_cfg should be either a string, a List, or a Dict, "
-                                f"b16khz_ecapa_g2p_transformer_v5_accum1_20gbut got type(args.infer_cfg)={type(args.infer_cfg)}.")
+                                f"but got type(args.infer_cfg)={type(args.infer_cfg)}.")
 
         # --- 3. Start the Experimental Pipeline --- #
         assert (args.train ^ args.test) is True, \

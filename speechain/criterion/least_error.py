@@ -59,17 +59,26 @@ class LeastError(Criterion):
         """
 
         Args:
-            pred: (batch, feat_maxlen, feat_dim * reduction_factor)
-                The model predictions for the acoustic feature
-            tgt: (batch, feat_maxlen, feat_dim * reduction_factor)
-                The target acoustic feature labels.
+            pred: (batch, feat_maxlen, feat_dim) or (batch, feat_maxlen)
+                The model predictions for the feature
+            tgt: (batch, feat_maxlen, feat_dim) or (batch, feat_maxlen)
+                The target feature labels.
             tgt_len: (batch,)
                 The target label lengths
 
-        Returns:
-            The cross entropy between logits and text
-
         """
+        # prediction reshape, make sure it is a 3d tensor
+        if len(pred.shape) == 2:
+            pred = pred.unsqueeze(-1)
+        elif len(pred.shape) != 3:
+            raise RuntimeError
+
+        # target reshape, make sure it is a 3d tensor
+        if len(tgt.shape) == 2:
+            tgt = tgt.unsqueeze(-1)
+        elif len(tgt.shape) != 3:
+            raise RuntimeError
+
         batch_size, feat_maxlen, feat_dim = pred.size(0), pred.size(1), pred.size(2)
         # updating range restriction, ndim is the dimension selected to be updated
         if self.update_range is not None:
@@ -80,9 +89,7 @@ class LeastError(Criterion):
             tgt = tgt[:, :, :ndim]
 
         # mask production for the target labels
-        tgt_mask = make_mask_from_len(tgt_len).squeeze()
-        if tgt.is_cuda:
-            tgt_mask = tgt_mask.cuda(tgt.device)
+        tgt_mask = make_mask_from_len(tgt_len, return_3d=False)
 
         # MSE & MAE loss calculation
         # (batch_size, feat_maxlen, ndim)

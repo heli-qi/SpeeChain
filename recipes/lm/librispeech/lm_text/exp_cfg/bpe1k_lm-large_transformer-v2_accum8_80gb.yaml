@@ -22,12 +22,12 @@ vocab_set: train-clean-100
 valid_set: dev
 
 # tokenizer-related
-txt_format: librispeech
+txt_format: asr
 token_type: sentencepiece
 token_num: bpe1k
 
 # batch-related values
-batch_len: 5e4
+batch_len: 4.5e4
 
 # model-related
 label_smoothing: 0.0

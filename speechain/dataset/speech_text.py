@@ -9,10 +9,14 @@ import numpy as np
 import torch
 import random
 
+from g2p_en import G2p
 from typing import Dict, Any, List
+from functools import partial
+from speechain.tokenizer.g2p import abnormal_phns
 
 from speechain.dataset.abs import Dataset
 from speechain.utilbox.data_loading_util import read_data_by_path, load_idx2data_file
+from speechain.utilbox.feat_util import convert_wav_to_pitch
 
 
 class SpeechTextDataset(Dataset):
@@ -22,6 +26,30 @@ class SpeechTextDataset(Dataset):
     (speaker ID + speaker embedding feature).
 
     """
+    def dataset_init_fn(self,
+                        use_g2p: bool = False,
+                        pitch_conf: Dict = None):
+        """
+
+        Args:
+            # phoneme-related
+            use_g2p: bool = False
+                Whether to process the raw string by G2P. We don't recommend you to turn it on because on-the-fly
+                transformer from string to phoneme list consumes a lot of CPU resources.
+            # pitch-related
+            pitch_conf: Dict = None
+                The configuration given to convert_wav_to_pitch() for pitch extraction.
+                If not given, pitch extraction will not be done on-the-fly.
+
+        """
+        # phoneme extraction
+        if use_g2p:
+            self.g2p = G2p()
+
+        # pitch extraction
+        if pitch_conf is not None:
+            self.pitch_extract_fn = partial(convert_wav_to_pitch, return_tensor=True, **pitch_conf)
+
     @staticmethod
     def data_len_register_fn(main_data: Dict[str, Dict[str, str]]) -> Dict[str, int or float] or None:
         """
@@ -48,9 +76,10 @@ class SpeechTextDataset(Dataset):
             batch_dict: Dict[str, List]
             The keys of the input `batch_dict` dictionary should be one of the following:
                 1. `feat`: a List of 2d `torch.Tensor` with different lengths.
-                2. `text`: a List of text strings.
-                3. `spk_ids`: a List of speaker ID strings.
-                4. `spk_feat`: a List of 2d `torch.Tensor` with equal lengths.
+                2. `pitch`: a List of 1d `torch.Tensor` with different lengths.
+                3. `text`: a List of text strings.
+                4. `spk_ids`: a List of speaker ID strings.
+                5. `spk_feat`: a List of 2d `torch.Tensor` with equal lengths.
 
         Returns: Dict[str, torch.Tensor or List]
             `feat` and `spk_feat` are in the form of three-dimensional `torch.Tensor`;
@@ -64,11 +93,12 @@ class SpeechTextDataset(Dataset):
             # --- 1. Pad Speech Data and Stack them together --- #
             if key == 'feat':
                 # para init
-                batch_size, feat_dim = len(batch_dict[key]), batch_dict[key][0].shape[-1]
+                feat_len = torch.LongTensor([ele.shape[0] for ele in batch_dict[key]])
+                batch_size, feat_maxlen, feat_dim = \
+                    len(batch_dict[key]), feat_len.max().item(), batch_dict[key][0].shape[-1]
 
                 # acoustic feature padding, feat.dtype needs to match the type of model parameters (torch.float32)
-                feat_len = torch.LongTensor([ele.shape[0] for ele in batch_dict[key]])
-                feat = torch.zeros((batch_size, feat_len.max().item(), feat_dim), dtype=torch.float32)
+                feat = torch.zeros((batch_size, feat_maxlen, feat_dim), dtype=torch.float32)
 
                 # overwrite the padding matrix with each feat vector
                 for i in range(batch_size):
@@ -85,16 +115,61 @@ class SpeechTextDataset(Dataset):
                 batch_dict[key] = feat
                 batch_dict['feat_len'] = feat_len
 
-            # --- 2. Stack Speaker Embedding Feature together --- #
+            # --- 2. Pad Pitch Data and Stack them together --- #
+            if key == 'pitch':
+                # para init
+                pitch_len = torch.LongTensor([ele.shape[0] for ele in batch_dict[key]])
+                batch_size, pitch_maxlen = len(batch_dict[key]), pitch_len.max().item()
+
+                # pitch padding, pitch.dtype needs to match the type of model parameters (torch.float32)
+                pitch = torch.zeros((batch_size, pitch_maxlen), dtype=torch.float32)
+
+                # overwrite the padding matrix with each pitch vector
+                for i in range(batch_size):
+                    # process feat data based on data type
+                    if isinstance(batch_dict[key][i], np.ndarray):
+                        pitch[i][:pitch_len[i]] = torch.tensor(batch_dict[key][i])
+                    elif isinstance(batch_dict[key][i], torch.Tensor):
+                        pitch[i][:pitch_len[i]] = batch_dict[key][i]
+                    # only support np.ndarray and torch.Tensor now
+                    else:
+                        raise TypeError
+
+                batch_dict[key] = pitch
+                batch_dict['pitch_len'] = pitch_len
+
+            # --- 3. Separate Phoneme Duration Data into Text Data and Duration Data --- #
+            elif key == 'duration':
+                # para init
+                batch_size, duration_len = len(batch_dict[key]), torch.LongTensor([len(ele) for ele in batch_dict[key]])
+
+                # duration padding, feat.dtype needs to match the type of model parameters (torch.float32)
+                duration = torch.zeros((batch_size, duration_len.max().item()), dtype=torch.float32)
+
+                # overwrite the padding matrix with each duration vector
+                for i in range(batch_size):
+                    # process duration data based on data type
+                    if isinstance(batch_dict[key][i], (np.ndarray, List)):
+                        duration[i][:duration_len[i]] = torch.tensor(batch_dict[key][i])
+                    elif isinstance(batch_dict[key][i], torch.Tensor):
+                        duration[i][:duration_len[i]] = batch_dict[key][i]
+                    else:
+                        raise TypeError(f"{self.__class__.name} only supports np.ndarray and torch.Tensor now!")
+
+                # attach 'duration' and 'duration_len' for model forward
+                batch_dict[key] = duration
+                batch_dict['duration_len'] = duration_len
+
+            # --- 4. Stack Speaker Embedding Feature together --- #
             elif key == 'spk_feat':
                 batch_dict[key] = torch.stack(batch_dict[key])
 
-            # --- 3. Raw String Part --- #
-            # for the string data like 'text' and 'spk_ids', they will be processed in the model later
+            # --- 5. For the pure-string data like 'text' and 'spk_ids', their tokenization will be done later in --- #
+            # --- Model.batch_preprocess_fn() --- #
 
         return batch_dict
 
-    def extract_main_data_fn(self, main_data: Dict[str, str]) -> Dict[str, Any]:
+    def extract_main_data_fn(self, main_data: Dict) -> Dict[str, Any]:
         """
         The function that loads speech-text data from the disk. If the speech is in the form of raw waveforms,
         the last dimension should be expanded to 1 of raw speech for compatibility with acoustic feature.
@@ -105,9 +180,10 @@ class SpeechTextDataset(Dataset):
                     1. 'feat': speech features, can be either raw waveforms or acoustic features like log-mel or MFCC.
                     2. 'text': transcript text, in the form of raw string. The tokenization will be done in the ASR and
                     TTS models.
-                    3. 'spk_ids': speaker ID, in the form of raw string. The speaker discretization will be done in the
+                    3. 'duration': phoneme durations. used for training fastspeech2 model.
+                    4. 'spk_ids': speaker ID, in the form of raw string. The speaker discretization will be done in the
                     ASR and TTS models.
-                    4. 'spk_feat': speaker embedding features.
+                    5. 'spk_feat': speaker embedding features.
                 `spk_ids` and `spk_feat` are designed for multi-speaker TTS model and are not mandatory to be included
                 in `main_data; 'feat' and 'text' are mandatory to be included for ASR and TTS training.
                 However, during model testing, we can choose to only include one of 'feat' and 'text' here to reduce the
@@ -121,25 +197,57 @@ class SpeechTextDataset(Dataset):
         assert 'feat' in main_data.keys() or 'text' in main_data.keys(), \
             "Please at least include one of 'feat' and 'text' in a single batch."
 
-        for key in main_data.keys():
+        main_data_keys = list(main_data.keys())
+        for key in main_data_keys:
             # --- 1. Speech Data Extraction --- #
             if key == 'feat':
                 # read the selected data speech feature as a tensor by its path
                 main_data[key] = read_data_by_path(main_data[key], return_tensor=True)
+
+                # extract the pitch from the speech on-the-fly
+                if hasattr(self, 'pitch_extract_fn'):
+                    main_data['pitch'] = self.pitch_extract_fn(main_data[key])
 
             # --- 2. Transcript Text Extraction --- #
             elif key == 'text':
                 # text length is not returned because the text here is just a raw string
                 assert isinstance(main_data[key], str),\
                     f"The 'text' data should be given as a string, but got {main_data[key]}"
+                # for the text data in the format of a list
+                if main_data[key].startswith('[') and main_data[key].endswith(']'):
+                    main_data[key] = main_data[key][1:-1]
+                    # split the text into individual tokens by a comma followed a blank
+                    if ', ' in main_data[key]:
+                        main_data[key] = main_data[key].split(', ')
+                        # remove the single quote marks surrounding each token if needed
+                        main_data[key] = [token[1:-1] if token.startswith('\'') and token.endswith('\'') else token
+                                          for token in main_data[key]]
+                # process the raw string by G2P if specified
+                elif hasattr(self, 'g2p'):
+                    phn_list = self.g2p(main_data[key])
+                    main_data[key] = [phn if phn != ' ' else '<space>' for phn in phn_list if phn not in abnormal_phns]
 
-            # --- 3. Speaker ID Extraction --- #
+            # --- 3. Phoneme Duration Extraction --- #
+            elif key == 'duration':
+                # text length is not returned because the text here is just a raw string
+                assert isinstance(main_data[key], str), \
+                    f"The 'duration' data should be given as a string, but got {main_data[key]}"
+                # for the text data in the format of a list
+                if main_data[key].startswith('[') and main_data[key].endswith(']'):
+                    main_data[key] = main_data[key][1:-1]
+                    # split the text into individual tokens by a comma followed a blank
+                    main_data[key] = main_data[key].split(', ')
+                    # remove the single quote marks surrounding each token if needed
+                    main_data[key] = [float(duration[1:-1]) if duration.startswith('\'') and duration.endswith('\'')
+                                      else float(duration) for duration in main_data[key]]
+
+            # --- 4. Speaker ID Extraction --- #
             elif key == 'spk_ids':
                 # the speaker ID here is just a raw string
                 assert isinstance(main_data['spk_ids'], str),\
                     f"The 'spk_ids' data should be given as a string, but got {main_data[key]}"
 
-            # --- 4. Speaker Embedding Feature --- #
+            # --- 5. Speaker Embedding Feature --- #
             elif key == 'spk_feat':
                 # read the selected data speech feature as a tensor by its path
                 main_data[key] = read_data_by_path(main_data[key], return_tensor=True)
@@ -149,9 +257,9 @@ class SpeechTextDataset(Dataset):
                                    f"For {self.__class__.__name__}, the key in 'main_data' must be one of "
                                    "'feat' (for paths of raw waveforms or acoustic features), "
                                    "'text' (for transcript text data), "
+                                   "'duration' (for phoneme duration data), "
                                    "'spk_ids' (for speaker IDs), "
                                    "'spk_feat' (for speaker embedding features).")
-
         return main_data
 
 
@@ -163,10 +271,11 @@ class RandomSpkFeatDataset(SpeechTextDataset):
     `collate_main_data_fn` of the parent class will be reused to collate a batch of data instances.
 
     """
-    def dataset_init_fn(self, spk_feat: List[str] or str,
+    def dataset_init_fn(self, spk_feat: List[str] or str = None,
                         min_ref_len: int = None, ref_len: List[str] or str = None,
                         mixup_number: int = 1, same_gender: bool = True,
-                        tgt_gender: str = None, gender_info: List[str] or str = None):
+                        tgt_gender: str = None, gender_info: List[str] or str = None,
+                        **super_conf):
         """
 
         Args:
@@ -185,8 +294,13 @@ class RandomSpkFeatDataset(SpeechTextDataset):
             gender_info: List[str] or str = None
                 The metadata file used for gender filtering. If not given, the file named 'idx2gen' in the directory of
                 spk_feat will be used.
+            super_conf: Dict
+                The argument used for initialization of the super class
 
         """
+        super(RandomSpkFeatDataset, self).dataset_init_fn(**super_conf)
+
+        assert spk_feat is not None, f"spk_feat cannot be None. Please specify it in {self.__class__.__name__}!"
         assert isinstance(mixup_number, int) and mixup_number >= 1, \
             f"mixup_number must be a positive integer, but got {mixup_number}!"
         self.mixup_number = mixup_number

@@ -12,7 +12,7 @@ from typing import Dict, List
 from tqdm import tqdm
 
 from datasets.meta_generator import SpeechTextMetaGenerator
-from speechain.utilbox.dump_util import asr_text_process
+from speechain.utilbox.dump_util import en_text_process
 
 
 class LibriSpeechMetaGenerator(SpeechTextMetaGenerator):
@@ -25,6 +25,7 @@ class LibriSpeechMetaGenerator(SpeechTextMetaGenerator):
     def add_parse(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         group = parser.add_argument_group("Specific Arguments for the LibriSpeech Dataset.")
         group.add_argument('--subsets', type=str,
+                           default='train-clean-100,train-clean-360,train-other-500,dev-clean,dev-other,test-clean,test-other',
                            help="A comma-separated string that indicates the subsets you want to extract.")
         group.add_argument('--separator', type=str, default=',',
                            help="The separator used to separate the input 'subsets' from a string to a list of string. "
@@ -74,7 +75,7 @@ class LibriSpeechMetaGenerator(SpeechTextMetaGenerator):
                     # process each sentence and store them into idx2data
                     for i in range(len(chp_text)):
                         idx2data[f'idx2{txt_format}_text'][chp_text[i][0]] = \
-                            asr_text_process(chp_text[i][1], txt_format=txt_format)
+                            en_text_process(chp_text[i][1], txt_format=txt_format)
 
                 # speech & speaker data
                 else:
@@ -163,7 +164,7 @@ class LibriSpeechMetaGenerator(SpeechTextMetaGenerator):
             # make a specific row for each sentence and attach the sentence index at the beginning
             proc_lm_text, index = [], 0
             for _ori_text in tqdm(ori_lm_text):
-                _proc_text = asr_text_process(_ori_text, txt_format)
+                _proc_text = en_text_process(_ori_text, txt_format)
                 if _proc_text != '':
                     proc_lm_text.append(f'{index} {_proc_text}\n')
                     index += 1

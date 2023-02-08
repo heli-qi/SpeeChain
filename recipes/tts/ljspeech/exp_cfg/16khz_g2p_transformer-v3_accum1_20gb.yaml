@@ -26,7 +26,7 @@ wav_format: wav16000
 sample_rate: 16000
 
 # tokenizer-related
-txt_format: normal
+txt_format: tts
 token_type: g2p
 token_num: full_tokens
 

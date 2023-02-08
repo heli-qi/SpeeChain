@@ -4,11 +4,14 @@
     Date: 2022.12
 """
 import math
-
 import librosa
 import numpy as np
+import pyworld
+import torch
 
 from scipy import signal
+from scipy.interpolate import interp1d
+from speechain.utilbox.tensor_util import to_native
 
 
 def preemphasize_wav(wav: np.ndarray, coeff: float) -> np.ndarray:
@@ -203,3 +206,69 @@ def convert_wav_to_mfcc(wav: np.ndarray,
 
     # --- 3. MFCC -> MFCC + Deltas --- #
     return feat_derivation(mfcc, delta_order, delta_N).transpose(1, 0)
+
+
+def convert_wav_to_pitch(wav: np.ndarray or torch.Tensor,
+                         hop_length: int = 256,
+                         sr: int = 22050,
+                         f0min: int = 80,
+                         f0max: int = 400,
+                         continuous_f0: bool = True,
+                         return_tensor: bool = False) -> np.ndarray or torch.Tensor:
+    """
+
+    The function that converts a waveform to a pitch contour by dio & stonemask of pyworld.
+
+    Args:
+        wav: (n_sample, 1) or (n_sample,)
+            The waveform to be processed.
+        hop_length: int = 256
+                The value of the argument 'hop_length' given to pyworld.dio()
+        sr: int = 22050
+            The value of the argument 'fs' given to pyworld.dio()
+        f0min: int = 80
+            The value of the argument 'f0min' given to pyworld.dio()
+        f0max: int = 400
+            The value of the argument 'f0max' given to pyworld.dio()
+        continuous_f0: bool = True
+            Whether to make the calculated pitch values continuous over time.
+        return_tensor: bool
+            Whether to return the pitch in torch.Tensor. If False, np.ndarray will be returned.
+
+    """
+    # datatype checking
+    if isinstance(wav, torch.Tensor):
+        wav = to_native(wav, tgt='numpy').astype(np.float64)
+    elif not isinstance(wav, np.ndarray):
+        raise TypeError(f"wav should be either a torch.Tensor or a np.ndarray, but got type(wav)={type(wav)}!")
+
+    # dimension checking
+    if wav.shape[-1] == 1:
+        wav = wav.squeeze(-1)
+    if len(wav.shape) > 2:
+        raise RuntimeError("convert_wav_to_pitch doesn't support batch_level pitch extraction!")
+
+    f0, timeaxis = pyworld.dio(
+        wav, sr, f0_floor=f0min, f0_ceil=f0max, frame_period=1000 * hop_length / sr
+    )
+    f0 = pyworld.stonemask(wav, f0, timeaxis, sr)
+
+    # borrowed from https://github.com/espnet/espnet/blob/master/espnet2/tts/feats_extract/dio.py#L125
+    if continuous_f0:
+        # padding start and end of f0 sequence
+        start_f0, end_f0 = f0[f0 != 0][0], f0[f0 != 0][-1]
+        start_idx, end_idx = np.where(f0 == start_f0)[0][0], np.where(f0 == end_f0)[0][-1]
+        f0[:start_idx], f0[end_idx:] = start_f0, end_f0
+
+        # get non-zero frame index
+        nonzero_idxs = np.where(f0 != 0)[0]
+
+        # perform linear interpolation
+        interp_fn = interp1d(nonzero_idxs, f0[nonzero_idxs], bounds_error=False, fill_value=(start_f0, end_f0))
+        f0 = interp_fn(np.arange(0, f0.shape[0]))
+
+    if return_tensor:
+        f0 = torch.tensor(f0, dtype=torch.float32)
+    else:
+        f0 = f0.astype(np.float32)
+    return f0

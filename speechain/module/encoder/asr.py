@@ -33,8 +33,8 @@ class ASREncoder(Module):
     )
 
     def module_init(self,
-                    frontend: Dict,
                     encoder: Dict,
+                    frontend: Dict = None,
                     normalize: Dict or bool = None,
                     specaug: Dict or bool = None,
                     prenet: Dict = None):
@@ -52,10 +52,11 @@ class ASREncoder(Module):
         _prev_output_size = None
 
         # acoustic feature extraction frontend of the E2E ASR encoder
-        frontend_class = self.frontend_class_dict[frontend['type']]
-        frontend['conf'] = dict() if 'conf' not in frontend.keys() else frontend['conf']
-        self.frontend = frontend_class(**frontend['conf'])
-        _prev_output_size = self.frontend.output_size
+        if frontend is not None:
+            frontend_class = self.frontend_class_dict[frontend['type']]
+            frontend['conf'] = dict() if 'conf' not in frontend.keys() else frontend['conf']
+            self.frontend = frontend_class(**frontend['conf'])
+            _prev_output_size = self.frontend.output_size
 
         # feature normalization layer
         if normalize is not None and normalize is not False:

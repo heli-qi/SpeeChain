@@ -28,6 +28,8 @@ class TransformerEncoderLayer(Module):
                     num_heads: int = 8,
                     att_dropout: float = 0.1,
                     fdfwd_dim: int = 2048,
+                    fdfwd_type: str = 'linear',
+                    fdfwd_kernel: int = 9,
                     fdfwd_dropout: float = 0.1,
                     res_dropout: float = 0.1,
                     layernorm_first: bool = True):
@@ -43,6 +45,10 @@ class TransformerEncoderLayer(Module):
             fdfwd_dim: int
                 The value of the out_features of the first linear feedforward layer and the in_features of the second
                 linear feedforward layer in each Transformer layer.
+            fdfwd_type: str
+                The type of the feed-forward layer. 'linear' means the Linear layer while 'conv' means the Conv1d layer.
+            fdfwd_kernel: int
+                The kernal size of the Conv1d feed-forward layer. This argument is not effective if fdfwd_type == 'linear'.
             fdfwd_dropout: float
                 The dropout rate for the Dropout layer after the first linear feedforward layer in each Transformer layer
             res_dropout: float
@@ -59,7 +65,8 @@ class TransformerEncoderLayer(Module):
         self.multihead_att = MultiHeadedAttention(d_model=d_model, num_heads=num_heads, dropout=att_dropout)
 
         # initialize feedforward layer
-        self.feed_forward = PositionwiseFeedForward(d_model=d_model, fdfwd_dim=fdfwd_dim, dropout=fdfwd_dropout)
+        self.feed_forward = PositionwiseFeedForward(d_model=d_model, fdfwd_dim=fdfwd_dim, fdfwd_type=fdfwd_type,
+                                                    fdfwd_kernel=fdfwd_kernel, dropout=fdfwd_dropout)
 
         # initialize residual dropout layer
         self.dropout = nn.Dropout(res_dropout)
@@ -144,6 +151,8 @@ class TransformerEncoder(Module):
                     num_layers: int = 8,
                     att_dropout: float = 0.1,
                     fdfwd_dim: int = 2048,
+                    fdfwd_type: str = 'linear',
+                    fdfwd_kernel: int = 9,
                     fdfwd_dropout: float = 0.1,
                     res_dropout: float = 0.1,
                     layernorm_first: bool = True,
@@ -186,6 +195,10 @@ class TransformerEncoder(Module):
             fdfwd_dim: int
                 The value of the out_features of the first linear feedforward layer and the in_features of the second
                 linear feedforward layer in each Transformer layer.
+            fdfwd_type: str
+                The type of the feed-forward layer. 'linear' means the Linear layer while 'conv' means the Conv1d layer.
+            fdfwd_kernel: int
+                The kernal size of the Conv1d feed-forward layer. This argument is not effective if fdfwd_type == 'linear'.
             fdfwd_dropout: float
                 The dropout rate for the Dropout layer after the first linear feedforward layer in each Transformer layer
             res_dropout: float
@@ -259,6 +272,8 @@ class TransformerEncoder(Module):
                                     num_heads=num_heads,
                                     att_dropout=att_dropout,
                                     fdfwd_dim=fdfwd_dim,
+                                    fdfwd_type=fdfwd_type,
+                                    fdfwd_kernel=fdfwd_kernel,
                                     fdfwd_dropout=fdfwd_dropout,
                                     res_dropout=res_dropout,
                                     layernorm_first=layernorm_first)

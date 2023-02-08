@@ -32,6 +32,7 @@ class Speech2MelSpec(Module):
                     normalized: bool = False,
                     onesided: bool = True,
                     mag_spec: bool = False,
+                    return_energy: bool = False,
                     fmin: float = 0.0,
                     fmax: float = None,
                     clamp: float = 1e-10,
@@ -72,8 +73,10 @@ class Speech2MelSpec(Module):
                 controls whether to return half of results to avoid redundancy for real inputs.
             mag_spec: bool
                 controls whether to calculate the linear magnitude spectrogram during STFT.
-                True feeds the linear magnitude spectrogram into mel-fbank.
-                False feeds the linear energy spectrogram into mel-fbank.
+                True feeds the linear magnitude (energy) spectrogram into mel-fbank.
+                False feeds the linear power spectrogram into mel-fbank.
+            return_energy: bool
+                Whether to calculate the frame-wise energy for the linear magnitude (energy) spectrogram
             fmin: float
                 The minimal frequency for the mel-fbank
             fmax: float
@@ -108,6 +111,7 @@ class Speech2MelSpec(Module):
         self.output_size = n_mels if delta_order is None else n_mels * (delta_order + 1)
 
         # Speech -> Linear Spectrogram (linear spectrograms are not logged for getting the mel spectrograms)
+        self.return_energy = return_energy
         self.speech2linear = Speech2LinearSpec(n_fft=n_fft,
                                                sr=sr,
                                                hop_length=hop_length,
@@ -119,6 +123,7 @@ class Speech2MelSpec(Module):
                                                normalized=normalized,
                                                onesided=onesided,
                                                mag_spec=mag_spec,
+                                               return_energy=return_energy,
                                                logging=False)
         # Linear Spectrogram -> (Log-)Mel Spectrogram
         self.linear2mel = LinearSpec2MelSpec(sr=sr,
@@ -153,7 +158,11 @@ class Speech2MelSpec(Module):
         """
 
         # Speech -> Linear Spectrogram
-        feat, feat_len = self.speech2linear(speech, speech_len)
+        if self.return_energy:
+            feat, feat_len, energy, energy_len = self.speech2linear(speech, speech_len)
+        else:
+            feat, feat_len = self.speech2linear(speech, speech_len)
+            energy, energy_len = None, None
 
         # Linear Spectrogram -> Log-Mel Spectrogram
         feat, feat_len = self.linear2mel(feat, feat_len)
@@ -162,7 +171,10 @@ class Speech2MelSpec(Module):
         if self.delta_order is not None:
             feat, feat_len = self.delta(feat, feat_len)
 
-        return feat, feat_len
+        if self.return_energy:
+            return feat, feat_len, energy, energy_len
+        else:
+            return feat, feat_len
 
     def recover(self, feat: torch.Tensor, feat_len: torch.Tensor):
         """

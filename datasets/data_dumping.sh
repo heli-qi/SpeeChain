@@ -170,8 +170,9 @@ while getopts ":h-:" optchar; do
         help)
           print_help_message
           ;;
-        ?)
-          echo "Unknown variable $OPTARG"
+        *)
+          echo "Unknown variable --$OPTARG"
+          exit 1
           ;;
       esac
       ;;
@@ -180,6 +181,7 @@ while getopts ":h-:" optchar; do
       ;;
     *)
       echo "Please refer to an argument by '--'."
+      exit 1
       ;;
   esac
 done
@@ -241,6 +243,7 @@ if [ -n "${sample_rate}" ] && [ ${start_step} -le 3 ] && [ ${stop_step} -ge 3 ];
     ${SPEECHAIN_PYTHON} "${pyscript_root}"/wave_downsampler.py \
       --sample_rate ${sample_rate} \
       --src_file "${tgt_path}"/${dataset_name}/data/wav/${set}/idx2wav \
+      --spk_file "${tgt_path}"/${dataset_name}/data/wav/${set}/idx2spk \
       --tgt_path "${tgt_path}"/${dataset_name}/data/wav${sample_rate}/${set} \
       --ncpu ${ncpu}
   done

@@ -248,7 +248,9 @@ class Dataset(torch.utils.data.Dataset, ABC):
                         (meta_sorted_data[:int((meta_sorted_data.shape[0] - selection_num) / 2)],
                          meta_sorted_data[-int((meta_sorted_data.shape[0] - selection_num) / 2):]), axis=0)
                 else:
-                    raise RuntimeError
+                    raise RuntimeError(f"If selection_num is given in a integer or float number ({selection_num}), "
+                                       f"selection_mode must be one of ['min', 'max', 'middle']. "
+                                       f"But got {selection_mode}.")
 
             # select the data instances by a given threshold
             elif isinstance(selection_num, str):
@@ -261,7 +263,8 @@ class Dataset(torch.utils.data.Dataset, ABC):
                     removed_sorted_data = meta_sorted_data[meta_sorted_value < selection_num]
                 # 'middle' is not supported for the threshold selection
                 else:
-                    raise RuntimeError
+                    raise RuntimeError(f"If selection_num is given in a string ({selection_num}), selection_mode must "
+                                       f"be one of ['min', 'max']. But got {selection_mode}.")
 
             # other strings mean the target groups of data instances
             elif isinstance(selection_num, List):
@@ -321,7 +324,7 @@ class Dataset(torch.utils.data.Dataset, ABC):
         outputs = self.extract_main_data_fn(outputs)
         return outputs
 
-    def extract_main_data_fn(self, main_data: Dict[str, str]) -> Dict[str, Any]:
+    def extract_main_data_fn(self, main_data: Dict) -> Dict[str, Any]:
         """
         This hook function extracts the selected data instance from the disk to the memory. If you want to implement
         your own data instance extraction, please override this hook function and give your logic here.
@@ -338,7 +341,7 @@ class Dataset(torch.utils.data.Dataset, ABC):
         """
         return main_data
 
-    def collate_fn(self, batch: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def collate_fn(self, batch: List[Dict]) -> Dict[str, Any]:
         """
         This hook function decides how to preprocess a list of extracted data instance dictionary before giving them to
         the model. This hook function is used as the value of the argument collate_fn for initializing Dataloader object

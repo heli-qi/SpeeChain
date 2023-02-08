@@ -19,8 +19,8 @@ class Conv1dEv(torch.nn.Module):
     """
 
     """
-    def __init__(self, in_channels: int, out_channels: int,
-                 kernel_size, stride, padding_mode: str, bias: bool = True):
+    def __init__(self, in_channels: int, out_channels: int, kernel_size: int,
+                 stride: int = 1, padding_mode: str = 'same', bias: bool = True):
         """
         A guide to convolution arithmetic for deep learning
         https://arxiv.org/pdf/1603.07285v1.pdf
@@ -77,7 +77,7 @@ class Conv1dPrenet(Module):
     """
         The Conv1d prenet. Usually used before the TTS encoder.
         This prenet is made up of two parts:
-            1. (mandatory) The Conv1d part contains one or more Conv2d blocks which are composed of the components below
+            1. (mandatory) The Conv1d part contains one or more Conv1d blocks which are composed of the components below
                 1. (mandatory) a Conv1d layer
                 2. (optional) a BatchNorm1d layer
                 3. (optional) an activation function
@@ -97,7 +97,6 @@ class Conv1dPrenet(Module):
                     conv_dims: int or List[int] = [512, 512, 512],
                     conv_kernel: int = 5,
                     conv_stride: int = 1,
-                    conv_padding_mode: str = 'same',
                     conv_batchnorm: bool = True,
                     conv_activation: str = 'ReLU',
                     conv_dropout: float or List[float] = None,
@@ -119,8 +118,6 @@ class Conv1dPrenet(Module):
                 The value of kernel_size of all Conv1d layers.
             conv_stride: int
                 The value of stride of all Conv1d layers.
-            conv_padding_mode: str
-                The padding mode of convolutional layers. Must be one of ['valid', 'full', 'same', 'causal'].
             conv_batchnorm: bool
                 Whether a BatchNorm1d layer is added right after a Conv1d layer
             conv_activation: str
@@ -175,7 +172,6 @@ class Conv1dPrenet(Module):
         self.conv_dims = conv_dims if isinstance(conv_dims, List) else [conv_dims]
         self.conv_kernel = conv_kernel
         self.conv_stride = conv_stride
-        self.conv_padding_mode = conv_padding_mode
         self.conv_dropout = conv_dropout
 
         # Conv1d blocks construction
@@ -189,7 +185,7 @@ class Conv1dPrenet(Module):
                          out_channels=self.conv_dims[i],
                          kernel_size=self.conv_kernel,
                          stride=self.conv_stride,
-                         padding_mode=self.conv_padding_mode,
+                         padding_mode='same',
                          bias=not conv_batchnorm)
             )
             # BatchNorm is better to be placed before activation
@@ -250,4 +246,5 @@ class Conv1dPrenet(Module):
             # (batch, feat_maxlen, conv_dim) -> (batch, feat_maxlen, lnr_dim)
             feat, feat_len = self.linear(feat, feat_len)
 
+        # return both feat & feat_len for the compatibility with other prenet
         return feat, feat_len

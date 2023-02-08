@@ -5,7 +5,7 @@
 """
 
 
-def tts_text_process(input_text: str, txt_format: str) -> str:
+def en_text_process(input_text: str, txt_format: str) -> str:
     """
     The function that processes the text strings for TTS datasets to the specified text format.
     Currently, available text formats:
@@ -32,7 +32,9 @@ def tts_text_process(input_text: str, txt_format: str) -> str:
         Processed sentence string by your specified text format.
 
     """
-    # pre-normalization shared by all the text-processing formats
+    # turn capital letters into their lower cases
+    input_text = input_text.lower()
+
     # normalize abnormal non-English symbols into English letters
     input_text = input_text.replace('è', 'e')
     input_text = input_text.replace('é', 'e')
@@ -44,103 +46,76 @@ def tts_text_process(input_text: str, txt_format: str) -> str:
     input_text = input_text.replace('ô', 'o')
     input_text = input_text.replace('æ', 'ae')
     input_text = input_text.replace('œ', 'oe')
+
     # convert all the quotes into half-angle single quotes
+    '’'
+    input_text = input_text.replace('’', '\'')
     input_text = input_text.replace('‘', '\'')
     input_text = input_text.replace('“', '\'')
     input_text = input_text.replace('”', '\'')
     input_text = input_text.replace('"', '\'')
-    # convert colons and semicolons into commas
+    input_text = input_text.replace(':\'', ',')
+    input_text = input_text.replace('\'\'', '\'')
+    _input_text_tmp = []
+    for idx, char in enumerate(input_text):
+        # save all the non-quotation characters
+        if char != '\'':
+            _input_text_tmp.append(char)
+        # remove the quotations at the beginning or end
+        elif idx == 0 or idx == len(input_text) - 1:
+            continue
+        # remove the quotations not surrounded by letters
+        elif not input_text[idx - 1].isalpha() or not input_text[idx + 1].isalpha():
+            if input_text[idx - 1] == ' ' or input_text[idx + 1] == ' ':
+                continue
+            else:
+                _input_text_tmp.append(' ')
+        # save the intra-word quotations
+        else:
+            _input_text_tmp.append(char)
+    input_text = ''.join(_input_text_tmp)
+
+    # convert standalone colons and semicolons into commas or periods
     input_text = input_text.replace(':', ',')
-    input_text = input_text.replace(';', ',')
+    input_text = input_text.replace(';', '.')
+
     # remove double-hyphens and em dashes
+    input_text = input_text.replace(' -- ', ' ')
     input_text = input_text.replace(' --', ',')
+    input_text = input_text.replace(' - ', ' ')
+    input_text = input_text.replace(' -', ',')
     input_text = input_text.replace('--', ' ')
     input_text = input_text.replace('—', '-')
-    # retain only parentheses
-    input_text = input_text.replace('{', '(')
-    input_text = input_text.replace('}', ')')
-    input_text = input_text.replace('[', '(')
-    input_text = input_text.replace(']', ')')
+    input_text = input_text.replace('-', '')
+
+    # remove all kinds of parentheses
+    input_text = input_text.replace('{', '')
+    input_text = input_text.replace('}', '')
+    input_text = input_text.replace('[', '')
+    input_text = input_text.replace(']', '')
+    input_text = input_text.replace('(', '')
+    input_text = input_text.replace(')', '')
+
+    # exclamation
+    input_text = input_text.replace('!!!', '!')
+    input_text = input_text.replace('!!', '!')
+
     # remove useless symbols
     input_text = input_text.replace('¯', '')
     input_text = input_text.replace('/', ' ')
 
     # remain the original string format of LibriTTS
-    if txt_format == 'normal':
+    if txt_format == 'tts':
         return input_text
 
-    # text format without case distinction, may hurt a little of prosody
-    elif txt_format == 'lowercase':
-        # turn capital letters into their lower cases
-        input_text = input_text.lower()
-
-    # plain text format without too much emotion
-    elif txt_format == 'plain':
-        # convert all capital letters to their lowercase
-        input_text = input_text.lower()
-        # create more periods at the ends of sentences
-        input_text = input_text.replace('?', '.')
-        input_text = input_text.replace('!', '.')
-        # remove all the punctuation symbols other than commas, periods, hyphens, and single quotes
-        input_text = ''.join([char for char in input_text if char.isalpha() or char in [',', '.', '-', '\'', ' ']])
-
     # process the text string into the same format as the LibriSpeech corpus
-    elif txt_format == 'librispeech':
-        # convert all lowercase letters to their capitals
-        input_text = input_text.lower()
-        # remove all the punctuation symbols other than single quotes
-        input_text = ''.join([char for char in input_text if char.isalpha() or char in ["\'", ' ']])
-
-    else:
-        raise ValueError
-
-    return input_text
-
-
-def asr_text_process(input_text: str, txt_format: str) -> str:
-    """
-    The function that processes the text strings for ASR datasets to the specified text format.
-    Currently, available text formats:
-        normal:
-            Letter: capital and lowercase
-            Punctuation: single quotes, commas, periods, hyphens, parentheses, question and exclamation marks
-        lowercase:
-            Letter: lowercase
-            Punctuation: single quotes, commas, periods, hyphens, parentheses, question and exclamation marks
-        plain:
-            Letter: lowercase
-            Punctuation: single quotes, commas, periods, hyphens
-        librispeech:
-            Letter: lowercase
-            Punctuation: single quotes
-
-    Args:
-        input_text: str
-            Unprocessed raw sentence from the TTS datasets
-        txt_format: str
-            The text format you want the processed sentence to have
-
-    Returns:
-        Processed sentence string by your specified text format.
-
-    """
-    if txt_format == 'librispeech':
-        # turn all the capital letters into their lower cases for better readability
-        input_text = input_text.lower()
+    elif txt_format == 'asr':
         # remove all the punctuation symbols other than single quotes
         return ''.join([char for char in input_text if char.isalpha() or char in ["\'", ' ']])
 
-    if txt_format == 'plain':
-        raise NotImplementedError
-
-    elif txt_format == 'lowercase':
-        raise NotImplementedError
-
-    elif txt_format == 'normal':
-        raise NotImplementedError
-
     else:
-        raise ValueError
+        raise ValueError(f"txt_format must be one of 'tts' or 'asr'. But got {txt_format}!")
+
 
 
 def get_readable_number(raw_number: int or float) -> str:
@@ -256,3 +231,8 @@ def get_readable_memory(raw_number: int or float) -> str:
         read_number += f"{raw_number:d}B"
 
     return read_number
+
+
+if __name__ == '__main__':
+    en_text_process(
+        "\"'What right have you, any more than the rest, to ask for an exception?'--'It is true.'--'But never mind,' continued Cucumetto, laughing, 'sooner or later your turn will come.' Carlini's teeth clinched convulsively.", 'txt')

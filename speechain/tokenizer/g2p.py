@@ -1,8 +1,14 @@
 import torch
+
+from typing import List
 from g2p_en import G2p
 
 from speechain.tokenizer.abs import Tokenizer
 
+
+# some abnormal phonemes G2P may give during decoding
+abnormal_phns = ['...', '. . .', '. . . .', '..', '. ...', '. .', '. . . . . . .', '. . . . . .',
+                 '. . . . . . . .', '. . . . .', '.. ..', '... .', '. . . . . . . . .']
 
 class GraphemeToPhonemeTokenizer(Tokenizer):
     """
@@ -11,7 +17,7 @@ class GraphemeToPhonemeTokenizer(Tokenizer):
     References: https://github.com/Kyubyong/g2p
 
     """
-    def text2tensor(self, text: str, no_sos: bool = False, no_eos: bool = False) -> torch.LongTensor:
+    def text2tensor(self, text: str or List[str], no_sos: bool = False, no_eos: bool = False) -> torch.LongTensor:
         """
         This text-to-tensor function can take two types of input:
         1. raw string of the transcript sentence
@@ -21,13 +27,6 @@ class GraphemeToPhonemeTokenizer(Tokenizer):
         needs to be decoded by g2p_en.G2p in each epoch, which not only consumes a lot of CPU but also slow down the
         model forward.
 
-        Args:
-            text: str
-            no_sos:
-            no_eos:
-
-        Returns: torch.LongTensor
-
         """
         # initialize the tensor as an empty list
         tokens = []
@@ -36,12 +35,7 @@ class GraphemeToPhonemeTokenizer(Tokenizer):
             tokens.append(self.sos_eos_idx)
 
         # when input text is a dumped phoneme list
-        if text.startswith('[') and text.endswith(']'):
-            text = text[1:-1]
-            # split the text into individual tokens by a comma followed a blank
-            text = text.split(', ')
-            # remove the single quote marks surrounding each token if needed
-            text = [token[1:-1] if token.startswith('\'') and token.endswith('\'') else token for token in text]
+        if isinstance(text, List):
             tokens += [self.token2idx[token] if token in self.token2idx.keys() else self.unk_idx for token in text]
         # when input text is a raw string
         else:
@@ -49,7 +43,15 @@ class GraphemeToPhonemeTokenizer(Tokenizer):
             if not hasattr(self, 'g2p'):
                 self.g2p = G2p()
             phonemes = self.g2p(text)
-            tokens += [self.token2idx[phn] if phn in self.token2idx.keys() else self.unk_idx for phn in phonemes]
+            for phn in phonemes:
+                if phn in abnormal_phns:
+                    continue
+                elif phn == ' ':
+                    tokens.append(self.space_idx)
+                elif phn not in self.token2idx.keys():
+                    tokens.append(self.unk_idx)
+                else:
+                    tokens.append(self.token2idx[phn])
 
         # whether to attach eos at the end of the tokens
         if not no_eos:

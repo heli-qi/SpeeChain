@@ -22,7 +22,7 @@ function print_help_message {
     [--spk_emb_model SPK_EMB_MODEL] \\                    # The speaker recognition model you want to use to extract the speaker embeddings. If given, this argument must be either 'xvector' or 'ecapa'. (default: none)
     [--comp_chunk_ext COMP_CHUNK_EXT] \\                  # The file extension of the compressed chunk files. (default: none)
     [--token_type TOKEN_TYPE] \\                          # The type of the token you want your tokenizer to have. (default: sentencepiece)
-    [--txt_format TXT_FORMAT] \\                          # The text processing format for the transcripts in the dataset. (default: librispeech)
+    [--txt_format TXT_FORMAT] \\                          # The text processing format for the transcripts in the dataset. (default: asr)
     [--ncpu NCPU] \\                                      # The number of processes used for all the multiprocessing jobs. (default: 8)
     [--ngpu NGPU] \\                                      # The number of GPUs used to extract speaker embeddings. If not given, extraction will be done by CPUs. (default: 1)
     [--vocab_size VOCAB_SIZE] \\                          # The size of the tokenizer vocabulary. (default: 1000 for dump_part '100'; 5000 for dump_part '460'; 10000 for dump_part '960')
@@ -68,7 +68,7 @@ split_by_whitespace=true
 # arguments used by data_download.sh
 separator=','
 # text format for LibriSpeech is default to be librispeech
-txt_format=librispeech
+txt_format=asr
 
 
 # LibriSpeech-specific arguments
@@ -193,10 +193,10 @@ case "${dump_part}" in
     subsets_args="train-clean-100"
     vocab_src_subsets="${subsets} dev-clean dev-other dev test-clean test-other"
 
-    if [ ${token_type} == 'word' ] || [ ${token_type} == 'sentencepiece' ]; then
-      if [ -z ${vocab_size} ];then
-        vocab_size=1000
-      fi
+    if [ ${token_type} == 'sentencepiece' ] && [ -z ${vocab_size} ]; then
+      vocab_size=1000
+    elif [ ${token_type} == 'word' ] && [ -z ${vocab_size} ];then
+      vocab_size=5000
     fi
     ;;
   460)
@@ -204,10 +204,10 @@ case "${dump_part}" in
     subsets_args="train-clean-100${separator}train-clean-360"
     vocab_src_subsets="${subsets} train-clean-460 dev-clean dev-other dev test-clean test-other"
 
-    if [ ${token_type} == 'word' ] || [ ${token_type} == 'sentencepiece' ]; then
-      if [ -z ${vocab_size} ];then
-        vocab_size=5000
-      fi
+    if [ ${token_type} == 'sentencepiece' ] && [ -z ${vocab_size} ]; then
+      vocab_size=5000
+    elif [ ${token_type} == 'word' ] && [ -z ${vocab_size} ];then
+      vocab_size=10000
     fi
     ;;
   960)
@@ -215,10 +215,10 @@ case "${dump_part}" in
     subsets_args="train-clean-100${separator}train-clean-360${separator}train-other-500"
     vocab_src_subsets="${subsets} train-clean-460 train-960 dev-clean dev-other dev test-clean test-other"
 
-    if [ ${token_type} == 'word' ] || [ ${token_type} == 'sentencepiece' ]; then
-      if [ -z ${vocab_size} ];then
-        vocab_size=5000
-      fi
+    if [ ${token_type} == 'sentencepiece' ] && [ -z ${vocab_size} ]; then
+      vocab_size=5000
+    elif [ ${token_type} == 'word' ] && [ -z ${vocab_size} ];then
+      vocab_size=10000
     fi
     ;;
   ?)
@@ -255,8 +255,8 @@ fi
   --token_type "${token_type}" \
   --txt_format "${txt_format}" \
   --dataset_name "librispeech" \
-  --download_args "--subset ${subsets_args} --separator ${separator}" \
-  --meta_generate_args "--subset ${subsets_args} --separator ${separator} --ncpu ${ncpu}" \
+  --download_args "--subsets ${subsets_args} --separator ${separator}" \
+  --meta_generate_args "--subsets ${subsets_args} --separator ${separator} --ncpu ${ncpu}" \
   --subsets "${subsets}" \
   --vocab_src_subsets "${vocab_src_subsets}" \
   --vocab_generate_args "${vocab_generate_args}" \

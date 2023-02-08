@@ -28,6 +28,7 @@ class Speech2LinearSpec(Module):
                     normalized: bool = False,
                     onesided: bool = True,
                     mag_spec: bool = False,
+                    return_energy: bool = False,
                     clamp: float = 1e-10,
                     logging: bool = False,
                     log_base: float = None):
@@ -67,6 +68,8 @@ class Speech2LinearSpec(Module):
                 controls whether to calculate the linear magnitude spectrogram during STFT.
                 True feeds the linear magnitude spectrogram into mel-fbank.
                 False feeds the linear energy spectrogram into mel-fbank.
+            return_energy: bool
+                Whether to calculate the frame-wise energy for the linear magnitude (energy) spectrogram
             clamp: float
                 The minimal number for the log-linear spectrogram. Used for numerical stability.
             logging: bool
@@ -120,6 +123,7 @@ class Speech2LinearSpec(Module):
 
         # True=magnitude spectrogram, False=energy spectrogram
         self.mag_spec = mag_spec
+        self.return_energy = return_energy
 
         # logging-related arguments
         self.clamp = clamp
@@ -186,12 +190,22 @@ class Speech2LinearSpec(Module):
                              rounding_mode='floor') + 1
         # get the energy spectrogram
         linear_spec = stft_feat.real ** 2 + stft_feat.imag ** 2
+        # calculate L2-norm of each frame as the energy (magnitude)
+        if self.return_energy:
+            energy, energy_len = torch.sqrt(torch.clamp(linear_spec.sum(dim=-1), min=1e-10)), feat_len
+        else:
+            energy, energy_len = None, None
 
         # --- 4. STFT Post-Processing --- #
-        # mask all the silence parts of the linear spectrograms to zeros
+        # mask all the silence parts of the linear spectrogram to zeros
         for i in range(feat_len.size(0)):
             if feat_len[i] < linear_spec.size(1):
                 linear_spec[i][feat_len[i]:] = 0.0
+        # mask all the silence parts of the frame-wise energy to zeros
+        if energy is not None:
+            for i in range(energy_len.size(0)):
+                if energy_len[i] < energy.size(1):
+                    energy[i][energy_len[i]:] = 0.0
 
         # convert the energy spectrogram to the magnitude spectrogram if specified
         if self.mag_spec:
@@ -205,7 +219,10 @@ class Speech2LinearSpec(Module):
             if self.log_base is not None:
                 linear_spec /= math.log(self.log_base)
 
-        return linear_spec, feat_len
+        if self.return_energy:
+            return linear_spec, feat_len, energy, energy_len
+        else:
+            return linear_spec, feat_len
 
     def recover(self, feat: torch.Tensor, feat_len: torch.Tensor, inv_preemph_winlen: int = 100):
         """

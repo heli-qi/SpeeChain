@@ -26,7 +26,7 @@ from speechain.module.postnet.conv1d import Conv1dPostnet
 
 class ARTTSDecoder(Module):
     """
-
+        Decoder Module for Autoregressive TTS model.
     """
     frontend_class_dict = dict(
         stft_spec=Speech2LinearSpec,
@@ -46,43 +46,30 @@ class ARTTSDecoder(Module):
     )
 
     def module_init(self,
-                    frontend: Dict,
                     decoder: Dict,
                     postnet: Dict,
-                    normalize: Dict = None,
+                    frontend: Dict = None,
+                    normalize: Dict or bool = True,
                     prenet: Dict = None,
                     spk_emb: Dict = None,
                     reduction_factor: int = 1):
-        """
 
-        Args:
-            decoder:
-            postnet:
-            frontend:
-            normalize:
-            prenet:
-            spk_emb:
-            reduction_factor:
-
-        Returns:
-
-        """
         # temporary register for connecting two sequential modules
         _prev_output_size = None
 
         # --- Acoustic Feature Extraction Part --- #
         # acoustic feature extraction frontend of the E2E TTS decoder
-        frontend_class = self.frontend_class_dict[frontend['type']]
-        frontend['conf'] = dict() if 'conf' not in frontend.keys() else frontend['conf']
-        self.frontend = frontend_class(**frontend['conf'])
-        _prev_output_size = self.frontend.output_size
+        if frontend is not None:
+            frontend_class = self.frontend_class_dict[frontend['type']]
+            frontend['conf'] = dict() if 'conf' not in frontend.keys() else frontend['conf']
+            self.frontend = frontend_class(**frontend['conf'])
+            _prev_output_size = self.frontend.output_size
 
         # feature normalization layer
         if normalize is not None and normalize is not False:
             normalize = dict() if normalize is True else normalize
             self.normalize = FeatureNormalization(input_size=_prev_output_size, distributed=self.distributed,
                                                   **normalize)
-            _prev_output_size = self.normalize.output_size
 
         # reduction factor for acoustic feature sequence
         self.reduction_factor = reduction_factor
@@ -112,7 +99,7 @@ class ARTTSDecoder(Module):
         decoder_class = self.decoder_class_dict[decoder['type']]
         decoder['conf'] = dict() if 'conf' not in decoder.keys() else decoder['conf']
         self.decoder = decoder_class(input_size=_prev_output_size, **decoder['conf'])
-        _prev_output_size = self.prenet.output_size
+        _prev_output_size = self.decoder.output_size
 
         # initialize prediction layers (feature prediction & stop prediction)
         self.feat_pred = torch.nn.Linear(in_features=_prev_output_size, out_features=feat_dim)
@@ -129,24 +116,15 @@ class ARTTSDecoder(Module):
                 feat: torch.Tensor, feat_len: torch.Tensor,
                 spk_feat: torch.Tensor = None, spk_ids: torch.Tensor = None,
                 epoch: int = None, is_test: bool = False, rand_spk_feat: bool = False):
-        """
 
-        Args:
-            enc_text: (torch size: batch, maxlen, enctextdim)
-            enc_text_mask: (torch size: batch, 1, enctextdim)
-            feat: (torch size: batch, maxlen, featdim)
-            feat_len: (torch size: batch)
-
-        Returns:
-
-        """
         # --- Acoustic Feature Extraction Part --- #
         # in the training and validation stage, input data needs to be processed by the frontend
         if not is_test:
             # acoustic feature extraction for the raw waveform input
             if feat.size(-1) == 1:
                 assert hasattr(self, 'frontend'), \
-                    "Currently, we don't support time-domain TTS. Please specify a feature extraction frontend."
+                    f"Currently, {self.__class__.__name__} doesn't support time-domain TTS. " \
+                    f"Please specify a feature extraction frontend."
                 # no amp operations for the frontend calculation to make sure the feature accuracy
                 with autocast(False):
                     feat, feat_len = self.frontend(feat, feat_len)
@@ -218,4 +196,3 @@ class ARTTSDecoder(Module):
             "If you want to apply dropout during TTS inference, your TTS model should have a decoder prenet."
         if not self.prenet.training:
             self.prenet.train()
-

@@ -215,52 +215,6 @@ class LM(Model):
         else:
             return metrics
 
-    def matrix_snapshot(self, vis_logs: List, hypo_attention: Dict, subfolder_names: List[str] or str, epoch: int):
-
-        if isinstance(subfolder_names, str):
-            subfolder_names = [subfolder_names]
-        keys = list(hypo_attention.keys())
-
-        # process the input data by different data types
-        if isinstance(hypo_attention[keys[0]], Dict):
-            for key, value in hypo_attention.items():
-                self.matrix_snapshot(vis_logs=vis_logs, hypo_attention=value,
-                                     subfolder_names=subfolder_names + [key], epoch=epoch)
-
-        # snapshot the information in the materials
-        elif isinstance(hypo_attention[keys[0]], np.ndarray):
-            vis_logs.append(
-                dict(
-                    plot_type='matrix', materials=hypo_attention, epoch=epoch,
-                    sep_save=False, data_save=True, subfolder_names=subfolder_names
-                )
-            )
-
-    def attention_reshape(self, hypo_attention: Dict, prefix_list: List = None) -> Dict:
-
-        if prefix_list is None:
-            prefix_list = []
-
-        # process the input data by different data types
-        if isinstance(hypo_attention, Dict):
-            return {key: self.attention_reshape(value, prefix_list + [key]) for key, value in hypo_attention.items()}
-        elif isinstance(hypo_attention, List):
-            return {str(index - len(hypo_attention)): self.attention_reshape(
-                hypo_attention[index], prefix_list + [str(index - len(hypo_attention))])
-                for index in range(len(hypo_attention) - 1, -1, -1)}
-        elif isinstance(hypo_attention, torch.Tensor):
-            hypo_attention = hypo_attention.squeeze()
-            if hypo_attention.is_cuda:
-                hypo_attention = hypo_attention.detach().cpu()
-
-            if hypo_attention.dim() == 2:
-                return {'.'.join(prefix_list + [str(0)]): hypo_attention.numpy()}
-            elif hypo_attention.dim() == 3:
-                return {'.'.join(prefix_list + [str(index)]): element.numpy()
-                        for index, element in enumerate(hypo_attention)}
-            else:
-                raise RuntimeError
-
     def visualize(self,
                   epoch: int,
                   sample_index: str,

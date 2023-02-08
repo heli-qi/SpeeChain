@@ -22,7 +22,7 @@ function print_help_message {
       [--spk_emb_model SPK_EMB_MODEL] \\                    # The speaker recognition model you want to use to extract the speaker embeddings. If given, this argument must be either 'xvector' or 'ecapa'. (default: none)
       [--comp_chunk_ext COMP_CHUNK_EXT] \\                  # The file extension of the compressed chunk files. (default: none)
       [--token_type TOKEN_TYPE] \\                          # The type of the token you want your tokenizer to have. (default: g2p)
-      [--txt_format TXT_FORMAT] \\                          # The text processing format for the transcripts in the dataset. (default: normal)
+      [--txt_format TXT_FORMAT] \\                          # The text processing format for the transcripts in the dataset. (default: tts)
       [--ncpu NCPU] \\                                      # The number of processes used for all the multiprocessing jobs. (default: 8)
       [--ngpu NGPU] \\                                      # The number of GPUs used to extract speaker embeddings. If not given, extraction will be done by CPUs. (default: 1)
       [--vocab_size VOCAB_SIZE] \\                          # The size of the tokenizer vocabulary. (default: 1000 for dump_part '100'; 5000 for dump_part '460'; 10000 for dump_part '960')
@@ -67,7 +67,7 @@ character_coverage=1.0
 split_by_whitespace=true
 # arguments used by stat_info_generator.py
 separator=','
-txt_format=normal
+txt_format=tts
 
 
 # LJSpeech-specific arguments

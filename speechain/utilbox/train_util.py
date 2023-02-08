@@ -22,8 +22,7 @@ class Identity(torch.nn.Module):
         return self.__class__.__name__ + '()'
 
 
-def make_mask_from_len(data_len: torch.Tensor, max_len: int = None,
-                       mask_type: torch.dtype = torch.bool, return_3d: bool = True):
+def make_mask_from_len(data_len: torch.Tensor, mask_type: torch.dtype = torch.bool, return_3d: bool = True):
     """
 
     Args:
@@ -43,9 +42,7 @@ def make_mask_from_len(data_len: torch.Tensor, max_len: int = None,
         The parts at the end of the shorter sequence will be False or 0.0.
 
     """
-    batch_size = data_len.size(0)
-    if max_len is None:
-        max_len = data_len.max()
+    batch_size, max_len = data_len.size(0), data_len.max()
 
     if return_3d:
         mask = torch.zeros((batch_size, 1, max_len), dtype=mask_type)
@@ -56,7 +53,15 @@ def make_mask_from_len(data_len: torch.Tensor, max_len: int = None,
         for i in range(data_len.size(0)):
             mask[i, :data_len[i]] = 1.0
 
+    if data_len.is_cuda:
+        mask = mask.cuda(data_len.device)
     return mask
+
+
+def make_len_from_mask(data_mask: torch.Tensor):
+    if len(data_mask.shape) == 3:
+        data_mask = data_mask.squeeze(1)
+    return data_mask.sum(dim=-1)
 
 
 def recur_criterion_init(input_conf: Dict, criterion_class: Criterion):
@@ -82,7 +87,7 @@ def recur_criterion_init(input_conf: Dict, criterion_class: Criterion):
         raise RuntimeError
 
 
-def text2tensor_and_len(text_list: List[str], text2tensor_func, ignore_idx: int) \
+def text2tensor_and_len(text_list: List[str or List[str]], text2tensor_func, ignore_idx: int) \
         -> (torch.LongTensor, torch.LongTensor):
     """
 
@@ -94,12 +99,10 @@ def text2tensor_and_len(text_list: List[str], text2tensor_func, ignore_idx: int)
     Returns:
 
     """
-    #
     for i in range(len(text_list)):
         text_list[i] = text2tensor_func(text_list[i])
     text_len = torch.LongTensor([len(t) for t in text_list])
 
-    #
     text = torch.full((text_len.size(0), text_len.max().item()), ignore_idx, dtype=text_len.dtype)
     for i in range(text_len.size(0)):
         text[i][:text_len[i]] = text_list[i]
@@ -119,3 +122,17 @@ def spk2tensor(spk_list: List[str], spk2idx_dict: Dict) -> torch.LongTensor:
     """
     # turn the speaker id strings into the tensors
     return torch.LongTensor([spk2idx_dict[spk] if spk in spk2idx_dict.keys() else 0 for spk in spk_list])
+
+
+def float_near_round(input_float: float):
+    """
+
+    Round the float number in [X.0, X.5) to X and the float number in (X.5, {X+1}.0] to X+1
+
+    """
+    int_part = int(input_float)
+    frac_part = input_float - int_part
+    if frac_part < 0.5:
+        return int_part
+    else:
+        return int_part + 1

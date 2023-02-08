@@ -61,6 +61,10 @@ class Tokenizer(ABC):
         self.sos_eos_idx = self.token2idx['<sos/eos>']
         self.ignore_idx = self.token2idx['<blank>']
         self.unk_idx = self.token2idx['<unk>']
+        if '<space>' in self.token2idx.keys():
+            self.space_idx = self.token2idx['<space>']
+        else:
+            self.space_idx = None
 
         # save the backup if copy_path is given
         if copy_path is not None:
@@ -104,9 +108,19 @@ class Tokenizer(ABC):
             The string of the decoded sentence.
 
         """
-        # the unknown tokens will be replaced by a star symbol '*'
-        return "".join([self.idx2token[idx] if idx != self.unk_idx else '*'
-                        for idx in tensor.tolist() if idx != self.sos_eos_idx])
+        token_list = []
+        for idx in tensor.tolist():
+            if idx == self.sos_eos_idx:
+                continue
+            # the space tokens will be replaced by a blank
+            elif self.space_idx is not None and idx == self.space_idx:
+                token_list.append(' ')
+            # the unknown tokens will be replaced by a star symbol '*'
+            elif idx == self.unk_idx:
+                token_list.append('*')
+            else:
+                token_list.append(self.idx2token[idx])
+        return "".join(token_list)
 
     @abstractmethod
     def text2tensor(self, text: str, no_sos: bool = False, no_eos: bool = False) -> torch.LongTensor:

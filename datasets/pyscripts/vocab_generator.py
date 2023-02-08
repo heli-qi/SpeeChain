@@ -14,6 +14,7 @@ from tqdm import tqdm
 from g2p_en import G2p
 from collections import Counter
 
+from speechain.tokenizer.g2p import abnormal_phns
 from speechain.utilbox.type_util import str2bool
 from speechain.utilbox.dump_util import get_readable_number
 from speechain.utilbox.data_loading_util import load_idx2data_file, parse_path_args
@@ -123,10 +124,19 @@ def save_token_vocab(save_path: str, text_path: str, txt_format: str, text2token
 
 
 def generate_vocab_char(save_path: str, text_path: str, txt_format: str, vocab_size: int):
+    def text2char_list(x: str):
+        char_list = []
+        for char in x:
+            if char != ' ':
+                char_list.append(char)
+            else:
+                char_list.append('<space>')
+        return char_list
+
     # --- Vocabulary List Generation --- #
     save_token_vocab(
         save_path=save_path, text_path=text_path, txt_format=txt_format,
-        text2tokens_func=lambda x: list(x), vocab_size=vocab_size, save_idx2text_len=True
+        text2tokens_func=text2char_list, vocab_size=vocab_size, save_idx2text_len=True
     )
 
 
@@ -171,10 +181,14 @@ def generate_vocab_sentencepiece(save_path: str, text_path: str, txt_format: str
 
 def generate_vocab_g2p(save_path: str, text_path: str, txt_format: str, vocab_size: int):
     g2p = G2p()
+    def text2phn_list(x: str):
+        phn_list = g2p(x)
+        return [phn if phn != ' ' else '<space>' for phn in phn_list if phn not in abnormal_phns]
+
     # --- Vocabulary List Generation --- #
     save_token_vocab(
         save_path=save_path, text_path=text_path, txt_format=txt_format,
-        text2tokens_func=lambda x: g2p(x), vocab_size=vocab_size, save_idx2text=True, save_idx2text_len=True
+        text2tokens_func=text2phn_list, vocab_size=vocab_size, save_idx2text=True, save_idx2text_len=True
     )
 
 
@@ -183,10 +197,31 @@ def generate_vocab_word(save_path: str, text_path: str, txt_format: str, vocab_s
     This function just segments text with whitespaces, so the punctuation symbols won't be treated as independent tokens.
 
     """
+    def text2word_list(x: str):
+        word_list = []
+        for word in x.split():
+            # no punctuation
+            if word[0].isalpha() and word[-1].isalpha():
+                word_list.append(word)
+            # punctuation attached at the beginning
+            elif not word[-1].isalpha():
+                word_list.append(''.join(word[:-1]))
+                word_list.append(word[-1])
+            # punctuation attached at the end
+            elif not word[0].isalpha():
+                word_list.append(word[0])
+                word_list.append(''.join(word[1:]))
+            # punctuation attached at the beginning and the end
+            else:
+                word_list.append(word[0])
+                word_list.append(''.join(word[1:-1]))
+                word_list.append(word[-1])
+        return word_list
+
     # --- Vocabulary List Generation --- #
     save_token_vocab(
         save_path=save_path, text_path=text_path, txt_format=txt_format,
-        text2tokens_func=lambda x: x.split(), vocab_size=vocab_size, save_idx2text=False
+        text2tokens_func=text2word_list, vocab_size=vocab_size, save_idx2text_len=True
     )
 
 

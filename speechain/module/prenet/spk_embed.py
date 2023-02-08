@@ -111,7 +111,7 @@ class SpeakerEmbedPrenet(Module):
 
         return spk_feat
 
-    def combine_spk_feat(self, spk_feat: torch.Tensor, enc_output: torch.Tensor, dec_input: torch.Tensor):
+    def combine_spk_feat(self, spk_feat: torch.Tensor, enc_output: torch.Tensor, dec_input: torch.Tensor = None):
         """
 
         Args:
@@ -145,6 +145,9 @@ class SpeakerEmbedPrenet(Module):
         enc_output = combine_spk_feat_to_tgt(enc_output, self.final_proj)
         # (optional) combine the speaker embedding to the TTS decoder inputs
         if self.dec_comb:
+            assert dec_input is not None, \
+                "If you want to combine speaker embeddings with decoder input vectors, " \
+                "please give the decoder input vectors by the argument 'dec_input' in combine_spk_feat()"
             dec_input = combine_spk_feat_to_tgt(dec_input, self.final_proj if self.same_proj else self.final_proj_dec)
 
         return enc_output, dec_input
