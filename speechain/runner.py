@@ -82,7 +82,7 @@ class Runner(object):
             "--config",
             type=str,
             # default=None,
-            default="recipes/tts/ljspeech/exp_cfg/22.05khz_mfa_fastspeech2-v3_accum1_20gb.yaml",
+            default="recipes/tts/ljspeech/exp_cfg/22.05khz_mfa_fastspeech2-v1_accum1_20gb.yaml",
             help="The path of the all-in-one experiment configuration file. You can write all the arguments in this "
                  "all-in-one file instead of giving them to `runner.py` by command lines."
         )

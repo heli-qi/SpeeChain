@@ -60,11 +60,11 @@ class FastSpeech2(Model):
         # initialize the tokenizer
         if token_type == 'char':
             self.tokenizer = CharTokenizer(token_vocab, copy_path=self.result_path)
-        elif token_type == 'g2p':
+        elif token_type == 'mfa':
             self.tokenizer = GraphemeToPhonemeTokenizer(token_vocab, copy_path=self.result_path)
         else:
             raise ValueError(f"Unknown token type {token_type}. "
-                             f"Currently, {self.__class__.__name__} supports one of ['char', 'g2p'].")
+                             f"Currently, {self.__class__.__name__} supports one of ['char', 'mfa'].")
 
         # initialize the speaker list if given
         if spk_list is not None:
