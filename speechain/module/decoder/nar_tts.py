@@ -166,7 +166,7 @@ class FastSpeech2Decoder(Module):
                         # for the phoneme that doesn't cross two or more frames
                         if d < _prev_weight:
                             token_scalar[i][j] = frame_scalar[i][_cursor - 1]
-                            _prev_weight -= d
+                            _prev_weight = _prev_weight - d
                             # cursor is not updated in this situation
                         # for the phoneme that crosses two or more frames
                         else:
@@ -174,9 +174,7 @@ class FastSpeech2Decoder(Module):
                             int_d = int(d - _prev_weight)
                             # fraction part of the soft duration, represents the next frame
                             frac_d = d - _prev_weight - int_d
-                            # frac_d cannot be lower than 0.01 for data safety
-                            if frac_d < 0.01:
-                                frac_d = 0
+                            # check the boundary condition for the cursor
                             if int_d >= frame_scalar_len[i].item() - _cursor:
                                 int_d, frac_d = frame_scalar_len[i].item() - _cursor, 0
                             # the duration of the previous frame
@@ -192,6 +190,7 @@ class FastSpeech2Decoder(Module):
                             token_scalar[i][j] = token_scalar[i][j] / (_prev_weight + int_d + frac_d)
                             # update the cursor and watch the end condition
                             _cursor, _prev_weight = _cursor + int_d + 1, 1 - frac_d
+                            # check the end condition for the cursor
                             if _cursor >= frame_scalar_len[i] + 1:
                                 continue
         return token_scalar, duration_len
@@ -331,28 +330,22 @@ class FastSpeech2Decoder(Module):
         enc_text = enc_text + emb_pitch + emb_energy
 
         # --- 7. Length Regulation --- #
-        # use the ground-truth duration to do the teacher-forcing
-        if duration is not None:
-            used_duration = duration
-        # use the exp-converted predicted duration to do the self-decoding (pred_duration is in the log domain)
-        else:
-            used_duration = self.proc_duration(torch.exp(pred_duration) - 1)
-        # create the expanded matrix to be filled
-        expand_enc_text_len = duration.sum(dim=-1).int()
-        expand_enc_text_maxlen = expand_enc_text_len.max().item()
-        expand_enc_text = torch.zeros(enc_text.size(0), expand_enc_text_maxlen, enc_text.size(2), device=enc_text.device)
+        # use the ground-truth duration for teacher-forcing if it is given
+        # use the exp-converted predicted duration for self-decoding if ground-truth is not given
+        used_duration = duration if duration is not None else self.proc_duration(torch.exp(pred_duration) - 1)
+        expand_enc_text_list, expand_enc_text_len = [], used_duration.sum(dim=-1).int()
         # loop each sentence
         for i in range(len(enc_text_len)):
-            # used to record the current position in the second dim of expand_enc_text
-            _cursor = 0
+            # used to record the current position in _expand_enc_text for proper length
+            _expand_enc_text = []
             # for the hard length regulation (integer duration)
             if self.len_regulation_type != 'soft':
+                # loop each token in the current sentence
                 for j in range(enc_text_len[i]):
-                    d = min(int(used_duration[i][j].item()), expand_enc_text_maxlen - _cursor)
+                    d = int(used_duration[i][j].item())
                     if d > 0:
-                        # broadcast the current phoneme embedding by the phoneme duration
-                        expand_enc_text[i][_cursor: _cursor + d] = enc_text[i][j].unsqueeze(0)
-                        _cursor += d
+                        # expand the current phoneme embedding by the phoneme duration
+                        _expand_enc_text.append(enc_text[i][j].unsqueeze(0).expand(d, -1))
             # for the soft length regulation (float duration)
             else:
                 _prev_weight = 0
@@ -362,51 +355,43 @@ class FastSpeech2Decoder(Module):
                     if d > 0:
                         # for the phoneme that doesn't cross two or more frames
                         if d < _prev_weight:
-                            expand_enc_text[i][_cursor - 1] += d * enc_text[i][j]
-                            _prev_weight -= d
+                            _expand_enc_text[-1] = _expand_enc_text[-1] + d * enc_text[i][j].unsqueeze(0)
+                            _prev_weight = _prev_weight - d
                         # for the phoneme that crosses two or more frames
                         else:
                             # integer part of the soft duration, represents the current frames
                             int_d = int(d - _prev_weight)
                             # fraction part of the soft duration, represents the next frame
                             frac_d = d - _prev_weight - int_d
-                            # frac_d cannot be lower than 0.01 for data safety
-                            if frac_d < 0.01:
-                                frac_d = 0
-                            if int_d >= expand_enc_text_maxlen - _cursor:
-                                int_d, frac_d = expand_enc_text_maxlen - _cursor, 0
                             # the weight for the previous frame
                             if _prev_weight > 0:
-                                expand_enc_text[i][_cursor - 1] += _prev_weight * enc_text[i][j]
-                            # broadcast the current phoneme embedding by the phoneme duration
+                                # += here will cause RuntimeError, so the operation should be out-place
+                                _expand_enc_text[-1] = _expand_enc_text[-1] + _prev_weight * enc_text[i][j].unsqueeze(0)
+                            # expand the phoneme embedding by the integer part of duration
                             if int_d > 0:
-                                expand_enc_text[i][_cursor: _cursor + int_d] = enc_text[i][j].unsqueeze(0)
-                            # the weight for the next frame
-                            if frac_d > 0:
-                                expand_enc_text[i][_cursor + int_d] = frac_d * enc_text[i][j]
+                                _expand_enc_text.append(enc_text[i][j].unsqueeze(0).expand(int_d, -1))
+                            # the weight for the next frame (skip the last token to avoid an incomplete frame)
+                            if frac_d > 0 and j < enc_text_len[i] - 1:
+                                _expand_enc_text.append(frac_d * enc_text[i][j].unsqueeze(0))
                             # update the cursor to the second next frame
-                            _cursor, _prev_weight = _cursor + int_d + 1, 1 - frac_d
-                            if _cursor >= expand_enc_text_maxlen + 1:
-                                continue
+                            _prev_weight = 1 - frac_d
 
-        # teacher-forcing by feat_len
+            # register the expanded enc_text for the current sentence
+            expand_enc_text_list.append(torch.cat(_expand_enc_text))
+
+        # teacher-forcing by feat_len if it is given
         if feat_len is not None:
-            len_diff = feat_len.max().item() - expand_enc_text.size(1)
-            # pad zeros to the end for the shorter text
-            if len_diff > 0:
-                expand_enc_text = torch.nn.functional.pad(expand_enc_text, (0, 0, 0, len_diff), "constant", 0)
-            # remove redundant elements at the end for the longer text
-            elif len_diff < 0:
-                # note: len_diff is a negative integer
-                expand_enc_text = expand_enc_text[:, :len_diff]
-            # use feat_len to do the TTS decoding
-            expand_enc_text_mask = make_mask_from_len(feat_len)
-        # self-decoding
-        else:
-            expand_enc_text_mask = make_mask_from_len(expand_enc_text_len)
+            expand_enc_text_len = feat_len
+        expand_enc_text_maxlen = expand_enc_text_len.max().item()
+
+        # assemble all the expanded enc_text from the list into a single 3d tensor
+        expand_enc_text = torch.zeros(enc_text.size(0), expand_enc_text_maxlen, enc_text.size(2), device=enc_text.device)
+        for i in range(len(expand_enc_text_len)):
+            _upper = min(expand_enc_text_len[i], len(expand_enc_text_list[i]))
+            expand_enc_text[i][:_upper] = expand_enc_text_list[i][:_upper]
 
         # --- 6. Mel-Spectrogram Prediction --- #
-        dec_feat, dec_feat_mask, dec_attmat, dec_hidden = self.decoder(expand_enc_text, expand_enc_text_mask)
+        dec_feat, dec_feat_mask, dec_attmat, dec_hidden = self.decoder(expand_enc_text, make_mask_from_len(expand_enc_text_len))
         pred_feat_before = self.feat_pred(dec_feat)
         pred_feat_after = pred_feat_before + self.postnet(pred_feat_before, make_len_from_mask(dec_feat_mask))
 
