@@ -53,14 +53,13 @@ class FastSpeech2Decoder(Module):
                     feat_normalize: Dict or bool = True,
                     pitch_normalize: Dict or bool = True,
                     energy_normalize: Dict or bool = True,
-                    len_regulation_type: str = 'floor',
+                    len_regulation_type: str = 'hard',
                     reduction_factor: int = 1):
 
         # reduction factor for acoustic feature sequence
         self.reduction_factor = reduction_factor
-        if len_regulation_type not in ['floor', 'ceil', 'round', 'soft']:
-            raise ValueError(f"Unknown len_regulation_type {len_regulation_type}. "
-                             "It must be one of ['floor', 'ceil', 'round', 'soft']")
+        if len_regulation_type not in ['hard', 'soft']:
+            raise ValueError(f"Unknown len_regulation_type {len_regulation_type}. It must be either 'hard' or 'soft'!")
         else:
             self.len_regulation_type = len_regulation_type
 
@@ -195,14 +194,15 @@ class FastSpeech2Decoder(Module):
                                 continue
         return token_scalar, duration_len
 
-    def proc_duration(self, duration: torch.Tensor):
-        # decide the duration for the current phoneme
-        if self.len_regulation_type == 'floor':
-            duration = torch.clamp(torch.floor(duration), min=0)
-        elif self.len_regulation_type == 'ceil':
-            duration = torch.clamp(torch.ceil(duration), min=0)
-        elif self.len_regulation_type == 'round':
+    def proc_duration(self, duration: torch.Tensor, duration_alpha: torch.Tensor = None):
+        # modify the duration by duration_alpha during evaluation
+        if not self.training and duration_alpha is not None:
+            duration = duration * duration_alpha
+
+        # round the phoneme duration to the nearest integer in the hard mode
+        if self.len_regulation_type == 'hard':
             duration = torch.clamp(torch.round(duration), min=0)
+        # keep the phoneme duration to be the float numbers in the soft mode
         elif self.len_regulation_type == 'soft':
             duration = torch.clamp(duration, min=0)
         else:
@@ -216,7 +216,9 @@ class FastSpeech2Decoder(Module):
                 feat: torch.Tensor = None, feat_len: torch.Tensor = None,
                 energy: torch.Tensor = None, energy_len: torch.Tensor = None,
                 spk_feat: torch.Tensor = None, spk_ids: torch.Tensor = None,
-                epoch: int = None, rand_spk_feat: bool = False):
+                epoch: int = None, rand_spk_feat: bool = False,
+                duration_alpha: torch.Tensor = None, energy_alpha: torch.Tensor = None,
+                pitch_alpha: torch.Tensor = None):
 
         # --- 1. Speaker Embedding Combination --- #
         if hasattr(self, 'spk_emb'):
@@ -296,43 +298,48 @@ class FastSpeech2Decoder(Module):
         # --- 3. Duration Prediction --- #
         # note: pred_duration here is in the log domain!
         pred_duration, enc_text_len = self.duration_predictor(enc_text, make_len_from_mask(enc_text_mask))
+        # do teacher-forcing if ground-truth duration is given
         if duration is not None:
             # turn the duration from the second to the frame number
-            duration = duration / duration.sum(dim=-1, keepdims=True) * feat_len.unsqueeze(-1)
-            # decide the duration for the current phoneme
-            duration = self.proc_duration(duration)
+            used_duration = self.proc_duration(
+                duration / duration.sum(dim=-1, keepdims=True) * feat_len.unsqueeze(-1), duration_alpha=duration_alpha)
+            used_duration_len = duration_len
+        # do self-decoding by the predicted duration
+        else:
+            # use the exp-converted predicted duration
+            used_duration = self.proc_duration(torch.exp(pred_duration) - 1, duration_alpha=duration_alpha)
+            used_duration_len = enc_text_len
 
         # --- 4. Pitch Prediction and Embedding --- #
         pred_pitch, enc_text_len = self.pitch_predictor(enc_text, enc_text_len)
         if pitch is not None:
             # turn the frame-wise pitch values into frame-averaged pitch values
-            pitch, pitch_len = self.average_scalar_by_duration(pitch, pitch_len, duration, duration_len)
+            pitch, pitch_len = self.average_scalar_by_duration(pitch, pitch_len, used_duration, used_duration_len)
         # during training, ground-truth pitch is used for embedding
-        if self.training and pitch is not None:
-            emb_pitch = self.pitch_predictor.emb_pred_scalar(pitch)
         # during validation & evaluation, predicted pitch is used for embedding
-        else:
-            emb_pitch = self.pitch_predictor.emb_pred_scalar(pred_pitch)
+        used_pitch = pitch if self.training and pitch is not None else pred_pitch
+        # modify the pitch by pitch_alpha during evaluation
+        if not self.training and pitch_alpha is not None:
+            used_pitch = used_pitch * pitch_alpha
+        emb_pitch = self.pitch_predictor.emb_pred_scalar(used_pitch)
 
         # --- 5. Energy Prediction and Embedding --- #
         pred_energy, enc_text_len = self.energy_predictor(enc_text, enc_text_len)
         if energy is not None:
             # turn the frame-wise energy values into frame-averaged energy values
-            energy, energy_len = self.average_scalar_by_duration(energy, energy_len, duration, duration_len)
+            energy, energy_len = self.average_scalar_by_duration(energy, energy_len, used_duration, used_duration_len)
         # during training, ground-truth energy is used for embedding
-        if self.training and energy is not None:
-            emb_energy = self.energy_predictor.emb_pred_scalar(energy)
         # during validation & evaluation, predicted energy is used for embedding
-        else:
-            emb_energy = self.energy_predictor.emb_pred_scalar(pred_energy)
+        used_energy = energy if self.training and energy is not None else pred_energy
+        # modify the energy by energy_alpha during evaluation
+        if not self.training and energy_alpha is not None:
+            used_energy = used_energy * energy_alpha
+        emb_energy = self.energy_predictor.emb_pred_scalar(used_energy)
 
         # --- 6. Pitch & Energy Embedding Combination --- #
         enc_text = enc_text + emb_pitch + emb_energy
 
         # --- 7. Length Regulation --- #
-        # use the ground-truth duration for teacher-forcing if it is given
-        # use the exp-converted predicted duration for self-decoding if ground-truth is not given
-        used_duration = duration if duration is not None else self.proc_duration(torch.exp(pred_duration) - 1)
         expand_enc_text_list, expand_enc_text_len = [], used_duration.sum(dim=-1).int()
         # loop each sentence
         for i in range(len(enc_text_len)):
@@ -385,10 +392,15 @@ class FastSpeech2Decoder(Module):
         expand_enc_text_maxlen = expand_enc_text_len.max().item()
 
         # assemble all the expanded enc_text from the list into a single 3d tensor
-        expand_enc_text = torch.zeros(enc_text.size(0), expand_enc_text_maxlen, enc_text.size(2), device=enc_text.device)
-        for i in range(len(expand_enc_text_len)):
-            _upper = min(expand_enc_text_len[i], len(expand_enc_text_list[i]))
-            expand_enc_text[i][:_upper] = expand_enc_text_list[i][:_upper]
+        for i in range(len(expand_enc_text_list)):
+            len_diff = expand_enc_text_maxlen - len(expand_enc_text_list[i])
+            if len_diff > 0:
+                expand_enc_text_list[i] = torch.nn.functional.pad(expand_enc_text_list[i], (0, 0, 0, len_diff), "constant", 0)
+            elif len_diff < 0:
+                # note: len_diff is a negative integer
+                expand_enc_text_list[i] = expand_enc_text_list[i][:len_diff]
+            expand_enc_text_list[i] = expand_enc_text_list[i].unsqueeze(0)
+        expand_enc_text = torch.cat(expand_enc_text_list)
 
         # --- 6. Mel-Spectrogram Prediction --- #
         dec_feat, dec_feat_mask, dec_attmat, dec_hidden = self.decoder(expand_enc_text, make_mask_from_len(expand_enc_text_len))

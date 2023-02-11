@@ -18,7 +18,7 @@ from scipy.spatial.distance import euclidean
 
 from speechain.utilbox.type_util import str2list
 from speechain.utilbox.data_loading_util import parse_path_args, load_idx2data_file, read_data_by_path, search_file_in_subfolder
-from speechain.utilbox.feat_util import convert_wav_to_mfcc, convert_wav_to_logmel
+from speechain.utilbox.feat_util import convert_wav_to_mfcc, convert_wav_to_logmel, convert_wav_to_pitch
 from speechain.utilbox.md_util import get_list_strings
 
 
@@ -28,17 +28,17 @@ def parse():
                         help="The path of your TTS experimental folder. All the files named 'idx2xxx_wav' will be "
                             "automatically found out and used for TTS objective evaluation. You can also directly "
                             "specify the path of your target 'idx2xxx_wav' file by this argument.")
-    parser.add_argument('--refer_path', type=str, default=None,
+    parser.add_argument('--refer_path', type=str, required=True,
                         help="The path of the ground-truth data folder. All the files named 'idx2wav' will be "
                              "automatically found out and used as the reference. The hypo 'idx2xxx_wav' and refer "
                              "'idx2wav' will be matched by the data indices. You can also directly specify the path of "
                              "your target 'idx2wav' file by this argument. This argument is required if you want to "
                              "evaluate the MCD or MSD.")
-    parser.add_argument('--metric_list', type=str2list, default=['mcd', 'msd'],
+    parser.add_argument('--metric_list', type=str2list, default=['mcd', 'msd', 'log-f0'],
                         help="The list of metrics you want to use to evaluate your given hypothesis utterances. "
                              "Please give this argument as a string surrounded by a pair of square brackets where your "
-                             "metrics are split by commas. (default: [mcd, msd])")
-    parser.add_argument('--resule_path', type=str, default=None,
+                             "metrics are split by commas. (default: [mcd, msd, log-f0])")
+    parser.add_argument('--result_path', type=str, default=None,
                         help="The path where the evaluated results are placed. If not given, the results will be saved "
                              "to the same directory as the hypo 'idx2xxx_wav' found in 'hypo_path'. (default: None)")
     parser.add_argument('--ncpu', type=int, default=8,
@@ -48,9 +48,10 @@ def parse():
     return parser.parse_args()
 
 
-def calculate_mcd_msd(idx2hypo_refer_list: List[str], tgt_metric: str = 'mcd'):
+def calculate_metric(idx2hypo_refer_list: List[str], tgt_metric: str = 'mcd'):
     tgt_metric = tgt_metric.lower()
-    assert tgt_metric in ['mcd', 'msd'], f"tgt_metric must be either 'mcd' or 'msd', but got {tgt_metric}"
+    assert tgt_metric in ['mcd', 'msd', 'log-f0'], \
+        f"tgt_metric must be one of ['mcd', 'msd', 'log-f0'], but got {tgt_metric}!"
 
     output = dict()
     for idx, hypo_path, refer_path in tqdm(idx2hypo_refer_list):
@@ -73,46 +74,60 @@ def calculate_mcd_msd(idx2hypo_refer_list: List[str], tgt_metric: str = 'mcd'):
             refer_feat = convert_wav_to_mfcc(refer_wav, sr=refer_sample_rate,
                                              n_mfcc=13, win_length=0.05, hop_length=0.0125)
         # extract the Log-Mel features from the waveforms
-        else:
+        elif tgt_metric == 'msd':
             hypo_feat = convert_wav_to_logmel(hypo_wav, sr=hypo_sample_rate,
                                               n_mels=80, win_length=0.05, hop_length=0.0125)
             refer_feat = convert_wav_to_logmel(refer_wav, sr=refer_sample_rate,
                                                n_mels=80, win_length=0.05, hop_length=0.0125)
+        # extract the pitch contours from the waveforms
+        elif tgt_metric == 'log-f0':
+            hypo_feat = convert_wav_to_pitch(hypo_wav, sr=hypo_sample_rate, hop_length=0.0125, continuous_f0=False)
+            refer_feat = convert_wav_to_pitch(refer_wav, sr=refer_sample_rate, hop_length=0.0125, continuous_f0=False)
+        else:
+            raise NotImplementedError
 
-        # MCD calculation
+        # DTW calculation
         dtw_path = fastdtw(hypo_feat, refer_feat, dist=euclidean)[1]
         hypo_feat = hypo_feat[[ele[0] for ele in dtw_path]]
         refer_feat = refer_feat[[ele[1] for ele in dtw_path]]
 
-        coeff = 10 / np.log(10) * np.sqrt(2)
-        output[idx] = coeff * np.mean(np.sqrt(np.sum((hypo_feat - refer_feat) ** 2, axis=1)))
+        if tgt_metric != 'log-f0':
+            coeff = 10 / np.log(10) * np.sqrt(2)
+            output[idx] = coeff * np.mean(np.sqrt(np.sum((hypo_feat - refer_feat) ** 2, axis=1)))
+        else:
+            # Get voiced part of log-f0
+            nonzero_idxs = np.where((hypo_feat != 0) & (refer_feat != 0))[0]
+            hypo_feat = np.log(hypo_feat[nonzero_idxs])
+            refer_feat = np.log(refer_feat[nonzero_idxs])
+            # calculate rmse
+            output[idx] = np.sqrt(np.mean((hypo_feat - refer_feat) ** 2))
 
     return output
 
 
-def save_results(idx2result_list: List[List], metric_name: str, save_path: str, vocoder_name: str,
+def save_results(idx2metric_list: List[List], metric_name: str, save_path: str, vocoder_name: str,
                  desec_sort: True, topn_num: int):
     # save the idx2feat file to feat_path as the reference
     np.savetxt(os.path.join(save_path, f'idx2{f"{vocoder_name}_" if vocoder_name is not None else ""}{metric_name}'),
-               sorted(idx2result_list, key=lambda x: x[0]), fmt='%s')
+               sorted(idx2metric_list, key=lambda x: x[0]), fmt='%s')
 
     # record the overall results
-    result_mean = np.mean([idx2result[1] for idx2result in idx2result_list])
-    result_std = np.std([idx2result[1] for idx2result in idx2result_list])
+    result_mean = np.mean([idx2result[1] for idx2result in idx2metric_list])
+    result_std = np.std([idx2result[1] for idx2result in idx2metric_list])
     md_report = f"# Overall {metric_name} Result: (mean ± std)\n" \
                 f"{result_mean:.4f} ± {result_std:.4f}\n" \
                 f"# Top{topn_num} Bad Cases for {metric_name}\n"
 
     # record the data instances with the top-n largest results
-    idx2result_list = sorted(idx2result_list, key=lambda x: x[1], reverse=desec_sort)[: topn_num]
-    idx2result_dict = {idx: f"{mcd:.4f}" for idx, mcd in idx2result_list}
+    idx2metric_list = sorted(idx2metric_list, key=lambda x: x[1], reverse=desec_sort)[: topn_num]
+    idx2result_dict = {idx: f"{mcd:.4f}" for idx, mcd in idx2metric_list}
     md_report += get_list_strings(idx2result_dict)
     np.savetxt(
         os.path.join(save_path, f'{f"{vocoder_name}_" if vocoder_name is not None else ""}{metric_name}_results.md'),
         [md_report], fmt='%s')
 
 
-def main(hypo_path: str, refer_path: str, metric_list: List[str], resule_path: str, ncpu: int, topn_num: int):
+def main(hypo_path: str, refer_path: str, metric_list: List[str], result_path: str = None, ncpu: int = 8, topn_num: int = 30):
     """
 
     Args:
@@ -121,7 +136,7 @@ def main(hypo_path: str, refer_path: str, metric_list: List[str], resule_path: s
             The path of the 'idx2wav' of
         metric_list: List[str]
             Your specified metrics used to evaluate your given hypothesis utterances.
-        resule_path: str
+        result_path: str
             The path to place the evaluation results. If not given, the evaluation results will be saved to the same
             directory as your given hypo_idx2wav.
         ncpu: int
@@ -134,10 +149,10 @@ def main(hypo_path: str, refer_path: str, metric_list: List[str], resule_path: s
     # argument checking
     for i in range(len(metric_list)):
         metric_list[i] = metric_list[i].lower()
-        assert metric_list[i] in ['mcd', 'msd'],\
-            f"Your input metric should be one of ['mcd', 'msd'], but got {metric_list[i]}!"
+        assert metric_list[i] in ['mcd', 'msd', 'log-f0'],\
+            f"Your input metric should be one of ['mcd', 'msd', 'log-f0'], but got {metric_list[i]}!"
 
-        if metric_list[i] in ['mcd', 'msd']:
+        if metric_list[i] in ['mcd', 'msd', 'log-f0']:
             assert refer_path is not None, \
                 "If you want to evaluate your hypothesis utterances by the comparison-based metrics, " \
                 "refer_path must be given!"
@@ -164,7 +179,7 @@ def main(hypo_path: str, refer_path: str, metric_list: List[str], resule_path: s
 
     for hypo_idx2wav in hypo_idx2wav_list:
         # automatically initialize save_path and vocoder_name
-        save_path = os.path.dirname(hypo_idx2wav) if resule_path is None else parse_path_args(resule_path)
+        save_path = os.path.dirname(hypo_idx2wav) if result_path is None else parse_path_args(result_path)
         wav_name = os.path.basename(hypo_idx2wav).split('2')[-1]
         vocoder_name = wav_name.split('_')[0] if '_' in wav_name else None
 
@@ -205,34 +220,17 @@ def main(hypo_path: str, refer_path: str, metric_list: List[str], resule_path: s
             else:
                 print(f"Start {metric} evaluation for {hypo_idx2wav_path}!")
 
-            if metric == 'mcd':
-                idx2hypo_refer_list = [[idx, hypo_idx2wav[idx], refer_idx2wav[idx]] for idx in hypo_idx2wav.keys()]
-                func_args = [idx2hypo_refer_list[i::ncpu] for i in range(ncpu)]
+            idx2hypo_refer_list = [[idx, hypo_idx2wav[idx], refer_idx2wav[idx]] for idx in hypo_idx2wav.keys()]
+            func_args = [idx2hypo_refer_list[i::ncpu] for i in range(ncpu)]
 
-                with Pool(ncpu) as executor:
-                    calculate_mcd_func = partial(calculate_mcd_msd, tgt_metric='mcd')
-                    idx2mcd_dict_list = executor.map(calculate_mcd_func, func_args)
-                    idx2mcd_list = []
-                    for idx2mcd_dict in idx2mcd_dict_list:
-                        idx2mcd_list += list(idx2mcd_dict.items())
-                save_results(idx2result_list=idx2mcd_list, metric_name='mcd', save_path=save_path,
-                             vocoder_name=vocoder_name, desec_sort=True, topn_num=topn_num)
-
-            elif metric == 'msd':
-                idx2hypo_refer_list = [[idx, hypo_idx2wav[idx], refer_idx2wav[idx]] for idx in hypo_idx2wav.keys()]
-                func_args = [idx2hypo_refer_list[i::ncpu] for i in range(ncpu)]
-
-                with Pool(ncpu) as executor:
-                    calculate_msd_func = partial(calculate_mcd_msd, tgt_metric='msd')
-                    idx2msd_dict_list = executor.map(calculate_msd_func, func_args)
-                    idx2msd_list = []
-                    for idx2msd_dict in idx2msd_dict_list:
-                        idx2msd_list += list(idx2msd_dict.items())
-                save_results(idx2result_list=idx2msd_list, metric_name='msd', save_path=save_path,
-                             vocoder_name=vocoder_name, desec_sort=True, topn_num=topn_num)
-
-            else:
-                raise NotImplementedError
+            with Pool(ncpu) as executor:
+                calculate_metric_func = partial(calculate_metric, tgt_metric=metric)
+                idx2metric_dict_list = executor.map(calculate_metric_func, func_args)
+                idx2metric_list = []
+                for idx2metric_dict in idx2metric_dict_list:
+                    idx2metric_list += list(idx2metric_dict.items())
+            save_results(idx2metric_list=idx2metric_list, metric_name=metric, save_path=save_path,
+                         vocoder_name=vocoder_name, desec_sort=True, topn_num=topn_num)
 
         # --- 3. Waveform Length Ratio Evaluation --- #
         if refer_idx2wav is not None:
@@ -249,7 +247,7 @@ def main(hypo_path: str, refer_path: str, metric_list: List[str], resule_path: s
                                      for key in hypo_idx2wav_len.keys()}
                 idx2wav_len_ratio_list = list(idx2wav_len_ratio.items())
 
-                save_results(idx2result_list=idx2wav_len_ratio_list, metric_name='wav_len_ratio',
+                save_results(idx2metric_list=idx2wav_len_ratio_list, metric_name='wav_len_ratio',
                              save_path=save_path, vocoder_name=vocoder_name, desec_sort=True, topn_num=topn_num)
         print("\n")
 

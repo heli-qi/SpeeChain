@@ -19,7 +19,7 @@ from typing import Dict, Any, List
 from speechain.model.abs import Model
 from speechain.tokenizer.char import CharTokenizer
 from speechain.tokenizer.g2p import GraphemeToPhonemeTokenizer
-from speechain.utilbox.train_util import make_mask_from_len, text2tensor_and_len, spk2tensor
+from speechain.utilbox.train_util import make_mask_from_len
 from speechain.utilbox.data_loading_util import parse_path_args
 
 from speechain.module.encoder.tts import TTSEncoder
@@ -296,37 +296,6 @@ class ARTTS(Model):
         # validation metrics
         self.stop_accuracy = Accuracy()
         self.stop_fbeta = FBetaScore(beta=2)
-
-    def batch_preprocess_fn(self, batch_data: Dict):
-
-        def process_strings(data_dict: Dict):
-            """
-            turn the text and speaker strings into tensors and get their lengths
-
-            """
-            # --- Process the Text String and its Length --- #
-            if 'text' in data_dict.keys():
-                assert isinstance(data_dict['text'], List)
-                data_dict['text'], data_dict['text_len'] = text2tensor_and_len(
-                    text_list=data_dict['text'], text2tensor_func=self.tokenizer.text2tensor,
-                    ignore_idx=self.tokenizer.ignore_idx
-                )
-
-            # --- Process the Speaker ID String --- #
-            if 'spk_ids' in data_dict.keys():
-                assert isinstance(data_dict['spk_ids'], List) and hasattr(self, 'spk2idx')
-                data_dict['spk_ids'] = spk2tensor(spk_list=data_dict['spk_ids'], spk2idx_dict=self.spk2idx)
-
-            return data_dict
-
-        # check whether the batch_data is made by multiple dataloaders
-        leaf_flags = [not isinstance(value, Dict) for value in batch_data.values()]
-        if sum(leaf_flags) == 0:
-            return {key: process_strings(value) for key, value in batch_data.items()}
-        elif sum(leaf_flags) == len(batch_data):
-            return process_strings(batch_data)
-        else:
-            raise RuntimeError
 
     def module_forward(self,
                        feat: torch.Tensor,
@@ -629,6 +598,7 @@ class ARTTS(Model):
                   spk_feat_ids: List[str] = None,
                   domain: str = None,
                   return_att: bool = False,
+                  return_gl_wav: bool = True,
                   use_dropout: bool = False,
                   use_before: bool = False,
                   teacher_forcing: bool = False) -> Dict[str, Any]:
@@ -657,6 +627,8 @@ class ARTTS(Model):
                 It's used to indicate the `TTSDecoder` member how to encode the input speech.
             return_att: bool = False
                 Whether the attention matrix of the input speech is returned.
+            return_gl_wav: bool = True
+                Whether to convert the generated acoustic features back to GL waveforms.
             use_dropout: bool = False
                 Whether turn on the dropout layers in the prenet of the TTS decoder when decoding.
             use_before: bool = False
@@ -768,9 +740,19 @@ class ARTTS(Model):
                 # remove the sos at the beginning and eos at the end
                 feat_token_len_ratio = hypo_feat_len / (text_len - 2)
 
-        # --- 1.3. The 3rd Pass: denormalize the acoustic feature if needed --- #
+        # --- 1.3. The 3rd Pass: denormalize the acoustic feature and transformation to waveforms --- #
         if hasattr(self.decoder, 'normalize'):
             hypo_feat = self.decoder.normalize.recover(hypo_feat, group_ids=spk_ids)
+
+        # convert the acoustic features back to GL waveforms if specified
+        if return_gl_wav:
+            hypo_wav, hypo_wav_len = self.decoder.frontend.recover(hypo_feat, hypo_feat_len)
+            # remove the redundant silence parts at the end of the synthetic waveforms
+            hypo_wav = [hypo_wav[i][:hypo_wav_len[i]] for i in range(len(hypo_wav))]
+            outputs.update(
+                gl_wav=dict(format='wav', sample_rate=self.sample_rate, content=to_cpu(hypo_wav, tgt='numpy')),
+                gl_wav_len=dict(format='txt', content=to_cpu(hypo_wav_len))
+            )
 
         # --- 2. Post-processing for the Generated Acoustic Features --- #
         # remove the redundant silence parts at the end of the synthetic frames
@@ -829,18 +811,7 @@ class MultiDomainARTTS(ARTTS):
                        stop_loss: Dict = None,
                        att_guid_loss: Dict = None,
                        **kwargs):
-        """
 
-        Args:
-            loss_weights:
-            feat_loss:
-            stop_loss:
-            att_guid_loss:
-            **kwargs:
-
-        Returns:
-
-        """
         # register the weight for each loss if loss_weights is given
         if loss_weights is not None:
             self.loss_weights = dict()

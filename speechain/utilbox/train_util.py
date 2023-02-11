@@ -106,7 +106,6 @@ def text2tensor_and_len(text_list: List[str or List[str]], text2tensor_func, ign
     text = torch.full((text_len.size(0), text_len.max().item()), ignore_idx, dtype=text_len.dtype)
     for i in range(text_len.size(0)):
         text[i][:text_len[i]] = text_list[i]
-
     return text, text_len
 
 

@@ -4,6 +4,7 @@
     Date: 2023.02
 """
 import copy
+import random
 
 import torch
 import warnings
@@ -20,7 +21,6 @@ from speechain.module.decoder.nar_tts import FastSpeech2Decoder
 
 from speechain.criterion.least_error import LeastError
 
-from speechain.utilbox.train_util import text2tensor_and_len
 from speechain.utilbox.data_loading_util import parse_path_args
 from speechain.utilbox.tensor_util import to_cpu
 
@@ -170,32 +170,6 @@ class FastSpeech2(Model):
             ['feat_len', 'min', 30]
         ]
 
-    def batch_preprocess_fn(self, batch_data: Dict):
-
-        def process_strings(data_dict: Dict):
-            """
-            turn the text strings into tensors and get their lengths
-
-            """
-            # --- Process the Text String and its Length --- #
-            if 'text' in data_dict.keys():
-                assert isinstance(data_dict['text'], List)
-                data_dict['text'], data_dict['text_len'] = text2tensor_and_len(
-                    text_list=data_dict['text'], text2tensor_func=self.tokenizer.text2tensor,
-                    ignore_idx=self.tokenizer.ignore_idx
-                )
-
-            return data_dict
-
-        # check whether the batch_data is made by multiple dataloaders
-        leaf_flags = [not isinstance(value, Dict) for value in batch_data.values()]
-        if sum(leaf_flags) == 0:
-            return {key: process_strings(value) for key, value in batch_data.items()}
-        elif sum(leaf_flags) == len(batch_data):
-            return process_strings(batch_data)
-        else:
-            raise RuntimeError
-
     def criterion_init(self,
                        feat_loss: Dict = None,
                        pitch_loss: Dict = None,
@@ -238,6 +212,9 @@ class FastSpeech2(Model):
                        rand_spk_feat: bool = False,
                        epoch: int = None,
                        return_att: bool = False,
+                       duration_alpha: torch.Tensor = None,
+                       energy_alpha: torch.Tensor = None,
+                       pitch_alpha: torch.Tensor = None,
                        **kwargs) -> Dict:
         """
 
@@ -273,6 +250,10 @@ class FastSpeech2(Model):
                 Mainly used for mean&std calculation in the feature normalization
             return_att: bool
                 Controls whether the attention matrices of each layer in the encoder and decoder will be returned.
+            # Arguments for controllable TTS received from self.inference()
+            duration_alpha:
+            energy_alpha:
+            pitch_alpha:
             kwargs:
                 Temporary register used to store the redundant arguments.
 
@@ -280,6 +261,9 @@ class FastSpeech2(Model):
             A dictionary containing all the TTS model outputs (feature, eos bernouli prediction) necessary to calculate the losses
 
         """
+        # text checking
+        assert text_len.size(0) == text.size(0), \
+            "The amounts of sentences and their lengths are not equal to each other."
         # feat checking
         if feat is not None and feat_len is not None:
             assert feat.size(0) == text.size(0) and feat_len.size(0) == text_len.size(0), \
@@ -310,27 +294,26 @@ class FastSpeech2(Model):
             raise RuntimeError(f"In {self.__class__.__name__}, "
                                f"energy and energy_len must be None or not None at the same time! "
                                f"But got energy={energy} and energy_len={energy_len}.")
+
+        # text preprocessing before duration checking
+        # remove the <sos/eos> at the beginning and the end of each sentence
+        for i in range(text_len.size(0)):
+            text[i, text_len[i] - 1] = self.tokenizer.ignore_idx
+        text, text_len = text[:, 1:-1], text_len - 2
+        
         # duration checking
         if duration is not None and duration_len is not None:
             assert duration.size(0) == text.size(0), \
                 "The amounts of durations and text are not equal to each other."
             assert duration_len.size(0) == text_len.size(0), \
                 "The amounts of durations and text lengths are not equal to each other."
+            # check the length of duration and text
+            assert False not in [len(text[i]) == len(duration[i]) for i in range(len(text))], \
+                "The lengths of individual duration and text data don't match with each other."
         elif (duration is None) ^ (duration_len is None):
             raise RuntimeError(f"In {self.__class__.__name__}, "
                                f"duration and duration_len must be None or not None at the same time! "
                                f"But got duration={duration} and duration_len={duration_len}.")
-        # text checking
-        assert text_len.size(0) == text.size(0), \
-            "The amounts of sentences and their lengths are not equal to each other."
-
-        # remove the <sos/eos> at the beginning and the end of each sentence
-        for i in range(text_len.size(0)):
-            text[i, text_len[i] - 1] = self.tokenizer.ignore_idx
-        text, text_len = text[:, 1:-1], text_len - 2
-        # check the length of duration and text
-        assert False not in [len(text[i]) == len(duration[i]) for i in range(len(text))], \
-            "The lengths of individual duration and text data don't match with each other."
 
         # Encoding the text data
         enc_text, enc_text_mask, enc_attmat, enc_hidden = self.encoder(text=text, text_len=text_len)
@@ -344,8 +327,10 @@ class FastSpeech2(Model):
                                               duration=duration, duration_len=duration_len,
                                               feat=feat, feat_len=feat_len, pitch=pitch, pitch_len=pitch_len,
                                               energy=energy, energy_len=energy_len,
-                                              spk_feat=spk_feat, spk_ids=spk_ids, rand_spk_feat=rand_spk_feat,
-                                              epoch=epoch)
+                                              spk_feat=spk_feat, spk_ids=spk_ids,
+                                              rand_spk_feat=rand_spk_feat, epoch=epoch,
+                                              duration_alpha=duration_alpha, energy_alpha=energy_alpha,
+                                              pitch_alpha=pitch_alpha)
 
         # initialize the TTS output to be the decoder predictions
         outputs = dict(
@@ -552,6 +537,7 @@ class FastSpeech2(Model):
                   spk_feat_ids: List[str] = None,
                   domain: str = None,
                   return_att: bool = False,
+                  return_gl_wav: bool = True,
                   use_before: bool = False,
                   teacher_forcing: bool = False) -> Dict[str, Dict[str, str or List]]:
         """
@@ -574,6 +560,7 @@ class FastSpeech2(Model):
             # --- General inference arguments --- #
             domain:
             return_att:
+            return_gl_wav:
             use_before:
             teacher_forcing:
 
@@ -583,7 +570,7 @@ class FastSpeech2(Model):
         # --- 0. Hyperparameter & Model Preparation Stage --- #
         # in-place replace infer_conf with its copy to protect the original information
         infer_conf = copy.deepcopy(infer_conf)
-        # teacher_forcing in infer_conf has the higher priority and will not be passed to auto_regression()
+        # teacher_forcing in infer_conf has the higher priority and will not be passed to self.module_forward()
         if 'teacher_forcing' in infer_conf.keys():
             teacher_forcing = infer_conf.pop('teacher_forcing')
         if teacher_forcing:
@@ -595,10 +582,88 @@ class FastSpeech2(Model):
                 f"If you want to decode {self.__class__.__name__} without the teacher-forcing technique, " \
                 f"please don't give 'feat' and 'duration' in your data_cfg['test']!"
 
-        # use_before in infer_conf has the higher priority than the default values
+        # use_before in infer_conf has the higher priority and will not be passed to self.module_forward()
         if 'use_before' in infer_conf.keys():
-            use_before = infer_conf['use_before']
+            use_before = infer_conf.pop('use_before')
 
+        # arguments for controllable TTS if teacher-forcing is not used
+        if not teacher_forcing:
+            alpha = infer_conf.pop('alpha') if 'alpha' in infer_conf.keys() else 1.0
+            alpha_min = infer_conf.pop('alpha_min') if 'alpha_min' in infer_conf.keys() else 1.0
+            alpha_max = infer_conf.pop('alpha_max') if 'alpha_max' in infer_conf.keys() else 1.0
+            assert (alpha == 1.0) or (alpha_min == 1.0 and alpha_max == 1.0), \
+                "(1) set alpha to a non-one float number; " \
+                "(2) set alpha_min and/or alpha_max to non-one float numbers.\n" \
+                "You can only do one of them if you want to use controllable FastSpeech2, " \
+                f"but got alpha={alpha}, alpha_min={alpha_min}, alpha_max={alpha_max}!"
+            assert alpha_min <= alpha_max, \
+                f"alpha_min cannot be larger than alpha_max! Got alpha_min={alpha_min} and alpha_max={alpha_max}!"
+
+            ctrl_duration = infer_conf.pop('ctrl_duration') if 'ctrl_duration' in infer_conf.keys() else False
+            ctrl_energy = infer_conf.pop('ctrl_energy') if 'ctrl_energy' in infer_conf.keys() else False
+            ctrl_pitch = infer_conf.pop('ctrl_pitch') if 'ctrl_pitch' in infer_conf.keys() else False
+            if (alpha != 1.0) ^ (alpha_min != 1.0 or alpha_max != 1.0):
+                assert ctrl_duration or ctrl_energy or ctrl_pitch, \
+                    "If you want to use controllable FastSpeech2, " \
+                    "please set at least one of the arguments 'ctrl_duration', 'ctrl_energy', 'ctrl_pitch' to True!"
+
+            ctrl_level = infer_conf.pop('ctrl_level') if 'ctrl_level' in infer_conf.keys() else 'utterance'
+            assert ctrl_level in ['utterance', 'token'], \
+                f"The argument ctrl_level should be either 'utterance' or 'token', but got ctrl_level={ctrl_level}!"
+            if ctrl_level == 'token' and alpha != 1.0:
+                raise ValueError("If you want to control TTS in the level of tokens, "
+                                 "please use the arguments 'alpha_min' and 'alpha_max' instead of 'alpha'.")
+
+            # initialize the alpha of duration for controllable TTS
+            duration_alpha = None
+            if ctrl_duration:
+                # random alpha
+                if alpha == 1.0:
+                    # minus 2 to remove the influence of sos and eos in text
+                    duration_alpha = torch.rand(
+                        size=(text.size(0), 1) if ctrl_level == 'utterance' else (text.size(0), text.size(1) - 2))
+                    duration_alpha = (alpha_max - alpha_min) * duration_alpha + alpha_min
+                # fixed alpha
+                else:
+                    duration_alpha = torch.tensor([alpha for _ in range(text.size(0))]).unsqueeze(-1)
+                # ensure the device consistency
+                if text.is_cuda:
+                    duration_alpha = duration_alpha.cuda(text.device)
+            # initialize the alpha of energy for controllable TTS
+            energy_alpha = None
+            if ctrl_energy:
+                # random alpha
+                if alpha == 1.0:
+                    # minus 2 to remove the influence of sos and eos in text
+                    energy_alpha = torch.rand(
+                        size=(text.size(0), 1) if ctrl_level == 'utterance' else (text.size(0), text.size(1) - 2))
+                    energy_alpha = (alpha_max - alpha_min) * energy_alpha + alpha_min
+                # fixed alpha
+                else:
+                    energy_alpha = torch.tensor([alpha for _ in range(text.size(0))]).unsqueeze(-1)
+                # ensure the device consistency
+                if text.is_cuda:
+                    energy_alpha = energy_alpha.cuda(text.device)
+            # initialize the alpha of pitch for controllable TTS
+            pitch_alpha = None
+            if ctrl_pitch:
+                # random alpha
+                if alpha == 1.0:
+                    # minus 2 to remove the influence of sos and eos in text
+                    pitch_alpha = torch.rand(
+                        size=(text.size(0), 1) if ctrl_level == 'utterance' else (text.size(0), text.size(1) - 2))
+                    pitch_alpha = (alpha_max - alpha_min) * pitch_alpha + alpha_min
+                # fixed alpha
+                else:
+                    pitch_alpha = torch.tensor([alpha for _ in range(text.size(0))]).unsqueeze(-1)
+                # ensure the device consistency
+                if text.is_cuda:
+                    pitch_alpha = pitch_alpha.cuda(text.device)
+        # no controllable TTS is done if teacher-forcing is used
+        else:
+            duration_alpha, energy_alpha, pitch_alpha = None, None, None
+
+        # initialize the hypothesis variables
         hypo_feat, hypo_feat_len, feat_token_len_ratio, hypo_att = None, None, None, None
 
         # Multi-speaker TTS scenario
@@ -630,7 +695,9 @@ class FastSpeech2(Model):
                                             pitch=pitch if teacher_forcing else None,
                                             pitch_len=pitch_len if teacher_forcing else None,
                                             spk_feat=spk_feat, spk_ids=spk_ids,
-                                            rand_spk_feat=rand_spk_feat, return_att=return_att, **model_input)
+                                            rand_spk_feat=rand_spk_feat, return_att=return_att,
+                                            duration_alpha=duration_alpha, energy_alpha=energy_alpha,
+                                            pitch_alpha=pitch_alpha, **model_input)
         # return the attention matrices
         if return_att:
             hypo_att = infer_results['att']
@@ -660,6 +727,16 @@ class FastSpeech2(Model):
         # remove the sos at the beginning and eos at the end
         feat_token_len_ratio = hypo_feat_len / (text_len - 2)
 
+        # convert the acoustic features back to GL waveforms if specified
+        if return_gl_wav:
+            hypo_wav, hypo_wav_len = self.decoder.feat_frontend.recover(hypo_feat, hypo_feat_len)
+            # remove the redundant silence parts at the end of the synthetic waveforms
+            hypo_wav = [hypo_wav[i][:hypo_wav_len[i]] for i in range(len(hypo_wav))]
+            outputs.update(
+                gl_wav=dict(format='wav', sample_rate=self.sample_rate, content=to_cpu(hypo_wav, tgt='numpy')),
+                gl_wav_len=dict(format='txt', content=to_cpu(hypo_wav_len))
+            )
+
         # remove the redundant silence parts at the end of the synthetic frames
         hypo_feat = [hypo_feat[i][:hypo_feat_len[i]] for i in range(len(hypo_feat))]
         outputs.update(
@@ -668,6 +745,22 @@ class FastSpeech2(Model):
             feat_len=dict(format='txt', content=to_cpu(hypo_feat_len)),
             feat_token_len_ratio=dict(format='txt', content=to_cpu(feat_token_len_ratio))
         )
+        # record the alpha values for controllable TTS
+        if duration_alpha is not None:
+            outputs.update(
+                duration_alpha=dict(format='txt',
+                                    content=[d_a[0] if len(d_a) == 1 else str([round(i, 2) for i in d_a])
+                                             for d_a in to_cpu(duration_alpha)]))
+        if energy_alpha is not None:
+            outputs.update(
+                energy_alpha=dict(format='txt',
+                                  content=[e_a[0] if len(e_a) == 1 else str([round(i, 2) for i in e_a])
+                                           for e_a in to_cpu(energy_alpha)]))
+        if pitch_alpha is not None:
+            outputs.update(
+                pitch_alpha=dict(format='txt',
+                                 content=[p_a[0] if len(p_a) == 1 else str([round(i, 2) for i in p_a])
+                                          for p_a in to_cpu(pitch_alpha)]))
 
         # record the speaker ID used as the reference
         if spk_ids is not None:

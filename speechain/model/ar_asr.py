@@ -16,7 +16,6 @@ from speechain.tokenizer.sp import SentencePieceTokenizer
 from speechain.infer_func.beam_search import beam_searching
 from speechain.utilbox.tensor_util import to_cpu
 from speechain.utilbox.eval_util import get_word_edit_alignment
-from speechain.utilbox.train_util import text2tensor_and_len
 
 from speechain.module.encoder.asr import ASREncoder
 from speechain.module.decoder.ar_asr import ARASRDecoder
@@ -296,45 +295,6 @@ class ARASR(Model):
             ['text_confid', 'min', 30],
             ['text_confid', 'max', 30]
         ]
-
-    def batch_preprocess_fn(self, batch_data: Dict):
-        """
-
-        Args:
-            batch_data:
-
-        Returns:
-
-        """
-
-        def process_strings(data_dict: Dict):
-            """
-            turn the text strings into tensors and get their lengths
-
-            Args:
-                data_dict:
-
-            Returns:
-
-            """
-            # --- Process the Text String and its Length --- #
-            if 'text' in data_dict.keys():
-                assert isinstance(data_dict['text'], List)
-                data_dict['text'], data_dict['text_len'] = text2tensor_and_len(
-                    text_list=data_dict['text'], text2tensor_func=self.tokenizer.text2tensor,
-                    ignore_idx=self.tokenizer.ignore_idx
-                )
-
-            return data_dict
-
-        # check whether the batch_data is made by multiple dataloaders
-        leaf_flags = [not isinstance(value, Dict) for value in batch_data.values()]
-        if sum(leaf_flags) == 0:
-            return {key: process_strings(value) for key, value in batch_data.items()}
-        elif sum(leaf_flags) == len(batch_data):
-            return process_strings(batch_data)
-        else:
-            raise RuntimeError
 
     def module_forward(self,
                        feat: torch.Tensor,

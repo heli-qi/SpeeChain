@@ -209,7 +209,7 @@ def convert_wav_to_mfcc(wav: np.ndarray,
 
 
 def convert_wav_to_pitch(wav: np.ndarray or torch.Tensor,
-                         hop_length: int = 256,
+                         hop_length: int or float = 256,
                          sr: int = 22050,
                          f0min: int = 80,
                          f0max: int = 400,
@@ -235,11 +235,19 @@ def convert_wav_to_pitch(wav: np.ndarray or torch.Tensor,
         return_tensor: bool
             Whether to return the pitch in torch.Tensor. If False, np.ndarray will be returned.
 
+    Returns:
+        f0: (n_frame,)
+
     """
+    if isinstance(hop_length, float):
+        hop_length = int(hop_length * sr)
+
     # datatype checking
     if isinstance(wav, torch.Tensor):
         wav = to_native(wav, tgt='numpy').astype(np.float64)
-    elif not isinstance(wav, np.ndarray):
+    elif isinstance(wav, np.ndarray):
+        wav = wav.astype(np.float64)
+    else:
         raise TypeError(f"wav should be either a torch.Tensor or a np.ndarray, but got type(wav)={type(wav)}!")
 
     # dimension checking

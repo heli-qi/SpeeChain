@@ -99,7 +99,6 @@ class SpeechTextDataset(Dataset):
 
                 # acoustic feature padding, feat.dtype needs to match the type of model parameters (torch.float32)
                 feat = torch.zeros((batch_size, feat_maxlen, feat_dim), dtype=torch.float32)
-
                 # overwrite the padding matrix with each feat vector
                 for i in range(batch_size):
                     # process feat data based on data type
@@ -123,7 +122,6 @@ class SpeechTextDataset(Dataset):
 
                 # pitch padding, pitch.dtype needs to match the type of model parameters (torch.float32)
                 pitch = torch.zeros((batch_size, pitch_maxlen), dtype=torch.float32)
-
                 # overwrite the padding matrix with each pitch vector
                 for i in range(batch_size):
                     # process feat data based on data type
@@ -145,7 +143,6 @@ class SpeechTextDataset(Dataset):
 
                 # duration padding, feat.dtype needs to match the type of model parameters (torch.float32)
                 duration = torch.zeros((batch_size, duration_len.max().item()), dtype=torch.float32)
-
                 # overwrite the padding matrix with each duration vector
                 for i in range(batch_size):
                     # process duration data based on data type

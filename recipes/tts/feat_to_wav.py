@@ -53,7 +53,7 @@ def parse():
 
     # Shared Arguments
     group = parser.add_argument_group("Shared Arguments")
-    group.add_argument('--vocoder', type=str, default='gl',
+    group.add_argument('--vocoder', type=str, default='hifigan',
                        help="The type of the vocoder you want to use to generate waveforms. (default: hifigan)")
     group.add_argument('--feat_path', type=str, required=True,
                        help="The path of your TTS experimental folder. All the files named 'idx2feat' will be "
@@ -82,11 +82,11 @@ def parse():
 
     # Neural Vocoder-specific Arguments
     group = parser.add_argument_group("Neural Vocoder-specific Arguments")
-    group.add_argument('--sample_rate', type=int, default=16000,
-                       help="The sampling rate of generated waveforms. (default: 16000)")
-    group.add_argument('--vocoder_train_data', type=str, default='libritts',
+    group.add_argument('--sample_rate', type=int, default=22050,
+                       help="The sampling rate of generated waveforms. (default: 22050)")
+    group.add_argument('--vocoder_train_data', type=str, default='ljspeech',
                        help="The dataset used to train the neural vocoder. "
-                            "This argument is required if your input vocoder is not 'gl'. (default: libritts)")
+                            "This argument is required if your input vocoder is not 'gl'. (default: ljspeech)")
     return parser.parse_args()
 
 

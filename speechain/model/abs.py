@@ -21,6 +21,7 @@ from speechain.module.prenet.spk_embed import SpeakerEmbedPrenet
 from speechain.utilbox.yaml_util import load_yaml
 from speechain.utilbox.md_util import get_list_strings
 from speechain.utilbox.data_loading_util import parse_path_args
+from speechain.utilbox.train_util import text2tensor_and_len, spk2tensor
 
 
 class Model(torch.nn.Module, ABC):
@@ -407,7 +408,7 @@ class Model(torch.nn.Module, ABC):
         """
         This hook function does the preprocessing for the input batch data before using them in self.model_forward().
         This function is not mandatory to be overridden and the original implementation in the base Model class does
-        nothing but return the input batch_data.
+        the tensor transformation for the string-like data in batch_data (i.e., text and spk_ids).
 
         Note: the key names in the returned Dict should match the argument names in self.model_forward().
 
@@ -419,7 +420,35 @@ class Model(torch.nn.Module, ABC):
             The processed data of the input batch that is ready to be used in `self.model_forward()`.
 
         """
-        return batch_data
+
+        def process_strings(data_dict: Dict):
+            """
+            turn the text and speaker strings into tensors and get their lengths
+
+            """
+            # --- Process the Text String and its Length --- #
+            if 'text' in data_dict.keys():
+                assert isinstance(data_dict['text'], List)
+                data_dict['text'], data_dict['text_len'] = text2tensor_and_len(
+                    text_list=data_dict['text'], text2tensor_func=self.tokenizer.text2tensor,
+                    ignore_idx=self.tokenizer.ignore_idx
+                )
+
+            # --- Process the Speaker ID String --- #
+            if 'spk_ids' in data_dict.keys():
+                assert isinstance(data_dict['spk_ids'], List) and hasattr(self, 'spk2idx')
+                data_dict['spk_ids'] = spk2tensor(spk_list=data_dict['spk_ids'], spk2idx_dict=self.spk2idx)
+
+            return data_dict
+
+        # check whether the batch_data is made by multiple dataloaders
+        leaf_flags = [not isinstance(value, Dict) for value in batch_data.values()]
+        if sum(leaf_flags) == 0:
+            return {key: process_strings(value) for key, value in batch_data.items()}
+        elif sum(leaf_flags) == len(batch_data):
+            return process_strings(batch_data)
+        else:
+            raise RuntimeError("Wrong composition of batch_data!")
 
     def aver_metrics_across_procs(self, metrics: Dict[str, torch.Tensor], batch_data: Dict) -> Dict[str, torch.Tensor]:
         """
