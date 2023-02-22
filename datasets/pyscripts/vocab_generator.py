@@ -155,7 +155,7 @@ def generate_vocab_sentencepiece(save_path: str, text_path: str, txt_format: str
     if not os.path.exists(os.path.join(save_path, 'model')) or not os.path.exists(os.path.join(save_path, 'vocab')):
         # disable bos and eos. <sos>/<eos> will be added externally, so vocab_size need to be subtracted from 1
         # add <blank> and put <unk> to the end of the vocabulary
-        spm.SentencePieceTrainer.train(input=os.path.join(text_path, f'{txt_format}_text'), model_prefix='m',
+        spm.SentencePieceTrainer.train(input=os.path.join(text_path, f'idx2{txt_format}_text'), model_prefix='m',
                                        vocab_size=vocab_size - 1, model_type=model_type,
                                        character_coverage=character_coverage,
                                        split_by_whitespace=split_by_whitespace, user_defined_symbols='<blank>',
