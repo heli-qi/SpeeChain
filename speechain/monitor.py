@@ -34,6 +34,7 @@ from speechain.utilbox.md_util import get_table_strings, get_list_strings
 
 from speechain.utilbox.import_util import parse_path_args
 from speechain.utilbox.data_saving_util import save_data_by_format
+from speechain.utilbox.data_loading_util import search_file_in_subfolder
 
 
 class Monitor(ABC):
@@ -981,7 +982,7 @@ class TrainValidMonitor(object):
         return self.valid_monitor.finish_epoch(train_records=self.train_monitor.epoch_records, valid_flag=valid_flag,
                                                valid_per_epochs=valid_per_epochs)
 
-    def wait_empty_queues(self, sleep_time: int = 60, max_wait_round: int = 10):
+    def wait_empty_queues(self, sleep_time: int = 10, max_wait_round: int = 30):
         """
         Check whether the snapshooters of train_monitor and valid_monitor are still working.
         wait until the material queues of the snapshooters become empty.
@@ -994,9 +995,9 @@ class TrainValidMonitor(object):
                     message += "The training snapshooter is still snapshotting. "
                 if not self.valid_monitor.empty_queue():
                     message += "The validation snapshooter is still snapshotting. "
-                self.logger.info(message + "Waiting for 1 minute......")
+                self.logger.info(message + f"Waiting for {sleep_time} seconds......")
                 time.sleep(sleep_time)
-            self.logger.info(f"The maximal waiting time {max_wait_round * sleep_time}s is reached, "
+            self.logger.info(f"The maximal waiting time {max_wait_round * sleep_time} seconds is reached, "
                              f"so the snapshooters will be shut down......")
 
     def state_dict(self):
@@ -1008,6 +1009,24 @@ class TrainValidMonitor(object):
     def load_state_dict(self, state_dict):
         self.train_monitor.load_state_dict(state_dict['train_monitor'])
         self.valid_monitor.load_state_dict(state_dict['valid_monitor'])
+
+
+def data_saving_logs(logs_queue: Queue, event: Event):
+    try:
+        while True:
+            # check whether the queue is empty every minute
+            if not logs_queue.empty():
+                log = logs_queue.get()
+                save_data_by_format(**log)
+            else:
+                event.wait(timeout=10)
+                event.clear()
+    except (ImportError, RuntimeError) as e:
+        warnings.warn(f"data_saving_logs() meets an ignorable error: {e}.")
+        pass
+    except Exception as r:
+        warnings.warn(f"data_saving_logs() meets an unknown errors: {r}.")
+        pass
 
 
 class TestMonitor(Monitor):
@@ -1033,6 +1052,13 @@ class TestMonitor(Monitor):
             self.bad_cases_selection = []
         elif not isinstance(self.bad_cases_selection[0], List):
             self.bad_cases_selection = [self.bad_cases_selection]
+
+        # initialize the snapshooter of the monitor
+        self.data_saving_logs_queue = Queue()
+        # initialize the multiprocessing event to enable the communication with snapshooter process
+        self.data_saving_event = Event()
+        self.data_saving_event.clear()
+        Process(target=data_saving_logs, args=(self.data_saving_logs_queue, self.data_saving_event), daemon=True).start()
 
     def start_epoch(self, total_step_num: int):
         """
@@ -1069,14 +1095,33 @@ class TestMonitor(Monitor):
             if result['format'].lower() == 'txt':
                 if name not in self.step_info.keys():
                     self.step_info[name] = dict()
-                self.step_info[name].update(dict(zip(test_index, result['content'])))
+
+                for index, content in zip(test_index, result['content']):
+                    # for the List-type element, turn it into its string format
+                    if isinstance(content, List):
+                        content = str(content)
+                    self.step_info[name][index] = content
 
             # for other files, data needs to be saved to the disk in real time to reduce the memory burden
             else:
-                save_data_by_format(file_format=result['format'].lower(),
-                                    save_path=os.path.join(self.result_path, name),
-                                    file_name_list=test_index, file_content_list=result['content'],
-                                    sample_rate=result['sample_rate'] if 'sample_rate' in result.keys() else None)
+                self.data_saving_logs_queue.put(
+                    dict(
+                        file_format=result['format'].lower(),
+                        save_path=os.path.join(self.result_path, name),
+                        file_name_list=test_index,
+                        file_content_list=result['content'],
+                        group_ids=result['group_ids'] if 'group_ids' in result.keys() else None,
+                        sample_rate=result['sample_rate'] if 'sample_rate' in result.keys() else None
+                    )
+                )
+                # notify the data saving process of the new-added queue elements
+                self.data_saving_event.set()
+
+                # save_data_by_format(file_format=result['format'].lower(),
+                #                     save_path=os.path.join(self.result_path, name),
+                #                     file_name_list=test_index, file_content_list=result['content'],
+                #                     group_ids=result['group_ids'],
+                #                     sample_rate=result['sample_rate'] if 'sample_rate' in result.keys() else None)
 
         # --- Report the testing midway information to users --- #
         test_step_message = None
@@ -1183,6 +1228,14 @@ class TestMonitor(Monitor):
                 np.savetxt(os.path.join(final_path, f'idx2{key}'), list(self.step_info[key].items()), fmt="%s")
 
         # --- Gather all the save-during-testing files & Generate their path files --- #
+        while True:
+            self.data_saving_logs_queue.qsize()
+            if self.data_saving_logs_queue.empty():
+                break
+            else:
+                self.logger.info("The data saving process is still working. Waiting for 10 seconds......")
+                time.sleep(10)
+
         for file_name in os.listdir(self.result_path):
             # only consider the folders not named as 'figures'
             if os.path.isdir(os.path.join(self.result_path, file_name)) and file_name != 'figures':
@@ -1197,12 +1250,31 @@ class TestMonitor(Monitor):
         if self.distributed:
             for rank in range(1, torch.distributed.get_world_size()):
                 for file_name in os.listdir(os.path.join(final_path, f'rank{rank}_tmp')):
-                    # only consider the folders not named as 'figures'
-                    if os.path.isdir(os.path.join(final_path, f'rank{rank}_tmp', file_name)) and file_name != 'figures':
+                    # skip the folder named figure
+                    if file_name == 'figure':
+                        continue
+
+                    # only consider the folders, skip the standalone files
+                    folder_path = os.path.join(final_path, f'rank{rank}_tmp', file_name)
+                    if os.path.isdir(folder_path):
                         # move all the files to the final_path once a time (shutil.move doesn't work)
-                        for data_file in os.listdir(os.path.join(final_path, f'rank{rank}_tmp', file_name)):
-                            os.rename(src=os.path.join(final_path, f'rank{rank}_tmp', file_name, data_file),
-                                      dst=os.path.join(final_path, file_name, data_file))
+                        for data_file in os.listdir(folder_path):
+                            src_path = os.path.join(final_path, f'rank{rank}_tmp', file_name, data_file)
+                            dst_path = os.path.join(final_path, file_name, data_file)
+                            # for the folder with the same name, move all the files in src_path into dst_path
+                            if os.path.exists(dst_path):
+                                for src_file in search_file_in_subfolder(
+                                        src_path, tgt_match_fn=lambda x: len(x.split('.')) > 1, return_name=True):
+                                    os.rename(src=os.path.join(src_path, src_file), dst=os.path.join(dst_path, src_file))
+                                # after file moving, remove the empty folder
+                                if len(search_file_in_subfolder(
+                                        src_path, tgt_match_fn=lambda x: len(x.split('.')) > 1, return_name=True)) == 0:
+                                    os.removedirs(src_path)
+                                else:
+                                    raise RuntimeError(f'Some files in {src_path} have not been successfully moved to {dst_path}!')
+                            # for the file, directly move it to dst_path
+                            else:
+                                os.rename(src=src_path, dst=dst_path)
 
         # generate the data path files
         for file_name in os.listdir(final_path):
@@ -1213,13 +1285,11 @@ class TestMonitor(Monitor):
             if file_name.startswith('rank') or file_name == 'figures':
                 continue
             idx2path = []
-            for data_file in os.listdir(os.path.join(final_path, file_name)):
-                data_index = '.'.join(data_file.split('.')[:-1])
-                if data_index == '':
-                    continue
-
-                data_path = os.path.join(final_path, file_name, data_file)
-                idx2path.append([data_index, data_path])
+            # for data_file in os.listdir(os.path.join(final_path, file_name)):
+            for data_file in search_file_in_subfolder(
+                    os.path.join(final_path, file_name), tgt_match_fn=lambda x: len(x.split('.')) > 1):
+                data_index = '.'.join(os.path.basename(data_file).split('.')[:-1])
+                idx2path.append([data_index, data_file])
 
             idx2path = list(sorted(idx2path, key=lambda x: x[0]))
             np.savetxt(os.path.join(final_path, f'idx2{file_name}'), idx2path, fmt="%s")
@@ -1308,6 +1378,10 @@ class TestMonitor(Monitor):
                     np.savetxt(result_path, [sample_reports], fmt="%s")
 
         # --- Histograms Plotting --- #
+        # remove the old figures if have
+        if os.path.exists(os.path.join(final_path, 'figures')):
+            shutil.rmtree(os.path.join(final_path, 'figures'))
+
         # loop each metric and plot the histogram figure
         for metric, result_dict in self.step_info.items():
             result_list = list(result_dict.values())
@@ -1321,9 +1395,11 @@ class TestMonitor(Monitor):
                 )
             )
 
-        while not self.empty_queue():
-            self.logger.info("The snapshooter is still snapshotting. Waiting for 1 minute......")
-            time.sleep(60)
+        if not self.empty_queue():
+            for i in range(30):
+                if not self.empty_queue():
+                    self.logger.info("The snapshooter is still snapshotting. Waiting for 10 seconds......")
+                    time.sleep(10)
 
         # copy the plotted figures into final_path
         shutil.move(src=os.path.join(self.result_path, 'figures'), dst=os.path.join(final_path, 'figures'))

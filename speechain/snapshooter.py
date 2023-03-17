@@ -263,7 +263,7 @@ class HistPlotter(Plotter):
         ax.set_ylabel(ylabel if ylabel is not None else None)
 
         # set the figure title
-        fig_title = f"{xlabel}" if xlabel is not None else f"{fig_name}"
+        fig_title = f"{fig_name}" if fig_name is not None else f"{xlabel}"
         ax.set_title(fig_title, fontweight='bold', color='black', verticalalignment="baseline")
 
         # set the figure grid
@@ -310,10 +310,13 @@ def snapshot_logs(logs_queue: Queue, event: Event, snapshooter_conf: Dict):
                 log = logs_queue.get()
                 snapshooter.snapshot(**log)
             else:
-                event.wait(timeout=60)
+                event.wait(timeout=10)
                 event.clear()
     except (ImportError, RuntimeError) as e:
-        warnings.warn(f"SnapShooter meets the error: {e}.")
+        warnings.warn(f"SnapShooter meets an ignorable error: {e}.")
+        pass
+    except Exception as r:
+        warnings.warn(f"SnapShooter meets an unknown errors: {r}.")
         pass
 
 
