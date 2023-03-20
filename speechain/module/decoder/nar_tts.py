@@ -54,10 +54,14 @@ class FastSpeech2Decoder(Module):
                     pitch_normalize: Dict or bool = True,
                     energy_normalize: Dict or bool = True,
                     len_regulation_type: str = 'hard',
-                    reduction_factor: int = 1):
+                    reduction_factor: int = 1,
+                    min_frame_num: int = 0,
+                    max_frame_num: int = None):
 
         # reduction factor for acoustic feature sequence
         self.reduction_factor = reduction_factor
+        self.min_frame_num = min_frame_num
+        self.max_frame_num = max_frame_num
         if len_regulation_type not in ['hard', 'soft']:
             raise ValueError(f"Unknown len_regulation_type {len_regulation_type}. It must be either 'hard' or 'soft'!")
         else:
@@ -150,7 +154,7 @@ class FastSpeech2Decoder(Module):
                 for j in range(duration_len[i]):
                     d = min(int(duration[i][j].item()), frame_scalar_len[i].item() - _cursor)
                     if d > 0:
-                        token_scalar[i][j] = frame_scalar[i][_cursor: _cursor + d].mean()
+                        token_scalar[i][j] += frame_scalar[i][_cursor: _cursor + d].mean()
                         _cursor += d
                     if _cursor >= frame_scalar_len[i]:
                         continue
@@ -164,7 +168,7 @@ class FastSpeech2Decoder(Module):
                     if d > 0:
                         # for the phoneme that doesn't cross two or more frames
                         if d < _prev_weight:
-                            token_scalar[i][j] = frame_scalar[i][_cursor - 1]
+                            token_scalar[i][j] += frame_scalar[i][_cursor - 1]
                             _prev_weight = _prev_weight - d
                             # cursor is not updated in this situation
                         # for the phoneme that crosses two or more frames
@@ -178,15 +182,15 @@ class FastSpeech2Decoder(Module):
                                 int_d, frac_d = frame_scalar_len[i].item() - _cursor, 0
                             # the duration of the previous frame
                             if _prev_weight > 0:
-                                token_scalar[i][j] = token_scalar[i][j] + _prev_weight * frame_scalar[i][_cursor - 1]
+                                token_scalar[i][j] += _prev_weight * frame_scalar[i][_cursor - 1]
                             # the duration of the integer part (the current frames)
                             if int_d > 0:
-                                token_scalar[i][j] = token_scalar[i][j] + frame_scalar[i][_cursor: _cursor + int_d].sum()
+                                token_scalar[i][j] += frame_scalar[i][_cursor: _cursor + int_d].sum()
                             # the duration of the fraction part (the next frame)
                             if frac_d > 0:
-                                token_scalar[i][j] = token_scalar[i][j] + frac_d * frame_scalar[i][_cursor + int_d]
+                                token_scalar[i][j] += frac_d * frame_scalar[i][_cursor + int_d]
                             # take the average scalar by the three weights
-                            token_scalar[i][j] = token_scalar[i][j] / (_prev_weight + int_d + frac_d)
+                            token_scalar[i][j] /= (_prev_weight + int_d + frac_d)
                             # update the cursor and watch the end condition
                             _cursor, _prev_weight = _cursor + int_d + 1, 1 - frac_d
                             # check the end condition for the cursor
@@ -201,12 +205,15 @@ class FastSpeech2Decoder(Module):
 
         # round the phoneme duration to the nearest integer in the hard mode
         if self.len_regulation_type == 'hard':
-            duration = torch.clamp(torch.round(duration), min=0)
+            duration = torch.clamp(torch.round(duration), min=round(self.min_frame_num / self.reduction_factor),
+                        max=None if self.max_frame_num is None else round(self.max_frame_num / self.reduction_factor))
         # keep the phoneme duration to be the float numbers in the soft mode
         elif self.len_regulation_type == 'soft':
-            duration = torch.clamp(duration, min=0)
+            duration = torch.clamp(duration, min=self.min_frame_num / self.reduction_factor,
+                        max=None if self.max_frame_num is None else self.max_frame_num / self.reduction_factor)
         else:
-            raise RuntimeError
+            raise RuntimeError(f"Unknown len_regulation_type {self.len_regulation_type}."
+                               "It must be either 'hard' or 'soft'!")
         return duration
 
     def forward(self,
@@ -217,15 +224,17 @@ class FastSpeech2Decoder(Module):
                 energy: torch.Tensor = None, energy_len: torch.Tensor = None,
                 spk_feat: torch.Tensor = None, spk_ids: torch.Tensor = None,
                 epoch: int = None, rand_spk_feat: bool = False,
+                min_f2t_ratio: float = None, max_f2t_ratio: float = None,
                 duration_alpha: torch.Tensor = None, energy_alpha: torch.Tensor = None,
                 pitch_alpha: torch.Tensor = None):
 
         # --- 1. Speaker Embedding Combination --- #
         if hasattr(self, 'spk_emb'):
             # extract and process the speaker features (activation is not performed for random speaker feature)
-            spk_feat = self.spk_emb(spk_ids=spk_ids, spk_feat=spk_feat, spk_feat_act=not rand_spk_feat)
-            # combine the speaker features with the encoder outputs
-            enc_text, _ = self.spk_emb.combine_spk_feat(spk_feat=spk_feat, enc_output=enc_text)
+            spk_feat_lookup, spk_feat = self.spk_emb(spk_ids=spk_ids, spk_feat=spk_feat, spk_feat_act=not rand_spk_feat)
+            # combine the speaker features with the encoder outputs (and the decoder prenet outputs if specified)
+            enc_text, _ = self.spk_emb.combine_spk_feat(spk_feat=spk_feat, spk_feat_lookup=spk_feat_lookup,
+                                                        enc_output=enc_text)
 
         # --- 2. Acoustic Feature, Pitch, Energy Extraction --- #
         # in the training and validation stage, input feature data needs to be processed by the feature frontend
@@ -295,6 +304,13 @@ class FastSpeech2Decoder(Module):
                 ).mean(dim=-1)
                 energy_len = torch.div(energy_len, self.reduction_factor, rounding_mode='floor').type(torch.long)
 
+        # target labels checking for training stage
+        if self.training:
+            assert energy is not None and energy_len is not None and \
+                   pitch is not None and pitch_len is not None and \
+                   duration is not None and duration_len is not None, \
+                "During training, please give the ground-truth of energy, pitch, and duration."
+
         # --- 3. Duration Prediction --- #
         # note: pred_duration here is in the log domain!
         pred_duration, enc_text_len = self.duration_predictor(enc_text, make_len_from_mask(enc_text_mask))
@@ -309,6 +325,7 @@ class FastSpeech2Decoder(Module):
             # use the exp-converted predicted duration
             used_duration = self.proc_duration(torch.exp(pred_duration) - 1, duration_alpha=duration_alpha)
             used_duration_len = enc_text_len
+            used_duration.masked_fill_(~make_mask_from_len(enc_text_len, return_3d=False), 0.0)
 
         # --- 4. Pitch Prediction and Embedding --- #
         pred_pitch, enc_text_len = self.pitch_predictor(enc_text, enc_text_len)
@@ -317,7 +334,7 @@ class FastSpeech2Decoder(Module):
             pitch, pitch_len = self.average_scalar_by_duration(pitch, pitch_len, used_duration, used_duration_len)
         # during training, ground-truth pitch is used for embedding
         # during validation & evaluation, predicted pitch is used for embedding
-        used_pitch = pitch if self.training and pitch is not None else pred_pitch
+        used_pitch = pitch if self.training else pred_pitch
         # modify the pitch by pitch_alpha during evaluation
         if not self.training and pitch_alpha is not None:
             used_pitch = used_pitch * pitch_alpha
@@ -330,7 +347,7 @@ class FastSpeech2Decoder(Module):
             energy, energy_len = self.average_scalar_by_duration(energy, energy_len, used_duration, used_duration_len)
         # during training, ground-truth energy is used for embedding
         # during validation & evaluation, predicted energy is used for embedding
-        used_energy = energy if self.training and energy is not None else pred_energy
+        used_energy = energy if self.training else pred_energy
         # modify the energy by energy_alpha during evaluation
         if not self.training and energy_alpha is not None:
             used_energy = used_energy * energy_alpha
@@ -340,9 +357,18 @@ class FastSpeech2Decoder(Module):
         enc_text = enc_text + emb_pitch + emb_energy
 
         # --- 7. Length Regulation --- #
-        expand_enc_text_list, expand_enc_text_len = [], used_duration.sum(dim=-1).int()
+        # produce the flags which indicate whether to skip the utterance or not
+        skip_flags = torch.zeros(enc_text_len.size(0), dtype=torch.bool, device=enc_text_len.device)
+        if min_f2t_ratio is not None:
+            skip_flags |= (used_duration.sum(-1) / enc_text_len) < min_f2t_ratio
+        if max_f2t_ratio is not None:
+            skip_flags |= (used_duration.sum(-1) / enc_text_len) > max_f2t_ratio
+
         # loop each sentence
+        expand_enc_text_list = []
         for i in range(len(enc_text_len)):
+            if skip_flags[i]:
+                continue
             # used to record the current position in _expand_enc_text for proper length
             _expand_enc_text = []
             # for the hard length regulation (integer duration)
@@ -389,6 +415,9 @@ class FastSpeech2Decoder(Module):
         # teacher-forcing by feat_len if it is given
         if feat_len is not None:
             expand_enc_text_len = feat_len
+        # self-decoding by expand_enc_text_list if feat_len is not given
+        else:
+            expand_enc_text_len = torch.LongTensor([len(i) for i in expand_enc_text_list]).to(enc_text.device)
         expand_enc_text_maxlen = expand_enc_text_len.max().item()
 
         # assemble all the expanded enc_text from the list into a single 3d tensor
@@ -398,7 +427,7 @@ class FastSpeech2Decoder(Module):
                 expand_enc_text_list[i] = torch.nn.functional.pad(expand_enc_text_list[i], (0, 0, 0, len_diff), "constant", 0)
             elif len_diff < 0:
                 # note: len_diff is a negative integer
-                expand_enc_text_list[i] = expand_enc_text_list[i][:len_diff]
+                expand_enc_text_list[i] = expand_enc_text_list[i][:len_diff].contiguous()
             expand_enc_text_list[i] = expand_enc_text_list[i].unsqueeze(0)
         expand_enc_text = torch.cat(expand_enc_text_list)
 
@@ -407,6 +436,16 @@ class FastSpeech2Decoder(Module):
         pred_feat_before = self.feat_pred(dec_feat)
         pred_feat_after = pred_feat_before + self.postnet(pred_feat_before, make_len_from_mask(dec_feat_mask))
 
-        return pred_feat_before, pred_feat_after, make_len_from_mask(dec_feat_mask), feat, feat_len,\
+        # delete the utterances that will be skipped
+        pred_pitch, pred_energy = pred_pitch[~skip_flags], pred_energy[~skip_flags]
+        pred_duration, used_duration, used_duration_len = \
+            pred_duration[~skip_flags], used_duration[~skip_flags], used_duration_len[~skip_flags]
+        if pitch is not None:
+            pitch, pitch_len = pitch[~skip_flags], pitch_len[~skip_flags]
+        if energy is not None:
+            energy, energy_len = energy[~skip_flags], energy_len[~skip_flags]
+
+        # the returned duration is used_duration (the actual one used for length regulation)
+        return pred_feat_before, pred_feat_after, make_len_from_mask(dec_feat_mask), skip_flags, feat, feat_len,\
                pred_pitch, pitch, pitch_len, pred_energy, energy, energy_len,\
-               pred_duration, duration, duration_len, dec_attmat, dec_hidden
+               pred_duration, used_duration, used_duration_len, dec_attmat, dec_hidden
