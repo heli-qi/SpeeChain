@@ -10,6 +10,8 @@
 import torch
 
 from speechain.model.lm import LM
+from speechain.infer_func.ctc_decoding import CTCPrefixScorer
+from speechain.utilbox.train_util import make_len_from_mask
 
 eps = 1e-10
 
@@ -112,16 +114,19 @@ def beam_searching(enc_feat: torch.Tensor,
                    sos_eos: int = None,
                    padding_idx: int = 0,
                    beam_size: int = 1,
-                   maxlen_ratio: float = 1.0,
+                   min_f2t_ratio: float or int = 3.0,
                    length_penalty: float = 1.0,
                    temperature: float = 1.0,
                    eos_filtering: bool = False,
                    eos_threshold: float = 1.5,
                    ctc_weight: float = 0.0,
                    ctc_decode_fn = None,
-                   lm_weight: float = 0.0,
+                   partial_ctc_score: bool = False,
+                   lm_weight: float = 0.2,
                    lm_temperature: float = 1.0,
                    lm_decode_fn: LM = None,
+                   lm_window_size: int = None,
+                   ilm_sub_weight: float = 0.0,
                    sent_per_beam: int = 1):
     """
     Batch version of beam searching to enable parallel computation. The basic idea is reshaping batch_size sentences
@@ -149,7 +154,7 @@ def beam_searching(enc_feat: torch.Tensor,
             The index of the padding token.
         beam_size: int
             The number of beams used for each hypothesis sentence.
-        maxlen_ratio: float
+        min_f2t_ratio: float
             The ratio of the hypothesis max length to encoder representation length (feat_maxlen).
             Postive values mean the relative ratio.
             Negative values mean the absolute max length of the hypothesis sentence.
@@ -186,6 +191,9 @@ def beam_searching(enc_feat: torch.Tensor,
             The temperature coefficient used for calculating the log-softmax probability for the LM decoder.
         lm_decode_fn: LM = None
             The LM forward function for decoding the current partial hypothesis.
+        ilm_sub_weight: float = 0.0
+            The weight putted on the subtraction of the inner LM of the ASR model. The inner LM subtraction is used for
+            ASR-LM decoding. ilm_sub_weight is better to be tuned in [0.5*lm_weight, lm_weight].
         sent_per_beam: int
             The number of sentences in each beam that are returned in this function.
             sent_per_beam > 1 is mainly used for data augmentation (under development).
@@ -194,10 +202,9 @@ def beam_searching(enc_feat: torch.Tensor,
     # --- 0. Arguments Checking --- #
     if sent_per_beam > 1:
         raise NotImplementedError("Currently, sent_per_beam > 1 is not supported....")
-    if ctc_weight > 0:
-        raise NotImplementedError("Currently, ctc-attention joint decoding is not supported....")
-    assert ctc_weight >= 0, f"ctc_weight should be a non-negative float number, but got ctc_weight={ctc_weight}!"
-    assert lm_weight >= 0, f"lm_weight should be a non-negative float number, but got lm_weight={lm_weight}!"
+    assert 0.0 <= ctc_weight, f"ctc_weight should be a non-negative float number, but got ctc_weight={ctc_weight}!"
+    assert 0.0 <= lm_weight, f"lm_weight should be a non-negative float number, but got lm_weight={lm_weight}!"
+    assert 0.0 <= ilm_sub_weight, f"ilm_sub_weight should be a non-negative float number, but got ilm_sub_weight={ilm_sub_weight}!"
 
     # --- 1. Reference Initialization --- #
     batch_size = enc_feat.size(0)
@@ -206,7 +213,7 @@ def beam_searching(enc_feat: torch.Tensor,
     # hypo_maxlen is uniformly calculated for all the sentences by the longest utterance
     # Since the utterances in a batch usually have the similar lengths, it won't be a big problem for text decoding
     feat_maxlen = enc_feat.size(1)
-    hypo_maxlen = int(feat_maxlen * maxlen_ratio) if maxlen_ratio > 0 else int(-maxlen_ratio)
+    hypo_maxlen = int(feat_maxlen / min_f2t_ratio) if min_f2t_ratio > 0 else int(-min_f2t_ratio)
     cuda_device = enc_feat.device
     if sos_eos is None:
         sos_eos = vocab_size - 1
@@ -227,7 +234,14 @@ def beam_searching(enc_feat: torch.Tensor,
     enc_feat_mask = enc_feat_mask.view(-1, enc_feat_mask.size(2), enc_feat_mask.size(3)).contiguous()
 
     # --- 3. CTC Initialization --- #
-    # --- Unimplemented~~~~~~~~~~~~ #
+    if ctc_decode_fn is not None and ctc_weight > 0:
+        ctc_scorer = CTCPrefixScorer(
+            x=torch.softmax(ctc_decode_fn(enc_feat), dim=-1), enc_lens=make_len_from_mask(enc_feat_mask),
+            batch_size=batch_size, beam_size=beam_size, blank_index=padding_idx, eos_index=sos_eos
+        )
+    else:
+        ctc_scorer = None
+    ctc_memory = None
 
     # --- 4. Registers Initialization --- #
     # build a hypothesis container for each sentence in the batch
@@ -251,16 +265,48 @@ def beam_searching(enc_feat: torch.Tensor,
         next_token_scores = torch.log_softmax(curr_outputs / temperature, dim=-1)
 
         # --- 5.2. CTC Scorer Forward --- #
-        # --- Unimplemented~~~~~~~~~~~~~~ #
+        if ctc_decode_fn is not None and ctc_weight > 0:
+            # block blank token
+            next_token_scores[:, padding_idx] = ctc_scorer.minus_inf
+            if ctc_weight != 1.0 and partial_ctc_score:
+                # pruning vocab for ctc_scorer
+                _, ctc_candidates = next_token_scores.topk(
+                    beam_size * 2, dim=-1
+                )
+            else:
+                ctc_candidates = None
+
+            ctc_token_scores, ctc_memory = ctc_scorer.forward_step(
+                g=hypo_text[:, 1:], state=ctc_memory, candidates=ctc_candidates
+            )
+            next_token_scores = (1 - ctc_weight) * next_token_scores + ctc_weight * ctc_token_scores
 
         # --- 5.3. LM Forward --- #
-        if lm_weight > 0:
+        if lm_decode_fn is not None and lm_weight > 0:
             # (batch_size × beam_size, curr_len) -> (batch_size × beam_size, curr_len, vocab_size)
-            lm_outputs = lm_decode_fn(text=hypo_text, text_len=hypo_text_len)[0].detach()
+            lm_outputs = lm_decode_fn(
+                text=hypo_text if lm_window_size is None else hypo_text[:, -lm_window_size:],
+                text_len=hypo_text_len if lm_window_size is None else torch.clamp(hypo_text_len, max=lm_window_size)
+            )[0].detach()
             # (batch_size × beam_size, curr_len, vocab_size) -> (batch_size × beam_size, vocab_size)
-            lm_outputs = lm_outputs[:, -1, :]
-            lm_next_token_scores = torch.log_softmax(lm_outputs / lm_temperature, dim=-1)
+            lm_next_token_scores = torch.log_softmax(lm_outputs[:, -1, :] / lm_temperature, dim=-1)
             next_token_scores = next_token_scores + lm_weight * lm_next_token_scores
+
+            # --- 5.3.1. Internal LM Subtraction (only available in LM forward) --- #
+            if ilm_sub_weight > 0:
+                # (batch_size × beam_size, curr_len) -> (batch_size × beam_size, curr_len, vocab_size)
+                ilm_outputs = asr_decode_fn(
+                    # enc_feat=torch.zeros_like(enc_feat),
+                    enc_feat=torch.zeros(enc_feat.size(0), 1, enc_feat.size(2), device=enc_feat.device),
+                    # enc_feat_mask=enc_feat_mask,
+                    enc_feat_mask=torch.ones(enc_feat_mask.size(0), enc_feat_mask.size(1), 1, dtype=torch.bool, device=enc_feat_mask.device),
+                    # the window size of internal LM is set to the same one with the external LM
+                    text=hypo_text if lm_window_size is None else hypo_text[:, -lm_window_size:],
+                    text_len=hypo_text_len if lm_window_size is None else torch.clamp(hypo_text_len, max=lm_window_size)
+                )[0].detach()
+                # (batch_size × beam_size, curr_len, vocab_size) -> (batch_size × beam_size, vocab_size)
+                ilm_next_token_scores = torch.log_softmax(ilm_outputs[:, -1, :], dim=-1)
+                next_token_scores = next_token_scores - ilm_sub_weight * ilm_next_token_scores
 
         # Calculate the score of the obtained token sequences so far
         next_scores = next_token_scores + beam_scores.unsqueeze(-1).expand_as(next_token_scores)
@@ -360,9 +406,12 @@ def beam_searching(enc_feat: torch.Tensor,
         hypo_text = torch.cat([hypo_text[beam_idx], beam_tokens.unsqueeze(1)], dim=1)
         hypo_text_len = torch.sum(hypo_text != padding_idx, dim=-1)
 
-        # align encoder_out with input_tokens (not necessary, just in case)
-        enc_feat = enc_feat[beam_idx]
-        enc_feat_mask = enc_feat_mask[beam_idx]
+        # align encoder_out with input_tokens
+        enc_feat, enc_feat_mask = enc_feat[beam_idx], enc_feat_mask[beam_idx]
+        if ctc_memory is not None:
+            ctc_memory = ctc_scorer.permute_mem(
+                ctc_memory, beam_idx,
+                beam_tokens.view(batch_size, beam_size) + (torch.arange(beam_size, device=cuda_device) * vocab_size).unsqueeze(0))
 
     # --- 6. Post-processing --- #
     # for the predictions that end without an eos token at the end because of the max length
@@ -411,6 +460,6 @@ def beam_searching(enc_feat: torch.Tensor,
     return dict(
         hypo_text=hypo_text,
         hypo_text_len=hypo_text_len,
-        feat_token_len_ratio=enc_feat_len / hypo_text_len,
+        feat_token_len_ratio=enc_feat_len / (hypo_text_len + 1e-10),
         hypo_text_confid=torch.Tensor(hypo_text_confid)
     )

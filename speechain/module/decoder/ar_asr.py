@@ -60,7 +60,7 @@ class ARASRDecoder(Module):
                 text_len: torch.Tensor):
         """
 
-        Args:
+        # Args:
             enc_feat:
             enc_feat_mask:
             text:

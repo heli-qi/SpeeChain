@@ -4,11 +4,13 @@
     Date: 2022.07
 """
 import copy
+import os
 import warnings
-
-import numpy as np
 import torch
 from typing import Dict, Any, List
+from collections import OrderedDict
+
+import yaml
 
 from speechain.model.abs import Model
 from speechain.tokenizer.char import CharTokenizer
@@ -26,6 +28,7 @@ from speechain.criterion.cross_entropy import CrossEntropy
 from speechain.criterion.ctc import CTCLoss
 from speechain.criterion.att_guid import AttentionGuidance
 from speechain.criterion.accuracy import Accuracy
+from speechain.criterion.perplexity import Perplexity
 from speechain.criterion.error_rate import ErrorRate
 
 from speechain.utilbox.yaml_util import load_yaml
@@ -58,7 +61,7 @@ class ARASR(Model):
 
     def module_init(self,
                     token_type: str,
-                    token_vocab: str,
+                    token_path: str,
                     enc_prenet: Dict,
                     encoder: Dict,
                     dec_emb: Dict,
@@ -66,6 +69,9 @@ class ARASR(Model):
                     frontend: Dict = None,
                     normalize: Dict or bool = None,
                     specaug: Dict or bool = None,
+                    ilm_weight: float = 0.0,
+                    ilm_sub_weight: float = 0.0,
+                    ctc_weight: float = 0.0,
                     sample_rate: int = 16000,
                     audio_format: str = 'wav',
                     return_att_type: List[str] or str = None,
@@ -124,7 +130,7 @@ class ARASR(Model):
             # --- customize_conf arguments --- #
             token_type: (mandatory)
                 The type of the built-in tokenizer.
-            token_vocab: (mandatory)
+            token_path: (mandatory)
                 The path of the vocabulary for initializing the built-in tokenizer.
             sample_rate: int = 16000 (optional)
                 The sampling rate of the input speech.
@@ -157,9 +163,9 @@ class ARASR(Model):
         # --- 1. Module-independent Initialization --- #
         # initialize the tokenizer
         if token_type.lower() == 'char':
-            self.tokenizer = CharTokenizer(token_vocab, copy_path=self.result_path)
+            self.tokenizer = CharTokenizer(token_path, copy_path=self.result_path)
         elif token_type.lower() == 'sentencepiece':
-            self.tokenizer = SentencePieceTokenizer(token_vocab, copy_path=self.result_path)
+            self.tokenizer = SentencePieceTokenizer(token_path, copy_path=self.result_path)
         else:
             raise ValueError(f"Unknown token_type {token_type}. "
                              f"Currently, {self.__class__.__name__} supports one of ['char', 'sentencepiece'].")
@@ -187,7 +193,7 @@ class ARASR(Model):
         self.lm_model_path = lm_model_path
 
         # --- 2. Module Initialization --- #
-        # --- 2.1. Encoder construction --- #
+        # --- 2.1 Encoder construction --- #
         # the sampling rate will be first initialized
         if 'sr' not in frontend['conf'].keys():
             frontend['conf']['sr'] = self.sample_rate
@@ -202,7 +208,17 @@ class ARASR(Model):
             distributed=self.distributed
         )
 
-        # --- 2.2. Decoder construction --- #
+        # --- 2.2 CTC layer construction (optional) --- #
+        self.ctc_weight = ctc_weight
+        assert ctc_weight >= 0, "ctc_weight cannot be lower than 0!"
+        if ctc_weight > 0:
+            self.ctc_layer = TokenPostnet(input_size=self.encoder.output_size, vocab_size=self.tokenizer.vocab_size)
+
+        # --- 2.3 Decoder construction --- #
+        self.ilm_weight = ilm_weight
+        assert ilm_weight >= 0, "ilm_weight cannot be lower than 0!"
+        self.ilm_sub_weight = ilm_sub_weight
+        assert ilm_sub_weight >= 0, "ilm_sub_weight cannot be lower than 0!"
         # the vocabulary size is given by the built-in tokenizer instead of the input configuration
         if 'vocab_size' in dec_emb['conf'].keys():
             if dec_emb['conf']['vocab_size'] != self.tokenizer.vocab_size:
@@ -218,6 +234,7 @@ class ARASR(Model):
 
     def criterion_init(self,
                        ce_loss: Dict[str, Any] = None,
+                       ilm_loss: Dict[str, Any] = None,
                        ctc_loss: Dict[str, Any] or bool = None,
                        att_guid_loss: Dict[str, Any] or bool = None):
         """
@@ -231,6 +248,7 @@ class ARASR(Model):
             ce_loss: Dict[str, Any]
                 The arguments for CrossEntropy(). If not given, the default setting of CrossEntropy() will be used.
                 Please refer to speechain.criterion.cross_entropy.CrossEntropy for more details.
+            ilm_loss:
             ctc_loss: Dict[str, Any] or bool
                 The arguments for CTCLoss(). If not given, self.ctc_loss won't be initialized.
                 This argument can also be set to a bool value 'True'. If True, the default setting of CTCLoss()
@@ -244,25 +262,27 @@ class ARASR(Model):
 
         """
 
-        # initialize cross-entropy loss
+        # initialize cross-entropy loss for the encoder-decoder
         if ce_loss is None:
             ce_loss = {}
         self.ce_loss = CrossEntropy(**ce_loss)
 
+        # initialize cross-entropy loss for the internal LM
+        if self.ilm_weight > 0:
+            # ilm_loss is default to be normalized by sentence lengths
+            if ilm_loss is None:
+                ilm_loss = dict(length_normalized=True)
+            self.ilm_loss = CrossEntropy(**ilm_loss)
+
         # initialize ctc loss
-        if ctc_loss is not None:
-            # if ctc_loss is given as True, the default arguments of CTCLoss will be used
+        if self.ctc_weight > 0:
+            # if ctc_loss is given as True or None, the default arguments of CTCLoss will be used
             if not isinstance(ctc_loss, Dict):
-                assert isinstance(ctc_loss, bool) and ctc_loss, \
-                    "If you want to use the default setting of CTCLoss, please give ctc_loss as True."
                 ctc_loss = {}
 
             if self.device != 'cpu' and self.tokenizer.ignore_idx != 0:
                 raise RuntimeError(f"For speeding up CTC calculation by CuDNN, "
                                    f"please set the blank id to 0 (got {self.tokenizer.ignore_idx}).")
-            # construct the CTC layer lazily
-            if not hasattr(self, 'ctc_layer'):
-                self.ctc_layer = TokenPostnet(input_size=self.encoder.output_size, vocab_size=self.tokenizer.vocab_size)
 
             ctc_loss['blank'] = self.tokenizer.ignore_idx
             self.ctc_loss = CTCLoss(**ctc_loss)
@@ -282,6 +302,9 @@ class ARASR(Model):
         # initialize teacher-forcing accuracy for validation
         self.accuracy = Accuracy()
 
+        # initialize text perplexity calculator for internal LM if needed
+        self.perplexity = Perplexity()
+
         # initialize error rate (CER & WER) for evaluation
         self.error_rate = ErrorRate(tokenizer=self.tokenizer)
 
@@ -297,11 +320,11 @@ class ARASR(Model):
         ]
 
     def module_forward(self,
-                       feat: torch.Tensor,
-                       text: torch.Tensor,
-                       feat_len: torch.Tensor,
-                       text_len: torch.Tensor,
                        epoch: int = None,
+                       feat: torch.Tensor = None,
+                       text: torch.Tensor = None,
+                       feat_len: torch.Tensor = None,
+                       text_len: torch.Tensor = None,
                        domain: str = None,
                        return_att: bool = False,
                        **kwargs) -> Dict[str, torch.Tensor]:
@@ -327,6 +350,7 @@ class ARASR(Model):
 
         """
         # para checking
+        assert feat is not None and feat_len is not None
         assert feat.size(0) == text.size(0) and feat_len.size(0) == text_len.size(0), \
             "The amounts of utterances and sentences are not equal to each other."
         assert feat_len.size(0) == feat.size(0), \
@@ -339,7 +363,7 @@ class ARASR(Model):
             text[i, text_len[i] - 1] = self.tokenizer.ignore_idx
         text, text_len = text[:, :-1], text_len - 1
 
-        # --- 1. Input Feature to Encoder Hidden Representation --- #
+        # --- 1. Encoder: Input Feature to Encoder Hidden Representation --- #
         enc_returns = self.encoder(feat=feat, feat_len=feat_len, epoch=epoch, domain=domain)
         # Transformer-based encoder additionally returns the encoder self-attention
         if len(enc_returns) == 4:
@@ -350,7 +374,7 @@ class ARASR(Model):
         else:
             raise RuntimeError
 
-        # --- 2. Encoder Hidden Representation to Decoder Hidden Representation --- #
+        # --- 2. Decoder: Encoder Hidden Representation to Decoder Hidden Representation --- #
         dec_returns = self.decoder(enc_feat=enc_feat, enc_feat_mask=enc_feat_mask, text=text, text_len=text_len)
         # Transformer-based decoder additionally returns the decoder self-attention
         if len(dec_returns) == 4:
@@ -366,7 +390,27 @@ class ARASR(Model):
             logits=dec_feat
         )
 
-        # --- 3. Encoder Hidden Representation to CTC Prediction --- #
+        # --- 3.(optional) Decoder: Internal LM Estimation by zeroing Encoder Hidden Representation --- #
+        if self.ilm_weight > 0 or self.ilm_sub_weight > 0:
+            ilm_returns = self.decoder(
+                enc_feat=torch.zeros(enc_feat.size(0), 1, enc_feat.size(2), device=enc_feat.device),
+                enc_feat_mask=torch.ones(enc_feat_mask.size(0), enc_feat_mask.size(1), 1, dtype=torch.bool, device=enc_feat_mask.device),
+                text=text, text_len=text_len)
+            # Transformer-based decoder additionally returns the decoder self-attention
+            if len(ilm_returns) == 4:
+                ilm_feat, ilm_dec_attmat, ilm_encdec_attmat, ilm_hidden = ilm_returns
+            # RNN-based decoder only returns the encoder-decoder attention
+            elif len(ilm_returns) == 3:
+                (ilm_feat, ilm_encdec_attmat, ilm_hidden), ilm_dec_attmat = ilm_returns, None
+            else:
+                raise RuntimeError
+
+            if self.ilm_weight > 0:
+                outputs.update(ilm_logits=ilm_feat)
+            elif self.ilm_sub_weight > 0:
+                outputs['logits'] -= self.ilm_sub_weight * ilm_feat
+
+        # --- 4.(optional) Encoder Hidden Representation to CTC Prediction --- #
         if hasattr(self, 'ctc_layer'):
             ctc_logits = self.ctc_layer(enc_feat)
             outputs.update(
@@ -409,10 +453,12 @@ class ARASR(Model):
                           logits: torch.Tensor,
                           text: torch.Tensor,
                           text_len: torch.Tensor,
+                          ilm_logits: torch.Tensor = None,
                           ctc_logits: torch.Tensor = None,
                           enc_feat_len: torch.Tensor = None,
                           att: Dict[str, List[torch.Tensor]] = None,
                           ce_loss_fn: CrossEntropy = None,
+                          ilm_loss_fn: CrossEntropy = None,
                           ctc_loss_fn: CTCLoss = None,
                           att_guid_loss_fn: AttentionGuidance = None,
                           **kwargs) -> (Dict[str, torch.Tensor], Dict[str, torch.Tensor]) or Dict[str, torch.Tensor]:
@@ -422,10 +468,12 @@ class ARASR(Model):
             logits:
             text:
             text_len:
+            ilm_logits:
             ctc_logits:
             enc_feat_len:
             att:
             ce_loss_fn:
+            ilm_loss_fn:
             ctc_loss_fn:
             att_guid_loss_fn:
             **kwargs:
@@ -440,19 +488,34 @@ class ARASR(Model):
         if ce_loss_fn is None:
             ce_loss_fn = self.ce_loss
         ce_loss = ce_loss_fn(logits=logits, text=text, text_len=text_len)
+        metrics.update(ce_loss=ce_loss.clone().detach())
 
-        # if ctc_loss is specified, record ctc_loss and ce_loss in the metrics Dict
+        # if ctc_loss is specified, calculate the weighted sum of ctc_loss and ce_loss as loss in the metrics Dict
         if ctc_loss_fn is not None or hasattr(self, 'ctc_loss'):
             # the external ctc loss function has the higher priority
             if ctc_loss_fn is None:
                 ctc_loss_fn = self.ctc_loss
 
             ctc_loss = ctc_loss_fn(ctc_logits, enc_feat_len, text, text_len)
-            loss = (1 - ctc_loss_fn.weight) * ce_loss + ctc_loss_fn.weight * ctc_loss
-            metrics.update(ctc_loss=ctc_loss.clone().detach(), ce_loss=ce_loss.clone().detach())
-        # if ctc_loss is not specified, only record the overall loss in the returned Dicts
+            loss = (1 - self.ctc_weight) * ce_loss + self.ctc_weight * ctc_loss
+            metrics.update(ctc_loss=ctc_loss.clone().detach())
+        # if ctc_loss is not specified, only record ce_loss as loss in the returned Dicts
         else:
             loss = ce_loss
+
+        # if ilm_loss is specified, add ilm_loss to loss in the metrics Dict
+        if ilm_loss_fn is not None or hasattr(self, 'ilm_loss'):
+            # the external ctc loss function has the higher priority
+            if ilm_loss_fn is None:
+                ilm_loss_fn = self.ilm_loss
+
+            ilm_loss = ilm_loss_fn(logits=ilm_logits, text=text, text_len=text_len)
+            metrics.update(ilm_loss=ilm_loss.clone().detach())
+            loss += self.ilm_weight * ilm_loss
+
+            # calculate perplexity
+            ilm_ppl = self.perplexity(logits=ilm_logits, text=text, text_len=text_len)
+            metrics.update(ilm_text_ppl=ilm_ppl.detach())
 
         # if att_guid_loss is given, record att_guid_loss in the metrics Dict
         if att_guid_loss_fn is not None or hasattr(self, 'att_guid_loss'):
@@ -501,7 +564,10 @@ class ARASR(Model):
         vis_logs = []
         # CER, WER, Confidence, and Length Ratio
         materials = dict()
-        for metric in ['cer', 'wer', 'text_confid']:
+        for metric in ['cer', 'wer', 'text_confid', 'ilm_text_ppl']:
+            if metric not in infer_results.keys():
+                continue
+
             # store each target metric into materials
             if metric not in epoch_records[sample_index].keys():
                 epoch_records[sample_index][metric] = []
@@ -616,6 +682,11 @@ class ARASR(Model):
                 "please give lm_model_cfg and lm_model_path in model['customize_conf']!"
             # lazily initialize the language model only at the first time
             if not hasattr(self, 'lm'):
+                # use the built-in lm configuration if lm_model_cfg is not given
+                if self.lm_model_cfg is None:
+                    self.lm_model_cfg = os.path.join(self.result_path, 'lm_model_cfg.yaml')
+
+                # get the Dict-like configuration for the language model
                 if isinstance(self.lm_model_cfg, str):
                     self.lm_model_cfg = load_yaml(parse_path_args(self.lm_model_cfg))
                 if 'model' in self.lm_model_cfg.keys():
@@ -623,9 +694,25 @@ class ARASR(Model):
                 if 'module_conf' in self.lm_model_cfg.keys():
                     self.lm_model_cfg = self.lm_model_cfg['module_conf']
 
+                # update the built-in configuration yaml file
+                with open(os.path.join(self.result_path, 'lm_model_cfg.yaml'), 'w', encoding="utf-8") as f:
+                    yaml.dump(self.lm_model_cfg, f, sort_keys=False)
                 self.lm = LanguageModel(vocab_size=self.tokenizer.vocab_size, **self.lm_model_cfg).cuda(self.device)
+
+                # use the built-in lm model if lm_model_path is not given
+                if self.lm_model_path is None:
+                    self.lm_model_path = os.path.join(self.result_path, 'lm_model.pth')
+                # load the parameters of the target lm
                 _lm_model_para = torch.load(parse_path_args(self.lm_model_path), map_location=self.device)
-                self.lm.load_state_dict(_lm_model_para)
+                lm_model_para = OrderedDict()
+                for key, para in _lm_model_para.items():
+                    if key.startswith('lm.'):
+                        key = key.replace('lm.', '', 1)
+                    lm_model_para[key] = para
+
+                # update the built-in lm parameters and load them into the lm for inference
+                torch.save(lm_model_para, os.path.join(self.result_path, 'lm_model.pth'))
+                self.lm.load_state_dict(lm_model_para)
 
         # --- 1. The 1st Pass: ASR Decoding by Beam Searching --- #
         if not teacher_forcing:
@@ -667,7 +754,7 @@ class ARASR(Model):
                 hypo_text_prob, hypo_text = torch.max(infer_results['logits'], dim=-1)
                 # the original text contains both sos at the beginning and eos at the end
                 hypo_text_len = text_len - 2
-                feat_token_len_ratio = feat_len / hypo_text_len
+                feat_token_len_ratio = feat_len / (hypo_text_len + 1e-10)
                 # sum up the log-probability of all time steps to get the confidence
                 length_penalty = infer_conf['length_penalty'] if 'length_penalty' in infer_conf.keys() else 1.0
                 hypo_text_confid = torch.sum(hypo_text_prob, dim=-1) / (hypo_text_len ** length_penalty)
@@ -806,7 +893,7 @@ class MultiDomainARASR(ARASR):
             if leaf_num == len(loss_dict):
                 return loss_class(**loss_dict)
             # no item in loss_dict is Dict mean that each dataloader has its own loss function
-            elif leaf_num == 0:
+            else:
                 if hasattr(self, 'loss_weights'):
                     assert len(loss_dict) == len(self.loss_weights), \
                         "The key number in the xxx_loss should match the one in the loss_weights"
@@ -816,15 +903,22 @@ class MultiDomainARASR(ARASR):
                     if hasattr(self, 'loss_weights'):
                         assert name in self.loss_weights.keys(), \
                             f"The key name {name} doesn't match anyone in the loss_weights!"
-                    nested_loss[name] = loss_class(**conf)
+                    nested_loss[name] = loss_class(**conf) if conf is not None else None
                 return nested_loss
-            else:
-                raise RuntimeError("Your loss configuration must be either Dict[str, Any] or Dict[str, Dict[str, Any]]")
 
         # cross-entropy will be initialized no matter whether ce_loss is given or not
         self.ce_loss = recur_init_loss_by_dict(ce_loss, CrossEntropy) if ce_loss is not None else CrossEntropy()
         # only initialize ctc loss if it is given
         if ctc_loss is not None:
+            for key in ctc_loss.keys():
+                if isinstance(ctc_loss[key], bool):
+                    ctc_loss[key] = {} if ctc_loss[key] else None
+                if ctc_loss[key] is not None:
+                    if self.device != 'cpu' and self.tokenizer.ignore_idx != 0:
+                        raise RuntimeError(f"For speeding up CTC calculation by CuDNN, "
+                                           f"please set the blank id to 0 (got {self.tokenizer.ignore_idx}).")
+
+                    ctc_loss[key]['blank'] = self.tokenizer.ignore_idx
             self.ctc_loss = recur_init_loss_by_dict(ctc_loss, CTCLoss)
 
         # only initialize attention-guidance loss if it is given

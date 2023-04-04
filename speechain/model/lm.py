@@ -25,7 +25,7 @@ class LM(Model):
 
     def module_init(self,
                     token_type: str,
-                    token_vocab: str,
+                    token_path: str,
                     emb: Dict,
                     encoder: Dict,
                     return_att_head_num: int = 2,
@@ -44,9 +44,9 @@ class LM(Model):
         # --- 1. Module-independent Initialization --- #
         # initialize the tokenizer
         if token_type.lower() == 'char':
-            self.tokenizer = CharTokenizer(token_vocab, copy_path=self.result_path)
+            self.tokenizer = CharTokenizer(token_path, copy_path=self.result_path)
         elif token_type.lower() == 'sentencepiece':
-            self.tokenizer = SentencePieceTokenizer(token_vocab, copy_path=self.result_path)
+            self.tokenizer = SentencePieceTokenizer(token_path, copy_path=self.result_path)
         else:
             raise ValueError(f"Unknown token_type {token_type}. "
                              f"Currently, {self.__class__.__name__} supports one of ['char', 'sentencepiece'].")
