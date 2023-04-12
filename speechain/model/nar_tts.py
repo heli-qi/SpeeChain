@@ -21,9 +21,12 @@ from speechain.module.encoder.tts import TTSEncoder
 from speechain.module.decoder.nar_tts import FastSpeech2Decoder
 
 from speechain.criterion.least_error import LeastError
+from speechain.criterion.bce_logits import BCELogits
+from speechain.criterion.fbeta_score import FBetaScore
 
 from speechain.utilbox.data_loading_util import parse_path_args
 from speechain.utilbox.tensor_util import to_cpu
+from speechain.utilbox.train_util import get_min_indices_by_freq
 
 
 class FastSpeech2(Model):
@@ -40,21 +43,18 @@ class FastSpeech2(Model):
                     pitch_predictor: Dict,
                     energy_predictor: Dict,
                     duration_predictor: Dict,
+                    feat_frontend: Dict,
                     decoder: Dict,
                     enc_prenet: Dict = None,
                     dec_postnet: Dict = None,
-                    feat_frontend: Dict = None,
-                    feat_normalize: Dict = None,
-                    pitch_normalize: Dict = None,
-                    energy_normalize: Dict = None,
+                    feat_normalize: Dict or bool = True,
+                    pitch_normalize: Dict or bool = True,
+                    energy_normalize: Dict or bool = True,
                     spk_list: str = None,
                     spk_emb: Dict = None,
                     sample_rate: int = 22050,
                     audio_format: str = 'wav',
                     reduction_factor: int = 1,
-                    min_frame_num: int = 0,
-                    max_frame_num: int = None,
-                    len_regulation_type: str = 'hard',
                     return_att_type: List[str] or str = None,
                     return_att_head_num: int = 2,
                     return_att_layer_num: int = 2):
@@ -71,7 +71,9 @@ class FastSpeech2(Model):
 
         # initialize the speaker list if given
         if spk_list is not None:
-            spk_list = np.loadtxt(parse_path_args(spk_list), dtype=str)
+            if not isinstance(spk_list, list):
+                spk_list = [spk_list]
+            spk_list = np.concatenate([np.loadtxt(parse_path_args(s_l), dtype=str) for s_l in spk_list], axis=0)
             # when the input file is idx2spk, only retain the column of speaker ids
             if len(spk_list.shape) == 2:
                 assert spk_list.shape[1] == 2
@@ -140,7 +142,6 @@ class FastSpeech2(Model):
                 raise RuntimeError("Please give spk_list in model['customize_conf'] if you want to use speaker lookup "
                                    "table for close-set multi-speaker TTS.")
 
-        self.len_regulation_type = len_regulation_type
         self.decoder = FastSpeech2Decoder(
             input_size=self.encoder.output_size,
             spk_emb=spk_emb,
@@ -154,10 +155,7 @@ class FastSpeech2(Model):
             decoder=decoder,
             postnet=dec_postnet,
             distributed=self.distributed,
-            len_regulation_type=len_regulation_type,
-            reduction_factor=self.reduction_factor,
-            min_frame_num=min_frame_num,
-            max_frame_num=max_frame_num
+            reduction_factor=self.reduction_factor
         )
 
     @staticmethod
@@ -166,7 +164,8 @@ class FastSpeech2(Model):
             ['feat_token_len_ratio', 'max', 30],
             ['feat_token_len_ratio', 'min', 30],
             ['feat_len', 'max', 30],
-            ['feat_len', 'min', 30]
+            ['feat_len', 'min', 30],
+            ['duration_zero_f1', 'min', 30]
         ]
 
     def criterion_init(self,
@@ -196,8 +195,9 @@ class FastSpeech2(Model):
         self.duration_loss = LeastError(**duration_loss)
 
     def module_forward(self,
-                       text: torch.Tensor,
-                       text_len: torch.Tensor,
+                       epoch: int = None,
+                       text: torch.Tensor = None,
+                       text_len: torch.Tensor = None,
                        duration: torch.Tensor = None,
                        duration_len: torch.Tensor = None,
                        pitch: torch.Tensor = None,
@@ -209,10 +209,9 @@ class FastSpeech2(Model):
                        spk_feat: torch.Tensor = None,
                        spk_ids: torch.Tensor = None,
                        rand_spk_feat: bool = False,
-                       epoch: int = None,
                        return_att: bool = False,
-                       min_f2t_ratio: float = None,
-                       max_f2t_ratio: float = None,
+                       min_frame_num: int = 0,
+                       max_frame_num: int = None,
                        duration_alpha: torch.Tensor = None,
                        energy_alpha: torch.Tensor = None,
                        pitch_alpha: torch.Tensor = None,
@@ -263,6 +262,7 @@ class FastSpeech2(Model):
 
         """
         # text checking
+        assert text is not None and text_len is not None
         assert text_len.size(0) == text.size(0), \
             "The amounts of sentences and their lengths are not equal to each other."
         # feat checking
@@ -296,14 +296,6 @@ class FastSpeech2(Model):
                                f"energy and energy_len must be None or not None at the same time! "
                                f"But got energy={energy} and energy_len={energy_len}.")
 
-        # frame-to-token ratio checking
-        if text.size(0) == 1:
-            assert min_f2t_ratio is None and max_f2t_ratio is None, \
-                "Currently, only batch-level TTS decoding supports on-the-fly frame-to-token ratio filtering."
-        if min_f2t_ratio is not None:
-            assert min_f2t_ratio > 0, f"min_f2t_ratio should be a positive float number, but got {min_f2t_ratio}!"
-            assert max_f2t_ratio > 0, f"max_f2t_ratio should be a positive float number, but got {max_f2t_ratio}!"
-
         # text preprocessing before duration checking
         # remove the <sos/eos> at the beginning and the end of each sentence
         for i in range(text_len.size(0)):
@@ -328,7 +320,7 @@ class FastSpeech2(Model):
         enc_text, enc_text_mask, enc_attmat, enc_hidden = self.encoder(text=text, text_len=text_len)
 
         # Decoding
-        pred_feat_before, pred_feat_after, pred_feat_len, skip_flags, tgt_feat, tgt_feat_len, \
+        pred_feat_before, pred_feat_after, pred_feat_len, tgt_feat, tgt_feat_len, \
         pred_pitch, tgt_pitch, tgt_pitch_len, \
         pred_energy, tgt_energy, tgt_energy_len, \
         pred_duration, tgt_duration, tgt_duration_len, \
@@ -338,14 +330,14 @@ class FastSpeech2(Model):
                                               energy=energy, energy_len=energy_len,
                                               spk_feat=spk_feat, spk_ids=spk_ids,
                                               rand_spk_feat=rand_spk_feat, epoch=epoch,
-                                              min_f2t_ratio=min_f2t_ratio, max_f2t_ratio=max_f2t_ratio,
+                                              min_frame_num=min_frame_num, max_frame_num=max_frame_num,
                                               duration_alpha=duration_alpha, energy_alpha=energy_alpha,
                                               pitch_alpha=pitch_alpha)
 
         # initialize the TTS output to be the decoder predictions
         outputs = dict(
             pred_feat_before=pred_feat_before, pred_feat_after=pred_feat_after, pred_feat_len=pred_feat_len,
-            skip_flags=skip_flags, tgt_feat=tgt_feat, tgt_feat_len=tgt_feat_len,
+            tgt_feat=tgt_feat, tgt_feat_len=tgt_feat_len,
             pred_pitch=pred_pitch, tgt_pitch=tgt_pitch, tgt_pitch_len=tgt_pitch_len,
             pred_energy=pred_energy, tgt_energy=tgt_energy, tgt_energy_len=tgt_energy_len,
             pred_duration=pred_duration, tgt_duration=tgt_duration, tgt_duration_len=tgt_duration_len,
@@ -458,9 +450,8 @@ class FastSpeech2(Model):
                   spk_ids: torch.Tensor = None,
                   spk_feat: torch.Tensor = None):
 
-        # visualization inference is default to be done by teacher-forcing
         if len(self.visual_infer_conf) == 0:
-            self.visual_infer_conf = dict(teacher_forcing=True, return_gl_wav=False, return_feat=True)
+            self.visual_infer_conf = dict(teacher_forcing=False, return_gl_wav=False, return_feat=True)
 
         # obtain the inference results
         infer_results = self.inference(infer_conf=self.visual_infer_conf, return_att=True,
@@ -470,44 +461,28 @@ class FastSpeech2(Model):
 
         # --- snapshot the objective metrics --- #
         vis_logs = []
-        # numerical metrics recording
-        materials = dict()
-        for metric in ['feat_loss_before', 'feat_loss_after', 'pitch_loss', 'energy_loss', 'duration_loss']:
-            # store each target metric into materials
-            if metric not in epoch_records[sample_index].keys():
-                epoch_records[sample_index][metric] = []
-            epoch_records[sample_index][metric].append(infer_results[metric]['content'][0])
-            materials[metric] = epoch_records[sample_index][metric]
-        # save the visualization log
-        vis_logs.append(
-            dict(
-                plot_type='curve', materials=copy.deepcopy(materials), epoch=epoch,
-                xlabel='epoch', x_stride=snapshot_interval,
-                sep_save=False, subfolder_names=sample_index
-            )
-        )
 
         # --- snapshot the subjective metrics --- #
         # record the input audio and real text at the first snapshotting step
         if epoch // snapshot_interval == 1:
-            # if the audio source is raw/wav
-            if feat.size(-1) == 1:
-                vis_logs.append(
-                    dict(
-                        plot_type='audio', materials=dict(real_wav=copy.deepcopy(feat[0])),
-                        sample_rate=self.sample_rate, audio_format=self.audio_format, subfolder_names=sample_index
-                    )
-                )
-            # if the audio source is audio feature (mel spectrogram etc)
-            else:
-                vis_logs.append(
-                    dict(
-                        plot_type='matrix',
-                        materials=dict(real_feat=copy.deepcopy(feat[0])),
-                        epoch=epoch, sep_save=True, sum_save=False, data_save=True, flip_y=True,
-                        subfolder_names=sample_index
-                    )
-                )
+            # # if the audio source is raw/wav
+            # if feat.size(-1) == 1:
+            #     vis_logs.append(
+            #         dict(
+            #             plot_type='audio', materials=dict(real_wav=copy.deepcopy(feat[0])),
+            #             sample_rate=self.sample_rate, audio_format=self.audio_format, subfolder_names=sample_index
+            #         )
+            #     )
+            # # if the audio source is audio feature (mel spectrogram etc)
+            # else:
+            #     vis_logs.append(
+            #         dict(
+            #             plot_type='matrix',
+            #             materials=dict(real_feat=copy.deepcopy(feat[0])),
+            #             epoch=epoch, sep_save=True, sum_save=False, data_save=True, flip_y=True,
+            #             subfolder_names=sample_index
+            #         )
+            #     )
 
             # snapshot input text
             vis_logs.append(
@@ -523,6 +498,18 @@ class FastSpeech2(Model):
                 plot_type='matrix', materials=dict(hypo_feat=infer_results['feat']['content'][0].transpose()),
                 epoch=epoch, sep_save=False, sum_save=True, data_save=True, flip_y=True,
                 subfolder_names=[sample_index, 'hypo_feat']
+            )
+        )
+
+        # snapshot the predicted duration into a string
+        if 'duration' not in epoch_records[sample_index].keys():
+            epoch_records[sample_index]['duration'] = []
+        epoch_records[sample_index]['duration'].append(str(infer_results['duration']['content'][0]))
+        # snapshot the information in the materials
+        vis_logs.append(
+            dict(
+                materials=dict(hypo_duration=copy.deepcopy(epoch_records[sample_index]['duration'])),
+                plot_type='text', epoch=epoch, x_stride=snapshot_interval, subfolder_names=sample_index
             )
         )
 
@@ -641,10 +628,6 @@ class FastSpeech2(Model):
             assert feat is not None and feat_len is not None and duration is not None and duration_len is not None, \
                 f"If you want to decode {self.__class__.__name__} by the teacher-forcing technique, " \
                 f"please give 'feat' and 'duration' in your data_cfg['test']!"
-        else:
-            assert feat is None and feat_len is None and duration is None and duration_len is None, \
-                f"If you want to decode {self.__class__.__name__} without the teacher-forcing technique, " \
-                f"please don't give 'feat' and 'duration' in your data_cfg['test']!"
 
         # use_before in infer_conf has the higher priority and will not be passed to self.module_forward()
         if 'use_before' in infer_conf.keys():
@@ -670,11 +653,8 @@ class FastSpeech2(Model):
                 if text.is_cuda:
                     self.resampler = self.resampler.cuda(text.device)
 
-        self.decoder.min_frame_num = infer_conf.pop('min_frame_num') if 'min_frame_num' in infer_conf.keys() else 1
-        self.decoder.max_frame_num = infer_conf.pop('max_frame_num') if 'max_frame_num' in infer_conf.keys() else 50
-
-        min_f2t_ratio = infer_conf.pop('min_f2t_ratio') if 'min_f2t_ratio' in infer_conf.keys() else None
-        max_f2t_ratio = infer_conf.pop('max_f2t_ratio') if 'max_f2t_ratio' in infer_conf.keys() else None
+        min_frame_num = infer_conf.pop('min_frame_num') if 'min_frame_num' in infer_conf.keys() else 0
+        max_frame_num = infer_conf.pop('max_frame_num') if 'max_frame_num' in infer_conf.keys() else 50
 
         # arguments for controllable TTS if teacher-forcing is not used
         if not teacher_forcing:
@@ -726,13 +706,18 @@ class FastSpeech2(Model):
             if hasattr(self, 'idx2spk'):
                 # randomly pick up training speakers as the reference speakers
                 if spk_ids is None:
-                    spk_ids = torch.randint(low=1, high=len(self.idx2spk) + 1, size=(batch_size,), device=text.device)
+                    if not hasattr(self, 'spk_freq_dict'):
+                        self.spk_freq_dict = {s_id: 0 for s_id in range(1, len(self.idx2spk) + 1)}
+                    spk_ids, self.spk_freq_dict = get_min_indices_by_freq(
+                        self.spk_freq_dict, chosen_idx_num=batch_size, freq_weights=to_cpu(text_len))
+                    spk_ids = torch.LongTensor(spk_ids).to(text.device)
+
             # open-set multi-speaker TTS
             else:
                 # use random vectors as the reference speaker embedding if spk_feat is not given
                 if spk_feat is None:
-                    # make sure that the range of random speaker feature is [-1, 1)
-                    spk_feat = torch.rand((batch_size, self.decoder.spk_emb.spk_emb_dim), device=text.device) * 2 - 1
+                    # the random spk_feat obey normal distribution
+                    spk_feat = torch.randn((batch_size, self.decoder.spk_emb.spk_emb_dim), device=text.device)
                     spk_feat_ids = ['rand_spk' for _ in range(batch_size)]
                     rand_spk_feat = True
 
@@ -750,7 +735,7 @@ class FastSpeech2(Model):
                                             pitch_len=pitch_len if teacher_forcing else None,
                                             spk_feat=spk_feat, spk_ids=spk_ids,
                                             rand_spk_feat=rand_spk_feat, return_att=return_att,
-                                            min_f2t_ratio=min_f2t_ratio, max_f2t_ratio=max_f2t_ratio,
+                                            min_frame_num=min_frame_num, max_frame_num=max_frame_num,
                                             duration_alpha=duration_alpha, energy_alpha=energy_alpha,
                                             pitch_alpha=pitch_alpha, **model_input)
         # return the attention matrices
@@ -769,8 +754,7 @@ class FastSpeech2(Model):
             hypo_duration = infer_results['tgt_duration']
             hypo_duration = [hypo_duration[i][:text_len[i]].type(torch.int) for i in range(len(hypo_duration))]
             # convert the duration into integers for the hard regulation
-            if self.len_regulation_type == 'hard':
-                hypo_duration = [h_d.type(torch.int) for h_d in hypo_duration]
+            hypo_duration = [h_d.type(torch.int) for h_d in hypo_duration]
             outputs.update(
                 duration=dict(format='txt', content=to_cpu(hypo_duration))
             )
@@ -794,7 +778,7 @@ class FastSpeech2(Model):
             spk_ids = [self.idx2spk[s_id.item()] if s_id != 0 else 'aver_spk' for s_id in spk_ids]
 
         # calculate the Frame-to-Token ratio
-        feat_token_len_ratio = hypo_feat_len / text_len
+        feat_token_len_ratio = hypo_feat_len / (text_len + 1e-10)
 
         # convert the acoustic features back to GL waveforms if specified
         if return_gl_wav:

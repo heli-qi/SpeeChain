@@ -145,13 +145,13 @@ if ! grep -q '/' <<< "${tts_result_path}";then
 fi
 
 if [ -z ${asr_refer_idx2text} ];then
-   echo "Please give the path of the idx2text file for the reference text by '--asr_refer_txt_path'!"
+   echo "Please give the path of the idx2text file for the reference text by '--asr_refer_idx2text'!"
    exit 1
 fi
 
 
 # --- 1. Argument Initialization --- #
-args="--train False --test True --train_result_path ${asr_model_path} --attach_config_folder_to_path false --test_result_path ${tts_result_path}"
+args="--train False --test True --train_result_path ${asr_model_path} --attach_config_folder_to_path false --attach_model_folder_when_test false --test_result_path ${tts_result_path}"
 
 # automatically initialize the data loading configuration. The contents surrounded by a pair of brackets are optional.
 #  test:{
@@ -168,7 +168,8 @@ args="--train False --test True --train_result_path ${asr_model_path} --attach_c
 #        },
 #        shuffle:false,
 #        data_len:${tts_result_path}/idx2${vocoder}_wav_len,
-#        (batch_len:${batch_len})
+#        (batch_len:${batch_len},)
+#        (group_info:{speaker:${tts_result_path}/idx2ref_spk})
 #      }
 #    }
 #  }
@@ -196,7 +197,9 @@ data_args="${data_args}},shuffle:false,data_len:${tts_result_path}/idx2${vocoder
 if [ -n "${batch_len}" ];then
   data_args="${data_args},batch_len:${batch_len}"
 fi
-data_args="${data_args}}}}"
+
+# include idx2ref_spk into group_info to evaluate the speaker-wise performance
+data_args="${data_args},group_info:{speaker:${tts_result_path}/idx2ref_spk}}}}"
 #
 args="${args} --data_cfg ${data_args}"
 

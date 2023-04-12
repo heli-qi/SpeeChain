@@ -1,0 +1,173 @@
+###############################################################################
+# Model: Transformer-LM
+# Tokens: BPE 5k trained from train-clean-100 of LibriSpeech
+# losses: 0.0 Label Smooth
+# Training: lm_text of LibriSpeech
+# Validation: dev of LibriSpeech
+# Testing: test-clean & test-other of LibriSpeech
+# Authors: Heli Qi
+# Required GPUs: 2 × NVIDIA RTX A6000 (49GB)
+# Required Time: up to 3 days 17 hours
+# Expected Perplexity performance (test-clean / test-other): 48.39 / 50.31
+# ############################################################################
+
+
+###################################
+# Experiment Parameters and setup #
+###################################
+# if your dumped dataset is outside the toolkit folder, please change dataset_path. There should be a folder named 'libritts' in dataset_path
+dataset_path: datasets/
+
+# data-related
+vocab_set: train-clean-100
+valid_set: dev
+
+# tokenizer-related
+txt_format: no-punc
+token_type: sentencepiece
+token_num: bpe5k
+
+# batch-related values
+batch_len: 4.5e4
+
+# model-related
+label_smoothing: 0.0
+length_normalized: true
+d_model: 768
+num_heads: 12
+fdfwd_dim: 3072
+enc_layer_num: 12
+dropout: 0.0
+
+# optimizer-related
+warmup_steps: 50000
+
+# running-related
+seed: 0
+num_workers: 1
+pin_memory: True
+non_blocking: True
+
+# gradient-related
+accum_grad: 8
+ft_factor: 1.0
+grad_clip: 5.0
+
+# multi-GPU-related
+ngpu: 2 # please change ngpu based on the situation of your machine
+gpus: null # null means the GPUs with the largest free memory will be used
+
+# training-related
+train: True
+best_model_selection:
+  - !tuple (valid, text_ppl, min, 5)
+  - !tuple (valid, loss, min, 5)
+early_stopping_patience: 5
+
+# snapshot-related
+visual_snapshot_number: 3
+visual_snapshot_interval: 5
+
+# testing-related
+test: False
+test_model: !ref <early_stopping_patience>_valid_text_ppl_average
+
+# These arguments are shared by data_cfg and train_cfg
+data_root: !ref <dataset_path>/librispeech/data
+
+
+
+##############################
+# Data Loading Configuration #
+##############################
+data_cfg:
+  train:
+    type: block.BlockIterator
+    conf:
+      dataset_type: speech_text.SpeechTextDataset
+      dataset_conf:
+        main_data:
+          text: !ref <data_root>/lm_text/<txt_format>_lm_text
+
+      shuffle: True
+      is_descending: True
+      batch_len: !ref <batch_len>
+
+  valid:
+    type: abs.Iterator
+    conf:
+      dataset_type: speech_text.SpeechTextDataset
+      dataset_conf:
+        main_data:
+          text: !ref <data_root>/wav/<valid_set>/idx2<txt_format>_text
+      shuffle: False
+
+  test:
+    test-clean:
+      type: abs.Iterator
+      conf:
+        dataset_type: speech_text.SpeechTextDataset
+        dataset_conf:
+          main_data:
+            text: !ref <data_root>/wav/test-clean/idx2<txt_format>_text
+        shuffle: False
+
+    test-other:
+      type: abs.Iterator
+      conf:
+        dataset_type: speech_text.SpeechTextDataset
+        dataset_conf:
+          main_data:
+            text: !ref <data_root>/wav/test-other/idx2<txt_format>_text
+        shuffle: False
+
+
+
+####################################
+# Model Construction Configuration #
+####################################
+train_cfg:
+  model:
+    model_type: lm.LM
+    model_conf:
+      customize_conf:
+        token_type: !ref <token_type>
+        token_vocab: !ref <data_root>/<token_type>/<vocab_set>/<token_num>/<txt_format>/vocab
+
+    module_conf:
+      emb:
+        type: embed
+        conf:
+          embedding_dim: !ref <d_model>
+
+      encoder:
+        type: transformer
+        conf:
+          posenc_dropout: !ref <dropout>
+          posenc_scale: false
+          emb_layernorm: true
+          emb_scale: false
+          d_model: !ref <d_model>
+          num_heads: !ref <num_heads>
+          num_layers: !ref <enc_layer_num>
+          att_dropout: !ref <dropout>
+          fdfwd_dim: !ref <fdfwd_dim>
+          fdfwd_dropout: !ref <dropout>
+          res_dropout: !ref <dropout>
+          layernorm_first: true
+
+    criterion_conf:
+      length_normalized: !ref <length_normalized>
+      label_smoothing: !ref <label_smoothing>
+
+  optim_sches:
+    type: noam.Noamlr
+    conf:
+      optim_type: Adam
+      optim_conf:
+        betas:
+          - 0.9
+          - 0.98
+        eps: 1.0e-9
+#      d_model: !ref <d_model>
+      warmup_steps: !ref <warmup_steps>

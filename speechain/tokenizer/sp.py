@@ -22,7 +22,7 @@ class SentencePieceTokenizer(Tokenizer):
 
     """
 
-    def tokenizer_init_fn(self, copy_path: str = None, token_model: str = None):
+    def tokenizer_init_fn(self, token_path: str, copy_path: str = None, **kwargs):
         """
         Initialize the sentencepiece tokenizer model.
 
@@ -30,32 +30,28 @@ class SentencePieceTokenizer(Tokenizer):
             copy_path: str = None
                 The path where you want to paste the given tokenizer model as a backup.
                 If not given, no backup will be saved.
-            token_model: str = None
+            token_path: str
                 The path of your specified sentencepiece tokenizer model file.
                 If not given, the model will automatically selected in the same folder as the given token_vocab
 
         """
-        # token_model has the highest priority for token_model initialization
-        if token_model is not None:
-            self.token_model = parse_path_args(token_model)
-        else:
-            # built-in token_model in the same directory of self.token_vocab has the second highest priority
-            builtin_token_model = os.path.join(os.path.dirname(self.token_vocab), 'model')
-            if os.path.exists(builtin_token_model):
-                self.token_model = builtin_token_model
-            # finally, the backup one in copy_path will be used
-            else:
-                assert copy_path is not None
-                self.token_model = os.path.join(parse_path_args(copy_path), 'token_model')
+        # The model in token_path token_model has the highest priority for token_model initialization
+        if token_path is not None:
+            token_model = os.path.join(parse_path_args(token_path), 'model')
+
+        # if token_path is not given or model does not exist, use the backup on in copy_path
+        if token_path is None or not os.path.exists(token_model):
+            assert copy_path is not None, "Please give copy_path for SentencePiece model backup!"
+            token_model = os.path.join(parse_path_args(copy_path), 'token_model')
 
         # initialize the tokenizer model by the sentencepiece package
         self.sp_model = spm.SentencePieceProcessor()
-        self.sp_model.load(self.token_model)
+        self.sp_model.load(token_model)
 
         # save the backup if copy_path is given
         if copy_path is not None:
             try:
-                shutil.copy(src=self.token_model, dst=os.path.join(copy_path, 'token_model'))
+                shutil.copy(src=token_model, dst=os.path.join(copy_path, 'token_model'))
             except shutil.SameFileError:
                 pass
 
@@ -71,13 +67,14 @@ class SentencePieceTokenizer(Tokenizer):
         text = self.sp_model.decode_ids(tensor.tolist())
         return text
 
-    def text2tensor(self, text: str, no_sos: bool = False, no_eos: bool = False):
+    def text2tensor(self, text: str, no_sos: bool = False, no_eos: bool = False, return_tensor: bool = True):
         """
 
         Args:
             text:
             no_sos:
             no_eos:
+            return_tensor:
 
         Returns:
 
@@ -93,4 +90,7 @@ class SentencePieceTokenizer(Tokenizer):
         if not no_eos:
             tokens.append(self.sos_eos_idx)
         # turn the token list into a long-type tensor
-        return torch.LongTensor(tokens)
+        if return_tensor:
+            return torch.LongTensor(tokens)
+        else:
+            return tokens

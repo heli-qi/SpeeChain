@@ -1,18 +1,12 @@
-"""
-    Author: Heli Qi
-    Affiliation: NAIST
-    Date: 2022.12
-"""
 import os
 import argparse
 import librosa
 import numpy as np
-from tqdm import tqdm
 
+from tqdm import tqdm
 from typing import List
 from functools import partial
 from multiprocessing import Pool
-
 from fastdtw import fastdtw
 from scipy.spatial.distance import euclidean
 
@@ -34,10 +28,10 @@ def parse():
                              "'idx2wav' will be matched by the data indices. You can also directly specify the path of "
                              "your target 'idx2wav' file by this argument. This argument is required if you want to "
                              "evaluate the MCD or MSD.")
-    parser.add_argument('--metric_list', type=str2list, default=['mcd', 'msd', 'log-f0'],
+    parser.add_argument('--metric_list', type=str2list, default=['mcd', 'log-f0'],
                         help="The list of metrics you want to use to evaluate your given hypothesis utterances. "
                              "Please give this argument as a string surrounded by a pair of square brackets where your "
-                             "metrics are split by commas. (default: [mcd, msd, log-f0])")
+                             "metrics are split by commas. (default: [mcd, log-f0])")
     parser.add_argument('--result_path', type=str, default=None,
                         help="The path where the evaluated results are placed. If not given, the results will be saved "
                              "to the same directory as the hypo 'idx2xxx_wav' found in 'hypo_path'. (default: None)")
@@ -95,12 +89,18 @@ def calculate_metric(idx2hypo_refer_list: List[str], tgt_metric: str = 'mcd'):
             coeff = 10 / np.log(10) * np.sqrt(2)
             output[idx] = coeff * np.mean(np.sqrt(np.sum((hypo_feat - refer_feat) ** 2, axis=1)))
         else:
-            # Get voiced part of log-f0
-            nonzero_idxs = np.where((hypo_feat != 0) & (refer_feat != 0))[0]
-            hypo_feat = np.log(hypo_feat[nonzero_idxs])
-            refer_feat = np.log(refer_feat[nonzero_idxs])
-            # calculate rmse
-            output[idx] = np.sqrt(np.mean((hypo_feat - refer_feat) ** 2))
+            try:
+                # Get voiced part of log-f0
+                nonzero_idxs = np.where((hypo_feat != 0) & (refer_feat != 0))[0]
+                hypo_feat = np.log(hypo_feat[nonzero_idxs])
+                refer_feat = np.log(refer_feat[nonzero_idxs])
+                # calculate rmse
+                rmse = np.sqrt(np.mean((hypo_feat - refer_feat) ** 2))
+            except RuntimeWarning:
+                rmse = None
+
+            if rmse is not None and not np.isnan(rmse):
+                output[idx] = rmse
 
     return output
 
@@ -128,23 +128,7 @@ def save_results(idx2metric_list: List[List], metric_name: str, save_path: str, 
 
 
 def main(hypo_path: str, refer_path: str, metric_list: List[str], result_path: str = None, ncpu: int = 8, topn_num: int = 30):
-    """
 
-    Args:
-        hypo_path: str
-        refer_path: str
-            The path of the 'idx2wav' of
-        metric_list: List[str]
-            Your specified metrics used to evaluate your given hypothesis utterances.
-        result_path: str
-            The path to place the evaluation results. If not given, the evaluation results will be saved to the same
-            directory as your given hypo_idx2wav.
-        ncpu: int
-            The number of processes used to evaluate the specified hypothesis utterances.
-        topn_num: int
-            The number of top-n bad cases you want to show in the result md file.
-
-    """
     # --- 1. Argument Preparation stage --- #
     # argument checking
     for i in range(len(metric_list)):

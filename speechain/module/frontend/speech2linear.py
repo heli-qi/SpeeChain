@@ -255,7 +255,8 @@ class Speech2LinearSpec(Module):
                 n_fft=self.n_fft,
                 win_length=self.win_length,
                 hop_length=self.hop_length,
-                window_fn=getattr(torch, f"{self.stft_config['window']}_window"),
+                window_fn=getattr(torch, f"{self.stft_config['window']}_window")
+                if isinstance(self.stft_config['window'], str) else self.stft_config['window'],
                 power=1 if self.mag_spec else 2
             )
             self.griffin_lim.window = self.griffin_lim.window.to(feat.device)

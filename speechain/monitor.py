@@ -751,11 +751,11 @@ class ValidMonitor(Monitor):
         for epoch in saved_epochs:
             epoch_model_path = os.path.join(self.model_save_path, f"epoch_{epoch}.pth")
             if whether_remove(epoch) and os.path.exists(epoch_model_path):
-                os.remove(epoch_model_path)
-                if not os.path.exists(epoch_model_path):
-                    self.saved_model_epoch.remove(epoch)
-                else:
-                    epoch_message += f"Redundant model file 'epoch_{epoch}.pth' has not been successfully removed!\n"
+                # ensure that the model to be removed is successfully removed
+                while os.path.exists(epoch_model_path):
+                    os.remove(epoch_model_path)
+                # after removing the model file, remove its record in the memory
+                self.saved_model_epoch.remove(epoch)
 
         # --- Early-Stopping epoch number checking for the early-stopping metric --- #
         if len(metric_epoch_records[self.early_stopping_metric]['sorted_epochs']) != 0:
@@ -788,10 +788,13 @@ class ValidMonitor(Monitor):
 
         # early-stopping check by the patience
         early_stopping_flag = False
-        if self.early_stopping_epochs > self.early_stopping_patience:
+        if self.early_stopping_patience is not None and self.early_stopping_epochs > self.early_stopping_patience:
             epoch_message += f"The early-stopping patience {self.early_stopping_patience} is reached, " \
                              f"so the training process stops here.\n"
             early_stopping_flag = True
+        elif self.early_stopping_patience is None:
+            epoch_message += "The early-stopping patience is not set by your exp_cfg, " \
+                             "so the training will continue until num_epochs is reached.\n"
 
         return epoch_message, early_stopping_flag, metric_pop_flags
 
@@ -982,7 +985,7 @@ class TrainValidMonitor(object):
         return self.valid_monitor.finish_epoch(train_records=self.train_monitor.epoch_records, valid_flag=valid_flag,
                                                valid_per_epochs=valid_per_epochs)
 
-    def wait_empty_queues(self, sleep_time: int = 10, max_wait_round: int = 30):
+    def wait_empty_queues(self, sleep_time: int = 10, max_wait_round: int = 60):
         """
         Check whether the snapshooters of train_monitor and valid_monitor are still working.
         wait until the material queues of the snapshooters become empty.
@@ -1011,22 +1014,19 @@ class TrainValidMonitor(object):
         self.valid_monitor.load_state_dict(state_dict['valid_monitor'])
 
 
-def data_saving_logs(logs_queue: Queue, event: Event):
-    try:
-        while True:
-            # check whether the queue is empty every minute
+def data_saving_logs(logs_queue: Queue, event: Event, wait_time: int = 10):
+    while True:
+        try:
+            # check whether the queue is empty every 10 seconds
             if not logs_queue.empty():
                 log = logs_queue.get()
                 save_data_by_format(**log)
             else:
-                event.wait(timeout=10)
+                event.wait(timeout=wait_time)
                 event.clear()
-    except (ImportError, RuntimeError) as e:
-        warnings.warn(f"data_saving_logs() meets an ignorable error: {e}.")
-        pass
-    except Exception as r:
-        warnings.warn(f"data_saving_logs() meets an unknown errors: {r}.")
-        pass
+        # catch all kinds of Exceptions and continue the process
+        except Exception as e:
+            warnings.warn(f"data_saving_logs() meets an error: {e}.")
 
 
 class TestMonitor(Monitor):
@@ -1040,7 +1040,6 @@ class TestMonitor(Monitor):
 
         Args:
             args:
-            model:
 
         Returns:
 
@@ -1117,12 +1116,6 @@ class TestMonitor(Monitor):
                 # notify the data saving process of the new-added queue elements
                 self.data_saving_event.set()
 
-                # save_data_by_format(file_format=result['format'].lower(),
-                #                     save_path=os.path.join(self.result_path, name),
-                #                     file_name_list=test_index, file_content_list=result['content'],
-                #                     group_ids=result['group_ids'],
-                #                     sample_rate=result['sample_rate'] if 'sample_rate' in result.keys() else None)
-
         # --- Report the testing midway information to users --- #
         test_step_message = None
         # record the tesing time of the current step
@@ -1178,6 +1171,28 @@ class TestMonitor(Monitor):
         if test_step_message is not None:
             self.logger.info(test_step_message)
 
+    def wait_empty_queues(self, sleep_time: int = 60):
+        """
+            Wait for the data saving queue to be empty before continuing.
+            If using distributed training, waits for all processes to reach this point before continuing.
+
+            Args:
+                sleep_time (int): The number of seconds to wait between checking if the queue is empty.
+        """
+        while True:
+            self.data_saving_logs_queue.qsize()
+            if self.data_saving_logs_queue.empty():
+                # wait for one more time when the queue becomes empty to left enough time for data saving
+                time.sleep(sleep_time)
+                break
+            else:
+                self.logger.info(f"The data saving process is still working. Waiting for {sleep_time} seconds.")
+                time.sleep(sleep_time)
+
+        # If using distributed training, synchronize all processes before continuing
+        if self.distributed:
+            torch.distributed.barrier()
+
     def finish_epoch(self, meta_info: Dict = None):
         """
 
@@ -1203,17 +1218,14 @@ class TestMonitor(Monitor):
                     group_meta_info[meta_type][group].append(index)
 
         # --- Gather the checkpoint information of all the processes --- #
-        final_path = '/'.join(self.result_path.split('/')[:-1])
-        os.makedirs(final_path, exist_ok=True)
-
         # load the checkpoint of rank0 and delete testing time information
-        self.load_state_dict(torch.load(os.path.join(final_path, 'rank0_tmp', 'checkpoint.pth'))['monitor'])
+        self.load_state_dict(torch.load(os.path.join(self.result_path, 'rank0_tmp', 'checkpoint.pth'))['monitor'])
         self.step_info.pop('group_time')
         self.step_info.pop('total_time')
 
         if self.distributed:
             for rank in range(1, torch.distributed.get_world_size()):
-                _tmp_dict = torch.load(os.path.join(final_path, f'rank{rank}_tmp', 'checkpoint.pth'))['monitor']['step_info']
+                _tmp_dict = torch.load(os.path.join(self.result_path, f'rank{rank}_tmp', 'checkpoint.pth'))['monitor']['step_info']
                 for key in self.step_info.keys():
                     self.step_info[key].update(_tmp_dict[key])
 
@@ -1222,80 +1234,31 @@ class TestMonitor(Monitor):
             self.step_info[key] = dict(sorted(self.step_info[key].items(), key=lambda x: x[0]))
             # .md files remain their original names
             if key.endswith('.md'):
-                np.savetxt(os.path.join(final_path, key), list(self.step_info[key].items()), fmt="%s")
+                np.savetxt(os.path.join(self.result_path, key), list(self.step_info[key].items()), fmt="%s")
             # normal .txt files have the prefix 'idx2' attached at the beginning of their names
             else:
-                np.savetxt(os.path.join(final_path, f'idx2{key}'), list(self.step_info[key].items()), fmt="%s")
+                np.savetxt(os.path.join(self.result_path, f'idx2{key}'), list(self.step_info[key].items()), fmt="%s")
 
         # --- Gather all the save-during-testing files & Generate their path files --- #
-        while True:
-            self.data_saving_logs_queue.qsize()
-            if self.data_saving_logs_queue.empty():
-                break
-            else:
-                self.logger.info("The data saving process is still working. Waiting for 10 seconds......")
-                time.sleep(10)
-
-        for file_name in os.listdir(self.result_path):
-            # only consider the folders not named as 'figures'
-            if os.path.isdir(os.path.join(self.result_path, file_name)) and file_name != 'figures':
-                os.makedirs(os.path.join(final_path, file_name), exist_ok=True)
-
-                # move all the files to the final_path once a time (shutil.move doesn't work)
-                for data_file in os.listdir(os.path.join(self.result_path, file_name)):
-                    os.rename(src=os.path.join(self.result_path, file_name, data_file),
-                              dst=os.path.join(final_path, file_name, data_file))
-
-        # copy the files from the other ranks in the distributed setting
-        if self.distributed:
-            for rank in range(1, torch.distributed.get_world_size()):
-                for file_name in os.listdir(os.path.join(final_path, f'rank{rank}_tmp')):
-                    # skip the folder named figure
-                    if file_name == 'figure':
-                        continue
-
-                    # only consider the folders, skip the standalone files
-                    folder_path = os.path.join(final_path, f'rank{rank}_tmp', file_name)
-                    if os.path.isdir(folder_path):
-                        # move all the files to the final_path once a time (shutil.move doesn't work)
-                        for data_file in os.listdir(folder_path):
-                            src_path = os.path.join(final_path, f'rank{rank}_tmp', file_name, data_file)
-                            dst_path = os.path.join(final_path, file_name, data_file)
-                            # for the folder with the same name, move all the files in src_path into dst_path
-                            if os.path.exists(dst_path):
-                                for src_file in search_file_in_subfolder(
-                                        src_path, tgt_match_fn=lambda x: len(x.split('.')) > 1, return_name=True):
-                                    os.rename(src=os.path.join(src_path, src_file), dst=os.path.join(dst_path, src_file))
-                                # after file moving, remove the empty folder
-                                if len(search_file_in_subfolder(
-                                        src_path, tgt_match_fn=lambda x: len(x.split('.')) > 1, return_name=True)) == 0:
-                                    os.removedirs(src_path)
-                                else:
-                                    raise RuntimeError(f'Some files in {src_path} have not been successfully moved to {dst_path}!')
-                            # for the file, directly move it to dst_path
-                            else:
-                                os.rename(src=src_path, dst=dst_path)
-
         # generate the data path files
-        for file_name in os.listdir(final_path):
+        for file_name in os.listdir(self.result_path):
             # only consider folders
-            if not os.path.isdir(os.path.join(final_path, file_name)):
+            if not os.path.isdir(os.path.join(self.result_path, file_name)):
                 continue
             # only consider the folders not named as 'figures' and 'rank_tmp'
             if file_name.startswith('rank') or file_name == 'figures':
                 continue
             idx2path = []
-            # for data_file in os.listdir(os.path.join(final_path, file_name)):
             for data_file in search_file_in_subfolder(
-                    os.path.join(final_path, file_name), tgt_match_fn=lambda x: len(x.split('.')) > 1):
+                    os.path.join(self.result_path, file_name), tgt_match_fn=lambda x: len(x.split('.')) > 1):
                 data_index = '.'.join(os.path.basename(data_file).split('.')[:-1])
                 idx2path.append([data_index, data_file])
 
             idx2path = list(sorted(idx2path, key=lambda x: x[0]))
-            np.savetxt(os.path.join(final_path, f'idx2{file_name}'), idx2path, fmt="%s")
+            np.savetxt(os.path.join(self.result_path, f'idx2{file_name}'), idx2path, fmt="%s")
 
         # --- Group-level Evaluation Report Production --- #
-        result_path = os.path.join(final_path, "overall_results.md")
+        result_path = os.path.join(self.result_path, "overall_results.md")
         result_string = ""
 
         # The overall evaluation performance
@@ -1363,7 +1326,7 @@ class TestMonitor(Monitor):
         if 'instance_reports.md' in self.step_info.keys():
             # loop each tri-tuple
             for metric, mode, num in self.bad_cases_selection:
-                result_path = os.path.join(final_path, f"top{num}_{mode}_{metric}.md")
+                result_path = os.path.join(self.result_path, f"top{num}_{mode}_{metric}.md")
 
                 if metric in self.step_info.keys():
                     # get the indices of the topn samples
@@ -1379,8 +1342,8 @@ class TestMonitor(Monitor):
 
         # --- Histograms Plotting --- #
         # remove the old figures if have
-        if os.path.exists(os.path.join(final_path, 'figures')):
-            shutil.rmtree(os.path.join(final_path, 'figures'))
+        if os.path.exists(os.path.join(self.result_path, 'figures')):
+            shutil.rmtree(os.path.join(self.result_path, 'figures'))
 
         # loop each metric and plot the histogram figure
         for metric, result_dict in self.step_info.items():
@@ -1396,13 +1359,10 @@ class TestMonitor(Monitor):
             )
 
         if not self.empty_queue():
-            for i in range(30):
+            for i in range(60):
                 if not self.empty_queue():
-                    self.logger.info("The snapshooter is still snapshotting. Waiting for 10 seconds......")
+                    self.logger.info("The snapshooter is still snapshotting. Waiting for 10 seconds.")
                     time.sleep(10)
-
-        # copy the plotted figures into final_path
-        shutil.move(src=os.path.join(self.result_path, 'figures'), dst=os.path.join(final_path, 'figures'))
 
     def state_dict(self):
         """

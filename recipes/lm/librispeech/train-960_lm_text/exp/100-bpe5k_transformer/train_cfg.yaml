@@ -1,0 +1,40 @@
+model:
+  model_type: lm.LM
+  model_conf:
+    customize_conf:
+      token_type: sentencepiece
+      token_path: datasets//librispeech/data/sentencepiece/train-clean-100/bpe5k/asr
+  module_conf:
+    emb:
+      type: embed
+      conf:
+        embedding_dim: 768
+    encoder:
+      type: transformer
+      conf:
+        posenc_dropout: 0.0
+        posenc_scale: false
+        emb_layernorm: true
+        emb_scale: false
+        d_model: 768
+        num_heads: 12
+        num_layers: 12
+        att_dropout: 0.0
+        fdfwd_dim: 3072
+        fdfwd_dropout: 0.0
+        res_dropout: 0.0
+        layernorm_first: true
+        uni_direction: true
+  criterion_conf:
+    length_normalized: true
+    label_smoothing: 0.0
+optim_sches:
+  type: noam.Noamlr
+  conf:
+    optim_type: Adam
+    optim_conf:
+      betas:
+      - 0.9
+      - 0.98
+      eps: 1.0e-09
+    warmup_steps: 50000

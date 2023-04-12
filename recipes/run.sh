@@ -19,17 +19,17 @@ function print_help_message {
     [--test_model TEST_MODEL] \\                            # The value of test_model given to runner.py (default: none)
     --exp_cfg EXP_CFG \\                                    # The name of your specified configuration file in ${SPEECHAIN_ROOT}/recipes/{task}/{dataset}/{subset}/exp_cfg
     [--data_cfg DATA_CFG] \\                                # The name of your specified configuration file in ${SPEECHAIN_ROOT}/recipes/{task}/{dataset}/{subset}/data_cfg (default: none)
-    [--train_cfg TRAIN_CFG] \\                              # The name of your specified configuration file in ${SPEECHAIN_ROOT}/recipes/{task}/{dataset}/{subset}/train_cfg (default: none)
     [--infer_cfg INFER_CFG] \\                              # The name of your specified configuration file in ${SPEECHAIN_ROOT}/config/{task}/ (default: none)
     [--ngpu NGPU] \\                                        # The value of 'ngpu' given to runner.py (default: none)
     [--gpus GPUS] \\                                        # The value of 'gpus' given to runner.py (default: none)
-    [--num_workers NUM_WORKERS] \\                          # The value of 'num_workers' given to runner.py (default: none)
+    [--train_num_workers TRAIN_NUM_WORKERS] \\              # The value of 'train_num_workers' given to runner.py (default: none)
+    [--test_num_workers TEST_NUM_WORKERS] \\                # The value of 'test_num_workers' given to runner.py (default: none)
     [--accum_grad ACCUM_GRAD] \\                            # The value of 'accum_grad' given to runner.py (default: none)
     --task TASK \\                                          # The name of the task folder you want to run in ${SPEECHAIN_ROOT}/recipes/
     --dataset DATASET \\                                    # The name of the dataset folder you want to run in ${SPEECHAIN_ROOT}/recipes/{task}
     [--subset SUBSET] \\                                    # The name of the subset folder you want to run in ${SPEECHAIN_ROOT}/recipes/{task}/{subset} (default: none)
-    --train false or true \\                                # Whether to activate training mode (default: false)
-    --test false or true                                   # Whether to activate testing mode (default: false)" >&2
+    --train TRAIN \\                                        # Whether to activate training mode (default: true)
+    --test TEST                                            # Whether to activate testing mode (default: true)" >&2
   exit 1
 }
 
@@ -62,8 +62,8 @@ no_optim=false
 # But one thing should be noted is that you must use the identical data loading configuration for resuming.
 # It means that you should not give a new configuration by '--data_cfg'.
 resume=false
-train=false
-test=false
+train=true
+test=true
 # If '--train_result_path' is not given, the experimental files will be automatically saved to /exp under the same
 # directory of your given '--config'.
 train_result_path=
@@ -72,13 +72,13 @@ test_model=
 
 exp_cfg=
 data_cfg=
-train_cfg=
 infer_cfg=
 
 # The GPUs can be specified by either 'CUDA_VISIBLE_DEVICES' or '--gpus'. They are identical to the backbone.
 ngpu=
 gpus=
-num_workers=
+train_num_workers=
+test_num_workers=
 accum_grad=
 
 
@@ -139,10 +139,6 @@ while getopts ":h-:" optchar; do
           val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
           data_cfg=${val}
           ;;
-        train_cfg)
-          val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
-          train_cfg=${val}
-          ;;
         infer_cfg)
           val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
           infer_cfg=${val}
@@ -155,9 +151,13 @@ while getopts ":h-:" optchar; do
           val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
           gpus=${val}
           ;;
-        num_workers)
+        train_num_workers)
           val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
-          num_workers=${val}
+          train_num_workers=${val}
+          ;;
+        test_num_workers)
+          val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
+          test_num_workers=${val}
           ;;
         accum_grad)
           val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
@@ -197,13 +197,8 @@ if ${dry_run} && ${no_optim};then
   exit 1
 fi
 
-if ${train} && ${test};then
-  echo "'--train' and '--test' can not be true at the same time! Please specify one of them to true."
-  exit 1
-fi
-
 if ! ${train} && ! ${test};then
-  echo "'--train' and '--test' can not be false at the same time! Please specify one of them to true."
+  echo "'--train' and '--test' can not be false at the same time! Please specify at least one of them to true."
   exit 1
 fi
 
@@ -227,13 +222,15 @@ if [ -n "${gpus}" ];then
   args="${args} --gpus ${gpus}"
 fi
 #
-if [ -n "${ngpu}" ];then
-  args="${args} --ngpu ${ngpu}"
+if [ -n "${train_num_workers}" ];then
+  args="${args} --train_num_workers ${train_num_workers}"
 fi
+
 #
-if [ -n "${num_workers}" ];then
-  args="${args} --num_workers ${num_workers}"
+if [ -n "${test_num_workers}" ];then
+  args="${args} --test_num_workers ${test_num_workers}"
 fi
+
 #
 if [ -n "${accum_grad}" ];then
   args="${args} --accum_grad ${accum_grad}"
@@ -260,30 +257,6 @@ if [ -n "${exp_cfg}" ];then
   fi
   args="${args} --config ${exp_cfg}"
 fi
-#
-if [ -n "${data_cfg}" ];then
-  # attach .yaml suffix if needed
-  if [[ "${data_cfg}" != *".yaml" ]];then
-    data_cfg="${data_cfg}.yaml"
-  fi
-  # convert the relative path in ${subset_root}/data_cfg if no slash inside
-  if ! grep -q '/' <<< "${data_cfg}";then
-    data_cfg="${subset_root}/data_cfg/${data_cfg}"
-  fi
-  args="${args} --data_cfg ${data_cfg}"
-fi
-#
-if [ -n "${train_cfg}" ];then
-  # attach .yaml suffix if needed
-  if [[ "${train_cfg}" != *".yaml" ]];then
-    train_cfg="${train_cfg}.yaml"
-  fi
-  # convert the relative path in ${subset_root}/train_cfg if no slash inside
-  if ! grep -q '/' <<< "${train_cfg}";then
-    train_cfg="${subset_root}/train_cfg/${train_cfg}"
-  fi
-  args="${args} --train_cfg ${train_cfg}"
-fi
 
 #
 if ${resume};then
@@ -293,55 +266,79 @@ else
 fi
 
 #
-if ${train};then
-  args="${args} --train True"
-else
-  args="${args} --train False"
-fi
-#
 if [ -n "${train_result_path}" ];then
   args="${args} --train_result_path ${train_result_path}"
 fi
 
 #
-if ${test};then
-  args="${args} --test True"
+if ${train};then
+  train_args="${args} --train True --test False"
   #
-  if [ -n "${infer_cfg}" ];then
-    # do sth when infer_cfg is the name of a configuration file
-    if ! grep -q ':' <<< "${infer_cfg}";then
-      # attach .yaml suffix if needed
-      if [[ "${infer_cfg}" != *".yaml" ]];then
-        infer_cfg="${infer_cfg}.yaml"
-      fi
-      # convert the relative path in ${infer_root}/${task} if no slash inside
-      if ! grep -q '/' <<< "${infer_cfg}";then
-        if [ ${task} == 'offline_tts2asr' ];then
-          folder='asr'
-        elif [ ${task} == 'offline_asr2tts' ]; then
-          folder='asr'
-        else
-          folder=${task}
-        fi
-        infer_cfg="${infer_root}/${folder}/${infer_cfg}"
-      fi
+  if [ -n "${ngpu}" ];then
+    train_args="${train_args} --ngpu ${ngpu}"
+  fi
+  # ${args} should not be surrounded by double-quote
+  # shellcheck disable=SC2086
+  ${SPEECHAIN_PYTHON} "${runner_path}" ${train_args}
+fi
+
+#
+if ${test};then
+  test_args="${args} --test True --train False"
+  #
+  if [ -n "${ngpu}" ];then
+    # for testing, the maximal number of used GPUs is set to 2
+    if [ ${ngpu} -gt 2 ];then
+      test_args="${test_args} --ngpu 2"
+    else
+      test_args="${test_args} --ngpu ${ngpu}"
     fi
-    args="${args} --infer_cfg ${infer_cfg}"
   fi
   #
+  if [ -n "${data_cfg}" ];then
+    # attach .yaml suffix if needed
+    if [[ "${data_cfg}" != *".yaml" ]];then
+      data_cfg="${data_cfg}.yaml"
+    fi
+    # convert the relative path in ${subset_root}/data_cfg if no slash inside
+    if ! grep -q '/' <<< "${data_cfg}";then
+      data_cfg="${subset_root}/data_cfg/${data_cfg}"
+    fi
+    test_args="${test_args} --data_cfg ${data_cfg}"
+  fi
+  #
+  if [ -n "${infer_cfg}" ];then
+#    # do sth when infer_cfg is the name of a configuration file
+#    if ! grep -q ':' <<< "${infer_cfg}";then
+#      # attach .yaml suffix if needed
+#      if [[ "${infer_cfg}" != *".yaml" ]];then
+#        infer_cfg="${infer_cfg}.yaml"
+#      fi
+#      # convert the relative path in ${infer_root}/${task} if no slash inside
+#      if ! grep -q '/' <<< "${infer_cfg}";then
+#        if [ ${task} == 'offline_tts2asr' ];then
+#          folder='asr'
+#        elif [ ${task} == 'offline_asr2tts' ]; then
+#          folder='asr'
+#        else
+#          folder=${task}
+#        fi
+#        infer_cfg="${infer_root}/${folder}/${infer_cfg}"
+#      fi
+#    fi
+    test_args="${test_args} --infer_cfg ${infer_cfg}"
+  fi
+
+  #
   if [ -n "${test_result_path}" ];then
-    args="${args} --test_result_path ${test_result_path}"
+    test_args="${test_args} --test_result_path ${test_result_path}"
   fi
   #
   if [ -n "${test_model}" ];then
-    args="${args} --test_model ${test_model}"
+    test_args="${test_args} --test_model ${test_model}"
   fi
-else
-  args="${args} --test False"
+
+  # ${args} should not be surrounded by double-quote
+  # shellcheck disable=SC2086
+  ${SPEECHAIN_PYTHON} "${runner_path}" ${test_args}
 fi
-
-
-# --- 3. Execute the Job --- #
-# ${args} should not be surrounded by double-quote
-# shellcheck disable=SC2086
-${SPEECHAIN_PYTHON} "${runner_path}" ${args}

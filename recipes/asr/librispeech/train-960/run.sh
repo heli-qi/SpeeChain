@@ -2,11 +2,20 @@
 ### Affiliation: NAIST
 ### Date: 2022.12
 
+
+# --- Global References --- #
 if [ -z "${SPEECHAIN_ROOT}" ] || [ -z "${SPEECHAIN_PYTHON}" ];then
   echo "Cannot find environmental variables SPEECHAIN_ROOT and SPEECHAIN_PYTHON.
   Please move to the root path of the toolkit and run envir_preparation.sh there!"
   exit 1
 fi
+recipe_run_root=${SPEECHAIN_ROOT}/recipes/run.sh
+
+# please manually change the following arguments everytime you dump a new dataset
+task=asr
+dataset=librispeech
+subset='train-960'
+
 
 function print_help_message {
   echo "usage:
@@ -17,21 +26,17 @@ function print_help_message {
     [--train_result_path TRAIN_RESULT_PATH] \\              # The value of train_result_path given to runner.py (default: none)
     [--test_result_path TEST_RESULT_PATH] \\                # The value of train_result_path given to runner.py (default: none)
     [--test_model TEST_MODEL] \\                            # The value of test_model given to runner.py (default: none)
-    --exp_cfg EXP_CFG \\                                    # The name of your specified configuration file in ${SPEECHAIN_ROOT}/recipes/asr/librispeech/train-960/exp_cfg
-    [--data_cfg DATA_CFG] \\                                # The name of your specified configuration file in ${SPEECHAIN_ROOT}/recipes/asr/librispeech/train-960/data_cfg (default: none)
-    [--train_cfg TRAIN_CFG] \\                              # The name of your specified configuration file in ${SPEECHAIN_ROOT}/recipes/asr/librispeech/train-960/train_cfg (default: none)
-    [--infer_cfg INFER_CFG] \\                              # The name of your specified configuration file in ${SPEECHAIN_ROOT}/config/asr/ (default: none)
+    --exp_cfg EXP_CFG \\                                    # The name of your specified configuration file in ${SPEECHAIN_ROOT}/recipes/${task}/${dataset}/${subset}/exp_cfg
+    [--data_cfg DATA_CFG] \\                                # The name of your specified configuration file in ${SPEECHAIN_ROOT}/recipes/${task}/${dataset}/${subset}/data_cfg (default: none)
+    [--infer_cfg INFER_CFG] \\                              # The name of your specified configuration file in ${SPEECHAIN_ROOT}/config/${task}/ (default: none)
     [--num_workers NUM_WORKERS] \\                          # The value of 'num_workers' given to runner.py (default: none)
     [--accum_grad ACCUM_GRAD] \\                            # The value of 'accum_grad' given to runner.py (default: none)
     [--ngpu NGPU] \\                                        # The value of 'ngpu' given to runner.py (default: none)
     [--gpus GPUS] \\                                        # The value of 'gpus' given to runner.py (default: none)
-    --train false or true \\                                # Whether to activate training mode (default: false)
-    --test false or true                                   # Whether to activate testing mode (default: false)" >&2
+    --train TRAIN \\                                        # Whether to activate training mode (default: true)
+    --test TEST                                            # Whether to activate testing mode (default: true)" >&2
   exit 1
 }
-
-# --- Absolute Path References --- #
-recipe_run_root=${SPEECHAIN_ROOT}/recipes/run.sh
 
 
 # --- Arguments --- #
@@ -39,15 +44,14 @@ dry_run=false
 no_optim=false
 
 resume=false
-train=false
-test=false
+train=true
+test=true
 train_result_path=
 test_result_path=
 test_model=
 
 exp_cfg=
 data_cfg=
-train_cfg=
 infer_cfg=
 
 num_workers=
@@ -101,10 +105,6 @@ while getopts ":h-:" optchar; do
           val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
           data_cfg=${val}
           ;;
-        train_cfg)
-          val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
-          train_cfg=${val}
-          ;;
         infer_cfg)
           val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
           infer_cfg=${val}
@@ -148,9 +148,9 @@ done
 # --- 1. Argument Initialization --- #
 #
 args="
-  --task asr \
-  --dataset librispeech \
-  --subset train-960 \
+  --task ${task} \
+  --dataset ${dataset} \
+  --subset ${subset} \
   --dry_run ${dry_run} \
   --no_optim ${no_optim} \
   --resume ${resume} \
@@ -185,10 +185,6 @@ fi
 #
 if [ -n "${data_cfg}" ];then
   args="${args} --data_cfg ${data_cfg}"
-fi
-#
-if [ -n "${train_cfg}" ];then
-  args="${args} --train_cfg ${train_cfg}"
 fi
 
 #

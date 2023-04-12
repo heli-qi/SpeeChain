@@ -20,7 +20,6 @@ function print_help_message {
       [--feat_config FEAT_CONFIG] \\                        # The name of acoustic feature extraction configuration file. (default: none)
       [--sample_rate SAMPLE_RATE] \\                        # The sampling rate you want the waveforms to have. If not given, the original sampling rate of LJSpeech (22.05kHz) will be used for the folder 'ljspeech/data/wav' (default: none)
       [--spk_emb_model SPK_EMB_MODEL] \\                    # The speaker recognition model you want to use to extract the speaker embeddings. If given, this argument must be either 'xvector' or 'ecapa'. (default: none)
-      [--comp_chunk_ext COMP_CHUNK_EXT] \\                  # The file extension of the compressed chunk files. (default: none)
       [--token_type TOKEN_TYPE] \\                          # The type of the token you want your tokenizer to have. (default: g2p)
       [--txt_format TXT_FORMAT] \\                          # The text processing format for the transcripts in the dataset. (default: tts)
       [--ncpu NCPU] \\                                      # The number of processes used for all the multiprocessing jobs. (default: 8)
@@ -67,7 +66,7 @@ character_coverage=1.0
 split_by_whitespace=true
 # arguments used by stat_info_generator.py
 separator=','
-txt_format=tts
+txt_format=punc
 
 
 # LJSpeech-specific arguments

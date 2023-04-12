@@ -14,17 +14,23 @@ function print_help_message {
   $0 \\ (The arguments in [] are optional while other arguments must be given by your run.sh.)
       [--src_path SRC_PATH] \\                              # The path of the dumped dataset. If src_path is not given, it will be initialized to ${SPEECHAIN_ROOT}/datasets/. If you have already dumped the dataset, please give its full path (starting by a slash '/') by this argument. (default: none)
       [--tgt_path TGT_PATH] \\                              # The mfa-related files will be saved to {tgt_path}/{dataset_name}/mfa. If tgt_path is not given, those files will be saved to {src_path}/{dataset_name}/mfa. If you want to save the files elsewhere, please give its full path (starting by a slash '/') by this argument. (default: none)
-      [--pretrained PRETRAINED] \\                          # Whether to use the pretrained acoustic model for alignment. (default: true)
+      [--pretrained PRETRAINED] \\                          # Whether to use the pretrained acoustic model for alignment. If pretrained is set to true but pretrained_dataset and pretrained_subset are not give, the pretrained English model provided by MFA toolkit will be used which is pretrained on LibriSpeech corpus. (default: true)
+      [--pretrained_dataset PRETRAINED_DATASET] \\          # The dataset name which is used to train the pretrained model you want to use for alignment. (default: none)
+      [--pretrained_subset PRETRAINED_SUBSET] \\            # The subset name of your given pretrained_dataset which your target pretrained model is trained on.  (default: none)
       [--ncpu NCPU] \\                                      # The number of processes used for the alignment jobs. (default: 8)
-      --dataset_name DATASET_NAME                          # The name of the dataset you want to get the MFA files." >&2
+      --dataset_name DATASET_NAME \\                        # The name of the dataset you want to get the MFA files.
+      [--subset_name SUBSET_NAME]                          # The name of the subset in your specified dataset you want to use. If not given, the entire dataset will be procesed. (default: none)" >&2
   exit 1
 }
 
 src_path=${SPEECHAIN_ROOT}/datasets
 tgt_path=
 pretrained=true
+pretrained_dataset=
+pretrained_subset=
 ncpu=8
 dataset_name=
+subset_name=
 
 ### get args from the command line ###
 while getopts ":h-:" optchar; do
@@ -43,6 +49,14 @@ while getopts ":h-:" optchar; do
           val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
           pretrained=${val}
           ;;
+        pretrained_dataset)
+          val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
+          pretrained_dataset=${val}
+          ;;
+        pretrained_subset)
+          val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
+          pretrained_subset=${val}
+          ;;
         ncpu)
           val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
           ncpu=${val}
@@ -50,6 +64,10 @@ while getopts ":h-:" optchar; do
         dataset_name)
           val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
           dataset_name=${val}
+          ;;
+        subset_name)
+          val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
+          subset_name=${val}
           ;;
         help)
           print_help_message
@@ -75,22 +93,43 @@ if [ -z ${tgt_path} ];then
    tgt_path=${src_path}
 fi
 
+if [ -z ${dataset_name} ];then
+   echo "dataset_name cannot be empty! Please give a dataset that you want to process."
+   exit 1
+fi
+
+if [ -n "${pretrained_dataset}" ] && [ -n "${pretrained_subset}" ];then
+  # path is used for mfa command while name is used for the file path
+  pretrained_model_path=${tgt_path}/${pretrained_dataset}/data/mfa/models/${pretrained_subset}.zip
+  pretrained_model_name=${pretrained_dataset}_${pretrained_subset}
+elif [ -n "${pretrained_dataset}" ] || [ -n "${pretrained_subset}" ]; then
+  echo "pretrained_dataset and pretrained_subset must be given at the same time!"
+  exit 1
+else
+  pretrained_model_path=english_us_arpa
+  pretrained_model_name=english_us_arpa
+fi
+
 
 # --- 1. Generate .TextGrid Files --- #
-mkdir -p ${tgt_path}/${dataset_name}/data/mfa
+mkdir -p ${tgt_path}/${dataset_name}/data/mfa/${pretrained_model_name}
 # skip this step if the folder TextGrid exists
-if [ ! -d ${tgt_path}/${dataset_name}/data/mfa/TextGrid ];then
+if [ ! -d ${tgt_path}/${dataset_name}/data/mfa/${pretrained_model_name}/TextGrid/${subset_name} ];then
   # produce the .TextGrid files locally by the mfa commands
   if [ ${dataset_name} == 'ljspeech' ];then
-    corpus_path=${src_path}/${dataset_name}/data/wav16000
+    corpus_path=${src_path}/${dataset_name}/data/wav16000/${subset_name}
     lexicon_path="${SPEECHAIN_ROOT}"/datasets/mfa_lexicons/librispeech-lexicon.txt
-    pretrained_model=english_us_arpa
+
   elif [ ${dataset_name} == 'libritts' ];then
-    corpus_path=${src_path}/${dataset_name}/data/wav16000
+    corpus_path=${src_path}/${dataset_name}/data/wav16000/${subset_name}
     lexicon_path="${SPEECHAIN_ROOT}"/datasets/mfa_lexicons/librispeech-lexicon.txt
-    pretrained_model=english_us_arpa
+
+  elif [ ${dataset_name} == 'librispeech' ];then
+    corpus_path=${src_path}/${dataset_name}/data/wav/${subset_name}
+    lexicon_path="${SPEECHAIN_ROOT}"/datasets/mfa_lexicons/librispeech-lexicon.txt
+
   else
-    echo "Currently dataset_name could only be 'ljspeech' or 'libritts', but got ${dataset_name}!"
+    echo "Currently dataset_name could only be one of ['ljspeech', 'libritts'. 'librispeech'], but got ${dataset_name}!"
     exit 1
   fi
 
@@ -98,16 +137,20 @@ if [ ! -d ${tgt_path}/${dataset_name}/data/mfa/TextGrid ];then
     echo "MFA is better to be performed on 16khz-downsampled dataset, but ${corpus_path} doens't exist!"
     if [ ${dataset_name} == 'ljspeech' ];then
       echo "Please go to ${SPEECHAIN_ROOT}/datasets/ljspeech and run the command below to dump wav16000/"
+      echo "bash run.sh --stop_step 8 --sample_rate 16000 --txt_format asr"
     elif [ ${dataset_name} == 'libritts' ];then
       echo "Please go to ${SPEECHAIN_ROOT}/datasets/libritts and run the command below to dump wav16000/"
+      echo "bash run.sh --stop_step 8 --sample_rate 16000 --txt_format asr"
+    elif [ ${dataset_name} == 'librispeech' ];then
+      echo "Please go to ${SPEECHAIN_ROOT}/datasets/librispeech and run the command below to dump wav/"
+      echo "bash run.sh --stop_step 8 --txt_format asr"
     fi
-    echo "bash run.sh --start_step 3 --stop_step 8 --sample_rate 16000 --txt_format asr"
     exit 1
   fi
 
   # Prepare .lab files
   ${SPEECHAIN_PYTHON} "${SPEECHAIN_ROOT}"/datasets/pyscripts/lab_file_generator.py \
-    --dataset_path ${corpus_path} \
+    --corpus_path ${corpus_path} \
     --ncpu ${ncpu}
 
   # Create the aligner environment if there is no environment named aligner
@@ -123,34 +166,42 @@ if [ ! -d ${tgt_path}/${dataset_name}/data/mfa/TextGrid ];then
 
   # Get the mfa command path in the environment root
   mfa_command_path="${envir_path}"/bin/mfa
-
+  mkdir -p ${tgt_path}/${dataset_name}/data/mfa/${pretrained_model_name}/TextGrid/${subset_name}
   if ${pretrained};then
-    # Download the pretrained acoustic model for American English
-    ${mfa_command_path} model download acoustic ${pretrained_model}
+    # Download the MFA-builtin pretrained acoustic model
+    if [ ${pretrained_model_path} == 'english_us_arpa' ];then
+      ${mfa_command_path} model download acoustic ${pretrained_model_path}
+    fi
 
     # Generate .TextGrid files
     ${mfa_command_path} align \
-      ${corpus_path} "${lexicon_path}" ${pretrained_model} ${tgt_path}/${dataset_name}/data/mfa/TextGrid \
+      ${corpus_path} "${lexicon_path}" ${pretrained_model_path} \
+      ${tgt_path}/${dataset_name}/data/mfa/${pretrained_model_name}/TextGrid/${subset_name} \
       -j ${ncpu} --clean True
   else
+    mkdir -p ${tgt_path}/${dataset_name}/data/mfa/models
     # train an acoustic model on the target corpus and use it to get the alignments
     ${mfa_command_path} train \
       ${corpus_path} "${lexicon_path}" \
-      ${tgt_path}/${dataset_name}/data/mfa/acoustic_model.zip ${tgt_path}/${dataset_name}/data/mfa/TextGrid \
+      ${tgt_path}/${dataset_name}/data/mfa/models/${subset_name}.zip \
+      ${tgt_path}/${dataset_name}/data/mfa/${pretrained_model_name}/TextGrid/${subset_name} \
       -j ${ncpu} --clean True
   fi
 
 else
-  echo ".TextGrid files have already existed in ${tgt_path}/${dataset_name}/TextGrid!"
+  echo ".TextGrid files have already existed in ${tgt_path}/${dataset_name}/data/mfa/${pretrained_model_name}/TextGrid/${subset_name}!"
 fi
 
 
 # skip this step if the folder TextGrid doesn't exist
-if [ -d ${tgt_path}/${dataset_name}/data/mfa/TextGrid ];then
+if [ -d ${tgt_path}/${dataset_name}/data/mfa/${pretrained_model_name}/TextGrid/${subset_name} ];then
   # --- Generate idx2duration.json by .TextGrid Files --- #
   ${SPEECHAIN_PYTHON} "${SPEECHAIN_ROOT}"/datasets/pyscripts/duration_calculator.py \
-      --textgrid_path ${tgt_path}/${dataset_name}/data/mfa/TextGrid \
-      --proc_dataset ${dataset_name}
+      --data_path ${tgt_path}/${dataset_name}/data \
+      --save_path ${tgt_path}/${dataset_name}/data/mfa/${pretrained_model_name} \
+      --pretrained_model_name ${pretrained_model_name} \
+      --dataset_name ${dataset_name} \
+      --subset_name ${subset_name}
 else
   echo ".TextGrid files don't exist in ${tgt_path}/${dataset_name}/data/mfa/TextGrid. Please use mfa commands in the documents to prepare them and then run this script again."
   exit 1

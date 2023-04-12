@@ -227,6 +227,15 @@ def str2list(input_str: str) -> List:
     return recur_list_init(input_str)
 
 
+def str2none(input_str: str) -> str or None:
+    if input_str.lower() in ['none', 'null']:
+        return None
+    elif input_str == '':
+        return None
+    else:
+        return input_str
+
+
 if __name__ == '__main__':
     # # test str2list function
     # result_list = str2list('[a,[1,2,[1.1, 2.2, 3.3],[h,i, j, k]], c,[d, e,[f,g,[h,i,j,k]]]]')

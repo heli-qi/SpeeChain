@@ -99,7 +99,7 @@ class TransformerDecoderLayer(Module):
 
         """
 
-        'Self Attention Layer part'
+        # --- 1. Self Attention Layer part --- #
         # go through the LayerNorm layer before the self attention layer or not
         tgt_norm = self.self_att_ln(tgt) if self.layernorm_first else tgt
 
@@ -110,7 +110,7 @@ class TransformerDecoderLayer(Module):
         # go through the LayerNorm layer after the self attention layer or not
         self_att_output = self.self_att_ln(self_att_output) if not self.layernorm_first else self_att_output
 
-        'Enc-Dec Attention Layer part'
+        # --- 2. Enc-Dec Attention Layer part --- #
         # go through the LayerNorm layer before the enc-dec attention layer or not
         self_att_output_norm = self.encdec_att_ln(self_att_output) if self.layernorm_first else self_att_output
 
@@ -121,7 +121,7 @@ class TransformerDecoderLayer(Module):
         # go through the LayerNorm layer after the enc-dec attention layer or not
         encdec_att_output = self.encdec_att_ln(encdec_att_output) if not self.layernorm_first else encdec_att_output
 
-        'Positional FeedForward Layer part'
+        # --- 3. Positional FeedForward Layer part --- #
         # go through the LayerNorm layer before the feedforward layer or not
         encdec_att_output_norm = self.fdfwd_ln(encdec_att_output) if self.layernorm_first else encdec_att_output
 

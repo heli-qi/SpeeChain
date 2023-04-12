@@ -3,7 +3,6 @@
     Affiliation: NAIST
     Date: 2022.07
 """
-import argparse
 import os
 import torch
 import copy
@@ -16,7 +15,7 @@ from contextlib import nullcontext
 
 from speechain.module.abs import Module
 from speechain.module.transformer.pos_enc import PositionalEncoding
-from speechain.module.prenet.spk_embed import SpeakerEmbedPrenet
+from speechain.module.gan.generator import HifiGANGenerator
 
 from speechain.utilbox.yaml_util import load_yaml
 from speechain.utilbox.md_util import get_list_strings
@@ -60,15 +59,17 @@ class Model(torch.nn.Module, ABC):
         torch.nn.BatchNorm1d,
         torch.nn.BatchNorm2d,
         PositionalEncoding,
-        SpeakerEmbedPrenet
+        HifiGANGenerator
     ]
 
     def __init__(self,
-                 args: argparse.Namespace,
                  device: torch.device,
-                 model_conf: Dict,
                  module_conf: Dict,
-                 criterion_conf: Dict = None):
+                 result_path: str,
+                 model_conf: Dict = None,
+                 criterion_conf: Dict = None,
+                 non_blocking: bool = False,
+                 distributed: bool = False,):
         """
         In this initialization function, there are two parts of initialization: model-specific customized initialization
         and model-independent general initialization.
@@ -126,8 +127,9 @@ class Model(torch.nn.Module, ABC):
         super(Model, self).__init__()
 
         # input argument checking
-        assert model_conf is not None, "model_conf cannot be None!"
         assert module_conf is not None, "module_conf cannot be None!"
+        # model_conf is default to be an empty dictionary
+        model_conf = dict() if model_conf is None else model_conf
         # criterion_conf is default to be an empty dictionary
         criterion_conf = dict() if criterion_conf is None else criterion_conf
         # customize_conf is default to be an empty dictionary
@@ -135,12 +137,12 @@ class Model(torch.nn.Module, ABC):
             model_conf['customize_conf'] = dict()
 
         # general argument registration
-        self.non_blocking = args.non_blocking
-        self.distributed = args.distributed
+        self.non_blocking = non_blocking
+        self.distributed = distributed
         self.device = device
 
         # snapshotting-related argument registration
-        self.result_path = args.train_result_path
+        self.result_path = result_path
         if "visual_infer_conf" in model_conf.keys():
             # configuration is given as a .yaml file
             if isinstance(model_conf["visual_infer_conf"], str):
@@ -167,7 +169,7 @@ class Model(torch.nn.Module, ABC):
             for ptm in pretrained_model:
                 # argument checking
                 if isinstance(ptm, str):
-                    ptm = dict(path=ptm)
+                    ptm = dict(path=parse_path_args(ptm))
                 elif isinstance(ptm, Dict):
                     assert 'path' in ptm.keys(), \
                         "If model['model_conf']['pretrained_model'] is given as a Dict, " \
@@ -182,7 +184,7 @@ class Model(torch.nn.Module, ABC):
                 _pt_model = torch.load(parse_path_args(ptm['path']), map_location=self.device)
                 mapping = ptm['mapping'] if 'mapping' in ptm.keys() else None
                 if mapping is None:
-                    self.load_state_dict(_pt_model, strict=False)
+                    self.load_state_dict(_pt_model, strict=True if 'strict' not in ptm.keys() else ptm['strict'])
                 else:
                     assert isinstance(mapping, dict) and len(mapping) >= 1, \
                         f"mapping must be given as a dict and cannot be empty! " \
@@ -200,7 +202,7 @@ class Model(torch.nn.Module, ABC):
                                 name = name.replace(src, tgt)
                         # record the parameter no matter whether its name is modified or not
                         _src_modules[name] = para
-                    self.load_state_dict(_src_modules, strict=False)
+                    self.load_state_dict(_src_modules, strict=True if 'strict' not in ptm.keys() else ptm['strict'])
 
         # --- 2.2. Model Parameter Initialization --- #
         else:
@@ -225,12 +227,16 @@ class Model(torch.nn.Module, ABC):
         # --- 3. Model Parameter Freezing --- #
         frozen_modules = model_conf['frozen_modules'] if 'frozen_modules' in model_conf.keys() else None
         if frozen_modules is not None:
-            frozen_modules = frozen_modules if isinstance(frozen_modules, list) else [frozen_modules]
+            if frozen_modules != 'all':
+                frozen_modules = frozen_modules if isinstance(frozen_modules, list) else [frozen_modules]
 
             for name, para in self.named_parameters():
                 frozen_flag = False
-                for module in frozen_modules:
-                    frozen_flag = name.startswith(module + '.')
+                if frozen_modules != 'all':
+                    for module in frozen_modules:
+                        frozen_flag = name.startswith(module + '.')
+                else:
+                    frozen_flag = True
 
                 if frozen_flag:
                     para.requires_grad = False
@@ -351,8 +357,30 @@ class Model(torch.nn.Module, ABC):
         # context function used when doing the loss backward for efficient gradient accumulation in the DDP mode
         forward_context = nullcontext if self.training else torch.inference_mode
         with forward_context():
-            # Feed the input batch into the model and get the outputs, copy.deepcopy() here is for the data safety
-            model_outputs = self.module_forward(epoch=epoch, **copy.deepcopy(batch_data))
+            try:
+                # Feed the input batch into the model and get the outputs, copy.deepcopy() here is for the data safety
+                model_outputs = self.module_forward(epoch=epoch, **copy.deepcopy(batch_data))
+            except Exception as e:
+                if not self.distributed:
+                    raise e
+                else:
+                    skip_flag_list = torch.LongTensor(
+                        [False for _ in range(torch.distributed.get_world_size())]).cuda(self.device)
+                    skip_flag = torch.LongTensor([True]).cuda(self.device)
+                    # as long as one node meets an error, all nodes will skip the current step at the same time
+                    torch.distributed.all_gather_into_tensor(skip_flag_list, skip_flag)
+                    if skip_flag_list.sum() >= 1:
+                        raise e
+            else:
+                if self.distributed:
+                    skip_flag_list = torch.LongTensor(
+                        [False for _ in range(torch.distributed.get_world_size())]).cuda(self.device)
+                    skip_flag = torch.LongTensor([False]).cuda(self.device)
+                    # as long as one node meets an error, all nodes will skip the current step at the same time
+                    torch.distributed.all_gather_into_tensor(skip_flag_list, skip_flag)
+                    if skip_flag_list.sum() >= 1:
+                        raise RuntimeError("Other ranks meet errors during validation, "
+                                           "so this rank will also skip the current validation step!")
 
         # copy.deepcopy() cannot receive the non-leaf nodes in the computation graph (model_outputs). Since
         # model_outputs cannot be detached from the graph (gradients necessary), copy.deepcopy() is not used below.
@@ -428,16 +456,21 @@ class Model(torch.nn.Module, ABC):
             """
             # --- Process the Text String and its Length --- #
             if 'text' in data_dict.keys():
-                assert isinstance(data_dict['text'], List)
-                data_dict['text'], data_dict['text_len'] = text2tensor_and_len(
-                    text_list=data_dict['text'], text2tensor_func=self.tokenizer.text2tensor,
-                    ignore_idx=self.tokenizer.ignore_idx
-                )
+                if isinstance(data_dict['text'], List):
+                    data_dict['text'], data_dict['text_len'] = text2tensor_and_len(
+                        text_list=data_dict['text'], text2tensor_func=self.tokenizer.text2tensor,
+                        ignore_idx=self.tokenizer.ignore_idx
+                    )
+                else:
+                    assert isinstance(data_dict['text'], torch.Tensor)
 
             # --- Process the Speaker ID String --- #
             if 'spk_ids' in data_dict.keys():
-                assert isinstance(data_dict['spk_ids'], List) and hasattr(self, 'spk2idx')
-                data_dict['spk_ids'] = spk2tensor(spk_list=data_dict['spk_ids'], spk2idx_dict=self.spk2idx)
+                if isinstance(data_dict['spk_ids'], List):
+                    if hasattr(self, 'spk2idx'):
+                        data_dict['spk_ids'] = spk2tensor(spk_list=data_dict['spk_ids'], spk2idx_dict=self.spk2idx)
+                elif not isinstance(data_dict['spk_ids'], torch.Tensor):
+                    raise TypeError
 
             return data_dict
 
@@ -508,7 +541,7 @@ class Model(torch.nn.Module, ABC):
         return metrics
 
     @abstractmethod
-    def module_forward(self, **batch_data) -> Dict:
+    def module_forward(self, epoch: int = None, **batch_data) -> Dict:
         """
         This function forwards the input batch data by all _Module_ members.
         Note:
@@ -518,6 +551,7 @@ class Model(torch.nn.Module, ABC):
             `self.metrics_calculation()`.
 
         Args:
+            epoch:
             **batch_data:
                 Processed data of the input batch received from `self.batch_preprocess_fn()`.
 

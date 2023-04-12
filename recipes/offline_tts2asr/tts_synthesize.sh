@@ -14,7 +14,7 @@ function print_help_message {
   $0 \\ (The arguments in [] are optional while other arguments must be given by your run.sh.)
 
       # Group1: TTS Synthesis Environment
-      [--batch_len BATCH_LEN] \\                             # The total length of all unlabeled sentences in a single batch. This argument is required if you want to conduct batch-level TTS synthesis. We recommend you to set 'batch_len' up to {100 * total GBs of your GPUs}. (default: none)
+      [--batch_len BATCH_LEN] \\                             # The total length of all unlabeled sentences in a single batch. This argument is required if you want to conduct batch-level TTS synthesis. We recommend you to set 'batch_len' up to {25 * reduction_factor * total GBs of your GPUs} for AR-TTS and {100 * reduction_factor * total GBs of your GPUs} for NAR-TTS. (default: none)
       [--random_seed RANDOM_SEED] \\                         # The random seed used to control the randomness of reference speaker for TTS synthesis. (default: 0)
       [--ngpu NGPU] \\                                       # The number of GPUs you want to use. (default: 1)
       [--gpus GPUS] \\                                       # The GPUs you want to specify. (default: none)
@@ -40,7 +40,7 @@ function print_help_message {
       [--spk_emb_model SPK_EMB_MODEL] \\                     # The speaker embedding model you want to use for TTS synthesis. (default: none)
 
       # Group5: Token & Text
-      [--txt_format TXT_FORMAT] \\                           # The text format of the text data. (default: normal)
+      [--txt_format TXT_FORMAT] \\                           # The text format of the text data. (default: tts)
       [--token_type TOKEN_TYPE] \\                           # The type of tokens in your target vocabulary. (default: g2p)
       [--token_num TOKEN_NUM] \\                             # The number of tokens in your target vocabulary. (default: full_tokens)
 
@@ -55,7 +55,7 @@ function print_help_message {
 }
 
 ngpu=1
-gpus=
+gpus=none
 batch_len=
 random_seed=0
 resume=false
@@ -63,10 +63,6 @@ num_workers=1
 
 long_filter=false
 filter_ratio=0.95
-
-sample_rate=16000
-ref_filter=false
-min_ref_second=3
 
 rand_spk_emb=false
 spk_emb_mixup=false
@@ -76,7 +72,7 @@ spk_emb_dataset=
 spk_emb_subset=
 spk_emb_model=
 
-txt_format=normal
+txt_format=tts
 token_type=g2p
 token_num=full_tokens
 
@@ -165,18 +161,6 @@ while getopts ":h-:" optchar; do
           val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
           filter_ratio=${val}
           ;;
-        sample_rate)
-          val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
-          sample_rate=${val}
-          ;;
-        ref_filter)
-          val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
-          ref_filter=${val}
-          ;;
-        min_ref_second)
-          val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
-          min_ref_second=${val}
-          ;;
         resume)
           val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
           resume=${val}
@@ -243,22 +227,12 @@ if ! grep -q '/' <<< "${dump_data_path}";then
 fi
 
 if [ -z ${tts_syn_dataset} ] || [ -z ${tts_syn_subset} ];then
-   echo "Please give your target text data by '--dataset DATASET' and '--subset SUBSET'!"
+   echo "Please give your target text data by '--tts_syn_dataset TTS_SYN_DATASET' and '--tts_syn_subset TTS_SYN_SUBSET'!"
    exit 1
-fi
-
-if ${ref_filter} && [ -z ${spk_emb_model} ];then
-  echo "Please give a speaker embedding model by '--spk_emb_model SPK_EMB_MODEL' if you give '--ref_filter true'!"
-  exit 1
 fi
 
 if ${rand_spk_emb} && [ -n "${spk_emb_model}" ];then
   echo "If 'rand_spk_emb' is set to true, you don't need to give '--spk_emb_model SPK_EMB_MODEL'!"
-  exit 1
-fi
-
-if ${rand_spk_emb} && ${ref_filter};then
-  echo "'rand_spk_emb' and 'ref_filter' cannot be true at the same time!"
   exit 1
 fi
 
@@ -278,15 +252,18 @@ fi
 
 if [ -z ${spk_emb_subset} ];then
    spk_emb_subset=${tts_syn_subset}
+elif [ ${spk_emb_dataset} == ${tts_syn_dataset} ] && [ ${spk_emb_subset} == ${tts_syn_subset} ]; then
+    echo "spk_emb_subset should not be equal to tts_syn_subset!"
+    exit 1
 fi
 
 
 # --- 1. Argument Initialization --- #
-args="--train False --test True --test_result_path ${syn_result_path}/${tts_syn_dataset}/${tts_syn_subset}"
+args="--train False --test True --attach_model_folder_when_test False --test_result_path ${syn_result_path}/${tts_syn_dataset}/${tts_syn_subset}"
 
 # automatically initialize the data loading configuration. The contents surrounded by a pair of brackets are optional.
 #  test:{
-#    seed=${random_seed}(_spk-emb=${spk_emb_dataset}-${spk_emb_subset}-${spk_emb_model})(_long-filter=${filter_ratio})_batch-len=${batch_len}_model=${tts_model_path}:{
+#    seed=${random_seed}_ngpu=${ngpu}_token=${token_type}(_spk-emb=${spk_emb_dataset}-${spk_emb_subset}-${spk_emb_model})(_long-filter=${filter_ratio})_batch-len=${batch_len}_model=${tts_model_path}:{
 #      (type:block.BlockIterator,) or (type:abs.Iterator,)
 #      conf:{
 #        (dataset_type:speech_text.SpeechTextDataset,) or (dataset_type:speech_text.RandomSpkFeatDataset,)
@@ -295,10 +272,8 @@ args="--train False --test True --test_result_path ${syn_result_path}/${tts_syn_
 #            text:${unspoken_idx2text}
 #          },
 #          (spk_feat:${refer_idx2spk_feat},)
-#          (ref_len: ${idx2ref_len},)
-#          (min_ref_len: $(( sample_rate * min_ref_second )),)
-#          (mixup_number: ${mixup_number},)
-#          (data_selection:[min,${filter_ratio},${unspoken_idx2text_len}])
+#          (mixup_number:${mixup_number},)
+#          (data_selection:[min,${filter_ratio},${unspoken_idx2text_len}],)
 #        },
 #        shuffle:false,
 #        (data_len:${unspoken_idx2text_len},)
@@ -307,14 +282,10 @@ args="--train False --test True --test_result_path ${syn_result_path}/${tts_syn_
 #    }
 #  }
 # the following code does the same job as the configuration above
-data_args="test:{seed=${random_seed}"
+data_args="test:{seed=${random_seed}_ngpu=${ngpu}_token=${token_type}"
 # if 'long_filter' is true, attach filter_ratio into the folder name
 if ${long_filter};then
   data_args="${data_args}_long-filter=${filter_ratio}"
-fi
-# if 'ref_filter' is true, attach min_ref_second into the folder name
-if ${ref_filter};then
-  data_args="${data_args}_ref-filter=${min_ref_second}s"
 fi
 # if 'rand_spk_emb' is given, attach rand_spk_emb into the folder name
 if ${rand_spk_emb};then
@@ -349,7 +320,12 @@ else
 fi
 
 data_args="${data_args},dataset_conf:{main_data:{text:"
-unspoken_idx2text="${dump_data_path}/${tts_syn_dataset}/data/${token_type}/${tts_syn_subset}/${token_num}/${txt_format}/idx2text"
+# the idx2text file containing the split tokens has the higher priority
+if [ ${token_type} != 'mfa' ];then
+  unspoken_idx2text="${dump_data_path}/${tts_syn_dataset}/data/${token_type}/${tts_syn_subset}/${token_num}/${txt_format}/idx2text"
+else
+  unspoken_idx2text="${dump_data_path}/${tts_syn_dataset}/data/${token_type}/${tts_syn_subset}/idx2text"
+fi
 unspoken_idx2text_len="${unspoken_idx2text}_len"
 # if the idx2text file containing the split tokens doesn't exist, use the one containing the raw transcripts
 if [ ! -f "${unspoken_idx2text}" ];then
@@ -360,15 +336,6 @@ data_args="${data_args}${unspoken_idx2text}}"
 # if 'spk_emb_model' is set to true, attach 'spk_feat' in 'dataset_conf'
 if [ -n "${spk_emb_model}" ];then
   data_args="${data_args},spk_feat:${dump_data_path}/${spk_emb_dataset}/data/wav/${spk_emb_subset}/idx2${spk_emb_model}_spk_feat"
-fi
-
-# if 'ref_filter' is set to true, attach 'ref_len' and 'min_ref_len' in 'dataset_conf'
-if ${ref_filter};then
-  idx2ref_len="${dump_data_path}/${spk_emb_dataset}/data/wav${sample_rate}/${spk_emb_subset}/idx2wav_len"
-  if [ ! -f "${idx2ref_len}" ];then
-    idx2ref_len="${dump_data_path}/${spk_emb_dataset}/data/wav/${spk_emb_subset}/idx2wav_len"
-  fi
-  data_args="${data_args},ref_len:${idx2ref_len},min_ref_len:$(( sample_rate * min_ref_second ))"
 fi
 
 # if 'spk_emb_mixup' is set to true, attach 'mixup_number' in 'dataset_conf'
@@ -396,12 +363,8 @@ args="${args} --data_cfg ${data_args}"
 if [ -n "${random_seed}" ];then
   args="${args} --seed ${random_seed}"
 fi
-# explicitly specify the used GPUs
-if [ -n "${gpus}" ];then
-  args="${args} --gpus ${gpus}"
-fi
-# explicitly specify the number of used GPUs
-args="${args} --ngpu ${ngpu}"
+# explicitly specify the used GPUs and its number
+args="${args} --ngpu ${ngpu} --gpus ${gpus}"
 # explicitly specify the number of worker processes for data loading
 args="${args} --num_workers ${num_workers}"
 

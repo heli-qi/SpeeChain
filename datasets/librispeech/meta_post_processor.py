@@ -52,15 +52,11 @@ class LibriSpeechMetaPostProcessor(SpeechTextMetaPostProcessor):
 
         """
         # looping for each target subset
-        for subset in ['train-clean-460', 'train-600', 'train-960', 'dev']:
+        for subset in ['train-clean-460', 'train-960', 'dev']:
             if subset == 'train-clean-460':
                 # 'train-clean-460' = 'train-clean-100' + 'train-clean-360'
                 member_path_list = [os.path.join(src_path, 'train-clean-100'),
                                     os.path.join(src_path, 'train-clean-360')]
-            elif subset == 'train-600':
-                # 'train-600' = 'train-clean-100' + 'train-other-500'
-                member_path_list = [os.path.join(src_path, 'train-clean-100'),
-                                    os.path.join(src_path, 'train-other-500')]
             elif subset == 'train-960':
                 # 'train-clean-460' = 'train-clean-100' + 'train-clean-360' + 'train-other-500'
                 member_path_list = [os.path.join(src_path, 'train-clean-100'),

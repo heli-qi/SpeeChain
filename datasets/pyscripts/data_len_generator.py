@@ -1,12 +1,3 @@
-"""
-    Author: Sashi Novitasari
-    Affiliation: NAIST
-    Date: 2022.07
-
-    Author: Heli Qi
-    Affiliation: NAIST
-    Date: 2022.07
-"""
 import os
 import argparse
 import numpy as np
@@ -18,48 +9,66 @@ from speechain.utilbox.data_loading_util import read_data_by_path, parse_path_ar
 
 
 def parse():
+    """
+        Parse command line arguments using argparse.
+
+        Returns:
+            argparse.Namespace: Parsed arguments as a namespace object.
+    """
     parser = argparse.ArgumentParser(description='params')
     parser.add_argument('--src_file', type=str, required=True,
-                        help="The absolute path of your input 'idx2wav' or 'idx2feat'. The length file 'idx2wav_len' "
-                             "or 'idx2feat_len' will be saved to the directory of data_path.")
+                        help="The absolute path of your input 'idx2wav' or 'idx2feat' file. "
+                             "The corresponding length file 'idx2wav_len' or 'idx2feat_len' will be saved to the same directory.")
     parser.add_argument('--ncpu', type=int, default=8,
-                        help="The number of processes you want to use to extract the feature lengths.")
+                        help="The number of CPU cores to use for parallel processing.")
     return parser.parse_args()
 
 
-def get_feat_length(idx2data: List[List[str]]):
-    idx2data_len = []
-    # loop each source data wav in the given chunk
-    for idx, data_path in tqdm(idx2data):
-        idx2data_len.append([idx, read_data_by_path(data_path).shape[0]])
-    return idx2data_len
+def get_data_length(idx2data: List[List[str]]):
+    """
+        Calculate the length of each feature in the given chunk of idx2data.
+
+        Args:
+            idx2data (List[List[str]]):
+                A list of [idx, data_path] pairs.
+
+        Returns:
+            List[List[str]]: A list of [idx, data_length] pairs.
+    """
+    # loop through each source data file in the given chunk
+    return [[idx, read_data_by_path(data_path).shape[0]] for idx, data_path in tqdm(idx2data, desc="Processing data files")]
 
 
 def main(src_file: str, ncpu: int):
+    """
+        Main function that extracts feature lengths and saves them to file.
+
+        Args:
+            src_file (str):
+                The absolute path of the input 'idx2wav' or 'idx2feat' file.
+            ncpu (int):
+                The number of processes to use for the calculation.
+    """
     src_file = parse_path_args(src_file)
     src_path = os.path.dirname(src_file)
     src_file_name = os.path.basename(src_file)
-    tgt_file_name = '_'.join([src_file_name, 'len'])
+    tgt_file_name = f"{src_file_name}_len"
     tgt_path = os.path.join(src_path, tgt_file_name)
 
-    # skip the length dumping process if there has already been a idx2wav_len or idx2feat_len
+    # skip the length dumping process if there has already been a length file
     if not os.path.exists(tgt_path):
-        idx2data = load_idx2data_file(src_file)
-        idx2data = [[idx, data] for idx, data in idx2data.items()]
+        idx2data = [[idx, data] for idx, data in load_idx2data_file(src_file).items()]
         func_args = [idx2data[i::ncpu] for i in range(ncpu)]
 
         # read all the assigned data files and get their lengths
         with Pool(ncpu) as executor:
-            idx2data_len_list_nproc = executor.map(get_feat_length, func_args)
+            data_length_list_nproc = executor.map(get_data_length, func_args)
 
-        idx2data_len = []
-        for idx2data_len_list in idx2data_len_list_nproc:
-            idx2data_len += idx2data_len_list
-        np.savetxt(tgt_path, sorted(idx2data_len, key=lambda x: x[0]), fmt='%s')
+        data_length_list = [item for sublist in data_length_list_nproc for item in sublist]
+        np.savetxt(tgt_path, sorted(data_length_list, key=lambda x: x[0]), fmt='%s')
     else:
-        print(f"Data length file {tgt_file_name} have already existed in {src_path}, "
+        print(f"Data length file {tgt_file_name} already exists in {src_path}, "
               f"so the length dumping process is skipped.")
-
     print("\n")
 
 

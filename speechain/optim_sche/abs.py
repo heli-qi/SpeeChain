@@ -141,7 +141,7 @@ class OptimScheduler(ABC):
         """
         raise NotImplementedError
 
-    def step(self, losses: Dict[str, torch.Tensor], time_func, optim_name: str, step_num: int, logger = None):
+    def step(self, losses: Dict[str, torch.Tensor], time_func, optim_name: str, step_num: int, epoch_num: int, logger = None):
         """
         This function optimizes the target parameters of the built-in model pointer with the input training losses.
 
@@ -194,7 +194,7 @@ class OptimScheduler(ABC):
             # do optimization only when the real step number meets the updating interval
             if real_step % self.step_per_update == 0:
                 # update the learning rate for the current step (scaled by the finetuning factor)
-                curr_lr = self.update_lr(real_step=real_step)
+                curr_lr = self.update_lr(real_step=real_step, epoch_num=epoch_num)
                 for param_group in self.optimizer.param_groups:
                     param_group['lr'] = self.ft_factor * curr_lr
 
@@ -231,7 +231,7 @@ class OptimScheduler(ABC):
                     self.optimizer.zero_grad()
 
     @abstractmethod
-    def update_lr(self, real_step: int) -> float:
+    def update_lr(self, real_step: int, epoch_num: int) -> float:
         """
         This abstract interface function generates the learning rate by the input step number.
 

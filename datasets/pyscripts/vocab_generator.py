@@ -15,8 +15,10 @@ from g2p_en import G2p
 from collections import Counter
 
 from speechain.tokenizer.g2p import abnormal_phns
+from speechain.tokenizer.sp import SentencePieceTokenizer
 from speechain.utilbox.type_util import str2bool
 from speechain.utilbox.dump_util import get_readable_number
+from speechain.utilbox.text_util import text2word_list
 from speechain.utilbox.data_loading_util import load_idx2data_file, parse_path_args
 
 
@@ -29,7 +31,7 @@ def parse():
                        help="The path where you want to save the vocabulary and tokenizer model.")
     group.add_argument('--token_type', type=str, required=True,
                        help="The type of the token you want to use in your tokenizer.")
-    group.add_argument('--txt_format', type=str, default='normal',
+    group.add_argument('--txt_format', type=str, default='no-punc',
                        help="The text processing format controlling how to process the transcript sentence of each "
                             "utterance before saving them into 'idx2sent' and 'text'.")
     group.add_argument('--vocab_size', type=int, default=None,
@@ -149,13 +151,14 @@ def generate_vocab_sentencepiece(save_path: str, text_path: str, txt_format: str
     # update the output path and create the folder
     save_path = os.path.join(save_path, f"{model_type}{get_readable_number(vocab_size)}", txt_format)
     os.makedirs(save_path, exist_ok=True)
+    idx2text_path = os.path.join(text_path, f'idx2{txt_format}_text')
 
     # --- Vocabulary List Generation --- #
     # skip if 'model' and 'vocab' exist at the same time
     if not os.path.exists(os.path.join(save_path, 'model')) or not os.path.exists(os.path.join(save_path, 'vocab')):
         # disable bos and eos. <sos>/<eos> will be added externally, so vocab_size need to be subtracted from 1
         # add <blank> and put <unk> to the end of the vocabulary
-        spm.SentencePieceTrainer.train(input=os.path.join(text_path, f'idx2{txt_format}_text'), model_prefix='m',
+        spm.SentencePieceTrainer.train(input=idx2text_path, model_prefix='m',
                                        vocab_size=vocab_size - 1, model_type=model_type,
                                        character_coverage=character_coverage,
                                        split_by_whitespace=split_by_whitespace, user_defined_symbols='<blank>',
@@ -166,7 +169,7 @@ def generate_vocab_sentencepiece(save_path: str, text_path: str, txt_format: str
         # move the model file to the output_path
         shutil.move(model_path, os.path.join(save_path, 'm.model'))
         # update model_path after the original m.model is renamed
-        model_path = os.path.join(os.path.join(save_path, 'model'))
+        model_path = os.path.join(save_path, 'model')
         os.rename(os.path.join(save_path, 'm.model'), model_path)
         print(f"SentencePiece tokenizer model has been successfully saved to {model_path}.")
 
@@ -177,6 +180,15 @@ def generate_vocab_sentencepiece(save_path: str, text_path: str, txt_format: str
         vocab_path = os.path.join(save_path, 'vocab')
         np.savetxt(vocab_path, token_vocab, fmt="%s")
         print(f"SentencePiece vocabulary has been successfully saved to {vocab_path}.")
+
+    idx2text_len_path = os.path.join(save_path, 'idx2text_len')
+    if not os.path.exists(idx2text_len_path):
+        idx2text = load_idx2data_file(idx2text_path)
+        sp_tokenizer = SentencePieceTokenizer(token_path=save_path)
+
+        np.savetxt(idx2text_len_path, [[idx, len(sp_tokenizer.text2tensor(text))] for idx, text in idx2text.items()],
+                   fmt="%s")
+        print(f"The length of SentencePiece tokenized text has been successfully saved to {idx2text_len_path}.")
 
 
 def generate_vocab_g2p(save_path: str, text_path: str, txt_format: str, vocab_size: int):
@@ -197,27 +209,6 @@ def generate_vocab_word(save_path: str, text_path: str, txt_format: str, vocab_s
     This function just segments text with whitespaces, so the punctuation symbols won't be treated as independent tokens.
 
     """
-    def text2word_list(x: str):
-        word_list = []
-        for word in x.split():
-            # no punctuation
-            if word[0].isalpha() and word[-1].isalpha():
-                word_list.append(word)
-            # punctuation attached at the beginning
-            elif not word[-1].isalpha():
-                word_list.append(''.join(word[:-1]))
-                word_list.append(word[-1])
-            # punctuation attached at the end
-            elif not word[0].isalpha():
-                word_list.append(word[0])
-                word_list.append(''.join(word[1:]))
-            # punctuation attached at the beginning and the end
-            else:
-                word_list.append(word[0])
-                word_list.append(''.join(word[1:-1]))
-                word_list.append(word[-1])
-        return word_list
-
     # --- Vocabulary List Generation --- #
     save_token_vocab(
         save_path=save_path, text_path=text_path, txt_format=txt_format,

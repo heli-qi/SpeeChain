@@ -14,7 +14,7 @@ dataset: librispeech
 valid_dset: &valid_dset dev-clean
 
 wav_format: wav
-txt_format: librispeech
+txt_format: asr
 token_num: full_tokens
 
 

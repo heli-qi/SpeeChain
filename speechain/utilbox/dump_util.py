@@ -9,16 +9,10 @@ def en_text_process(input_text: str, txt_format: str) -> str:
     """
     The function that processes the text strings for TTS datasets to the specified text format.
     Currently, available text formats:
-        normal:
-            Letter: capital and lowercase
-            Punctuation: single quotes, commas, periods, hyphens, parentheses, question and exclamation marks
-        lowercase:
-            Letter: lowercase
-            Punctuation: single quotes, commas, periods, hyphens, parentheses, question and exclamation marks
-        plain:
+        punc:
             Letter: lowercase
             Punctuation: single quotes, commas, periods, hyphens
-        librispeech:
+        no-punc:
             Letter: lowercase
             Punctuation: single quotes
 
@@ -104,17 +98,17 @@ def en_text_process(input_text: str, txt_format: str) -> str:
     input_text = input_text.replace('¯', '')
     input_text = input_text.replace('/', ' ')
 
-    # remain the original string format of LibriTTS
-    if txt_format == 'tts':
+    # remain all the punctuation marks
+    if txt_format == 'punc':
         return input_text
 
-    # process the text string into the same format as the LibriSpeech corpus
-    elif txt_format == 'asr':
+    # remove all the punctuation marks other than single-quotations
+    elif txt_format == 'no-punc':
         # remove all the punctuation symbols other than single quotes
         return ''.join([char for char in input_text if char.isalpha() or char in ["\'", ' ']])
 
     else:
-        raise ValueError(f"txt_format must be one of 'tts' or 'asr'. But got {txt_format}!")
+        raise ValueError(f"txt_format must be one of 'punc' or 'no-punc'. But got {txt_format}!")
 
 
 

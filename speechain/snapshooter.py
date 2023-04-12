@@ -291,7 +291,7 @@ class HistPlotter(Plotter):
         pass
 
 
-def snapshot_logs(logs_queue: Queue, event: Event, snapshooter_conf: Dict):
+def snapshot_logs(logs_queue: Queue, event: Event, snapshooter_conf: Dict, wait_time: int = 10):
     """
 
     Args:
@@ -302,22 +302,20 @@ def snapshot_logs(logs_queue: Queue, event: Event, snapshooter_conf: Dict):
     Returns:
 
     """
-    try:
-        snapshooter = SnapShooter(**snapshooter_conf)
-        while True:
-            # check whether the queue is empty every minute
+    snapshooter = SnapShooter(**snapshooter_conf)
+    while True:
+        try:
+            # check whether the queue is empty every 10 seconds
             if not logs_queue.empty():
                 log = logs_queue.get()
                 snapshooter.snapshot(**log)
             else:
-                event.wait(timeout=10)
+                event.wait(timeout=wait_time)
                 event.clear()
-    except (ImportError, RuntimeError) as e:
-        warnings.warn(f"SnapShooter meets an ignorable error: {e}.")
-        pass
-    except Exception as r:
-        warnings.warn(f"SnapShooter meets an unknown errors: {r}.")
-        pass
+        # catch all kinds of Exceptions and continue the process
+        except Exception as e:
+            warnings.warn(f"snapshot_logs() meets an error: {e}.")
+            pass
 
 
 class SnapShooter:

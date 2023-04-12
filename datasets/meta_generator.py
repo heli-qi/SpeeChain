@@ -30,7 +30,7 @@ class SpeechTextMetaGenerator(ABC):
         group = parser.add_argument_group("General Arguments for Statistical Information Generation.")
         group.add_argument('--src_path', type=str, default=None, help="The path where the original dataset is placed.")
         group.add_argument('--tgt_path', type=str, required=True, help="The path where the metadata files are saved.")
-        group.add_argument('--txt_format', type=str, default='normal',
+        group.add_argument('--txt_format', type=str, default='no-punc',
                            help="The text processing format controlling how to process the transcript sentence of "
                                 "each utterance before saving them into 'idx2text' and 'text'. (default: normal)")
         # Add customized arguments if needed

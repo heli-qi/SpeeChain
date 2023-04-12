@@ -170,9 +170,10 @@ class ARTTSDecoder(Module):
         # Speaker Embedding
         if hasattr(self, 'spk_emb'):
             # extract and process the speaker features (activation is not performed for random speaker feature)
-            spk_feat = self.spk_emb(spk_ids=spk_ids, spk_feat=spk_feat, spk_feat_act=not rand_spk_feat)
+            spk_feat_lookup, spk_feat = self.spk_emb(spk_ids=spk_ids, spk_feat=spk_feat, spk_feat_act=not rand_spk_feat)
             # combine the speaker features with the encoder outputs (and the decoder prenet outputs if specified)
-            enc_text, feat = self.spk_emb.combine_spk_feat(spk_feat=spk_feat, enc_output=enc_text, dec_input=feat)
+            enc_text, feat = self.spk_emb.combine_spk_feat(spk_feat=spk_feat, spk_feat_lookup=spk_feat_lookup,
+                                                           enc_output=enc_text, dec_input=feat)
 
         # Decoding
         dec_feat, self_attmat, encdec_attmat, hidden = self.decoder(src=enc_text, src_mask=enc_text_mask,

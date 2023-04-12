@@ -46,7 +46,7 @@ class Noamlr(OptimScheduler):
         self.init_lr = d_model ** -0.5 if d_model is not None else self.get_lr() * warmup_steps ** 0.5
         self.warmup_steps = warmup_steps
 
-    def update_lr(self, real_step: int) -> float:
+    def update_lr(self, real_step: int, epoch_num: int) -> float:
         """
 
         Args:

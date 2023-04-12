@@ -20,7 +20,6 @@ function print_help_message {
       [--feat_config FEAT_CONFIG] \\                        # The name of acoustic feature extraction configuration file. (default: none)
       [--sample_rate SAMPLE_RATE] \\                        # The sampling rate you want the waveforms to have. If not given, the original sampling rate of LibriTTS (24kHz) will be used for the folder 'libritts/data/wav' (default: none)
       [--spk_emb_model SPK_EMB_MODEL] \\                    # The speaker recognition model you want to use to extract the speaker embeddings. If given, this argument must be either 'xvector' or 'ecapa'. (default: none)
-      [--comp_chunk_ext COMP_CHUNK_EXT] \\                  # The file extension of the compressed chunk files. (default: none)
       [--token_type TOKEN_TYPE] \\                          # The type of the token you want your tokenizer to have. (default: g2p)
       [--txt_format TXT_FORMAT] \\                          # The text processing format for the transcripts in the dataset. (default: tts)
       [--ncpu NCPU] \\                                      # The number of processes used for all the multiprocessing jobs. (default: 8)
@@ -69,7 +68,7 @@ split_by_whitespace=true
 # arguments used by data_download.sh
 separator=','
 # text format for LibriTTS is default to be normal
-txt_format=tts
+txt_format=punc
 
 
 # LibriTTS-specific arguments
@@ -188,7 +187,7 @@ case "${dump_part}" in
   100)
     subsets="train-clean-100"
     subsets_args="train-clean-100"
-    vocab_src_subsets="${subsets} dev-clean dev-other dev test-clean test-other"
+    vocab_src_subsets="${subsets} dev-clean test-clean"
 
     if [ ${token_type} == 'sentencepiece' ] && [ -z ${vocab_size} ]; then
       vocab_size=1000
@@ -199,7 +198,7 @@ case "${dump_part}" in
   460)
     subsets="train-clean-100 train-clean-360"
     subsets_args="train-clean-100${separator}train-clean-360"
-    vocab_src_subsets="${subsets} train-clean-460 dev-clean dev-other dev test-clean test-other"
+    vocab_src_subsets="${subsets} train-clean-460 dev-clean test-clean"
 
     if [ ${token_type} == 'sentencepiece' ] && [ -z ${vocab_size} ]; then
       vocab_size=5000

@@ -8,7 +8,7 @@ class CTCLoss(Criterion):
     The wrapper class for torch.nn.functional.ctc_loss
 
     """
-    def criterion_init(self, weight: float = 0.3, blank: int = 0, zero_infinity: bool = True):
+    def criterion_init(self, blank: int = 0, zero_infinity: bool = True):
         """
 
         Args:
@@ -21,11 +21,6 @@ class CTCLoss(Criterion):
 
         """
         # arguments checking
-        assert 0 <= weight < 1, \
-            f"Your input weight must be a float number in [0, 1)! (got {weight}) " \
-            f"Currently, we don't support pure CTC training."
-
-        self.weight = weight
         self.blank = blank
         self.zero_infinity = zero_infinity
 
@@ -49,8 +44,8 @@ class CTCLoss(Criterion):
         # (batch, enc_feat_len, vocab) -> (enc_feat_len, batch, vocab)
         ctc_logits = ctc_logits.transpose(0, 1).log_softmax(dim=-1)
 
-        # remove the <sos/eos> at the beginning and the end
-        text, text_len = text[:, 1:].squeeze(dim=-1), text_len - 2
+        # remove the <sos/eos> at the beginning (retain the <sos/eos> at the end for CTC-ATT joint decoding)
+        text, text_len = text[:, 1:].squeeze(dim=-1), text_len - 1
         text = torch.cat([text[i, :text_len[i]] for i in range(batch)])
 
         # obtain the ctc loss for each data instances in the given batch

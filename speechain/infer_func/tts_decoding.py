@@ -21,24 +21,37 @@ def auto_regression(enc_text: torch.Tensor,
                     continual_steps: int = 0,
                     use_before: bool = False):
     """
+    Auto-regressive acoustic feature generation using a transformer-based TTS model.
 
     Args:
-        # --- Input Testing Data --- #
-        enc_text:
-        enc_text_mask:
-        spk_ids:
-        spk_feat:
-        # --- Auto-Regression Process Controlling --- #
-        reduction_factor:
-        decode_one_step:
-        feat_dim:
-        stop_threshold:
-        maxlen_ratio:
-        continual_steps:
-            Reference: Sec 3.1 in 'Generating synthetic audio data for attention-based speech recognition systems'
-                https://arxiv.org/pdf/1912.09257
-        use_before:
+        enc_text (torch.Tensor):
+            Encoded text tensor.
+        enc_text_mask (torch.Tensor):
+            Mask for encoded text tensor.
+        reduction_factor (int):
+            Reduction factor for acoustic features.
+        decode_one_step (callable):
+            Function for decoding one step of the model.
+        feat_dim (int):
+            Dimensionality of acoustic features.
+        spk_ids (torch.Tensor):
+            Speaker ID tensor.
+        spk_feat (torch.Tensor):
+            Speaker feature tensor.
+        rand_spk_feat (bool):
+            Whether to use random speaker features.
+        stop_threshold (float):
+            Threshold for stop token prediction.
+        maxlen_ratio (float):
+            Maximum length ratio for generated features.
+        continual_steps (int):
+            Number of steps to continue generation after stop token is predicted.
+        use_before (bool):
+            Whether to use the decoder's "before" features for generation.
 
+    Returns:
+        dict: Dictionary containing synthetic acoustic features, their lengths, and the ratio of feature lengths to
+        input text lengths.
     """
     # --- Initialization Stage --- #
     batch_size = enc_text.size(0)
@@ -102,5 +115,5 @@ def auto_regression(enc_text: torch.Tensor,
     return dict(
         hypo_feat=hypo_feat,
         hypo_feat_len=hypo_feat_len,
-        feat_token_len_ratio=hypo_feat_len / enc_text_len
+        feat_token_len_ratio=hypo_feat_len / (enc_text_len + 1e-10)
     )

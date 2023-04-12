@@ -61,8 +61,8 @@ class Conv1dVarPredictor(Module):
                     conv_stride: int = 1,
                     conv_dropout: float or List[float] = 0.5,
                     use_conv_emb: bool = True,
-                    conv_emb_kernel: int = 9,
-                    conv_emb_dropout: float = 0.5):
+                    conv_emb_kernel: int = 3,
+                    conv_emb_dropout: float = 0.0):
         """
 
         Args:
@@ -79,10 +79,6 @@ class Conv1dVarPredictor(Module):
                 The value of stride of all Conv1d layers.
             conv_dropout: float or List[float]
                 The values of p rate of the Dropout layer after each Linear layer.
-            lnr_dims: int or List[int]
-                The values of out_features of each Linear layer.
-                The first value in the List represents the out_features of the first Linear layer.
-                -1: same size as the last convolutional layer's dim
             use_conv_emb: bool
                 Whether to embed the predicted scalar back to an embedding vector.
                 This argument needs to be False for duration predictor.
@@ -148,13 +144,15 @@ class Conv1dVarPredictor(Module):
 
         # --- 3. Scalar Embedding Part Initialization --- #
         if use_conv_emb:
-            self.conv_emb = torch.nn.Sequential(
+            _tmp_conv_emb = [
                 Conv1dEv(in_channels=1,
                          out_channels=self.input_size,
                          kernel_size=conv_emb_kernel,
-                         padding_mode='same'),
-                torch.nn.Dropout(p=conv_emb_dropout)
-            )
+                         padding_mode='same')
+            ]
+            if conv_emb_dropout > 0:
+                _tmp_conv_emb.append(torch.nn.Dropout(p=conv_emb_dropout))
+            self.conv_emb = torch.nn.Sequential(*_tmp_conv_emb)
         self.output_size = self.input_size
 
     def forward(self, feat: torch.Tensor, feat_len: torch.Tensor):
@@ -178,11 +176,11 @@ class Conv1dVarPredictor(Module):
         # (batch, conv_dim, feat_maxlen) -> (batch, feat_maxlen, conv_dim)
         feat = feat.transpose(1, 2)
 
-        # forward the linear layers
+        # forward the linear layer
         # (batch, feat_maxlen, conv_dim) -> (batch, feat_maxlen, 1) -> (batch, feat_maxlen)
         feat = self.linear(feat).squeeze(-1)
 
-        # return both feat & feat_len for the compatibility with other prenet
+        # return feat_len for the compatibility with other prenets
         return feat, feat_len
 
     def emb_pred_scalar(self, pred_scalar: torch.Tensor):

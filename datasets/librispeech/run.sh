@@ -20,7 +20,6 @@ function print_help_message {
     [--feat_config FEAT_CONFIG] \\                        # The name of acoustic feature extraction configuration file. (default: none)
     [--sample_rate SAMPLE_RATE] \\                        # The sampling rate you want the waveforms to have. If not given, the original sampling rate of LibriSpeech (16kHz) will be used for the folder 'librispeech/data/wav' (default: none)
     [--spk_emb_model SPK_EMB_MODEL] \\                    # The speaker recognition model you want to use to extract the speaker embeddings. If given, this argument must be either 'xvector' or 'ecapa'. (default: none)
-    [--comp_chunk_ext COMP_CHUNK_EXT] \\                  # The file extension of the compressed chunk files. (default: none)
     [--token_type TOKEN_TYPE] \\                          # The type of the token you want your tokenizer to have. (default: sentencepiece)
     [--txt_format TXT_FORMAT] \\                          # The text processing format for the transcripts in the dataset. (default: asr)
     [--ncpu NCPU] \\                                      # The number of processes used for all the multiprocessing jobs. (default: 8)
@@ -55,7 +54,6 @@ feat_config=
 sample_rate=
 # empty spk_emb_model means no speaker embedding will be extracted
 spk_emb_model=
-comp_chunk_ext=
 # tokenizer for LibriSpeech is default to be sentencepiece
 token_type=sentencepiece
 # empty vocab_size will be automatically initialized if token_type is 'word' or 'sentencepiece':
@@ -68,7 +66,7 @@ split_by_whitespace=true
 # arguments used by data_download.sh
 separator=','
 # text format for LibriSpeech is default to be librispeech
-txt_format=asr
+txt_format=no-punc
 
 
 # LibriSpeech-specific arguments
@@ -114,10 +112,6 @@ while getopts ":h-:" optchar; do
         spk_emb_model)
           val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
           spk_emb_model=${val}
-          ;;
-        comp_chunk_ext)
-          val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
-          comp_chunk_ext=${val}
           ;;
         token_type)
           val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
@@ -251,7 +245,6 @@ fi
   --feat_config "${feat_config}" \
   --sample_rate "${sample_rate}" \
   --spk_emb_model "${spk_emb_model}" \
-  --comp_chunk_ext "${comp_chunk_ext}" \
   --token_type "${token_type}" \
   --txt_format "${txt_format}" \
   --dataset_name "librispeech" \

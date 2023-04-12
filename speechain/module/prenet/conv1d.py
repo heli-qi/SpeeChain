@@ -10,6 +10,7 @@
 from typing import List
 import torch
 import torch.nn.functional as F
+from torch.nn.utils import weight_norm
 
 from speechain.module.abs import Module
 from speechain.module.prenet.linear import LinearPrenet
@@ -17,50 +18,89 @@ from speechain.module.prenet.linear import LinearPrenet
 
 class Conv1dEv(torch.nn.Module):
     """
+        A 1D convolutional layer with support for different padding modes.
+
+        Attributes:
+            cutoff (bool):
+                Indicates whether the output should be cut off for the 'same' padding mode.
+            causal_padding (int):
+                Additional padding required for the 'causal' padding mode.
+            dilation (int):
+                The dilation rate of the convolutional layer.
+            conv_lyr (torch.nn.Conv1d):
+                The 1D convolutional layer.
 
     """
     def __init__(self, in_channels: int, out_channels: int, kernel_size: int,
-                 stride: int = 1, padding_mode: str = 'same', bias: bool = True):
+                 stride: int = 1, dilation: int = 1, padding_mode: str = 'same',
+                 bias: bool = True, use_weight_norm: bool = False):
         """
-        A guide to convolution arithmetic for deep learning
-        https://arxiv.org/pdf/1603.07285v1.pdf
+            Initializes the Conv1dEv module with the specified parameters.
 
+            Args:
+                in_channels (int):
+                    Number of channels in the input feature.
+                out_channels (int):
+                    Number of channels produced by the convolution.
+                kernel_size (int):
+                    Size of the convolutional kernel.
+                stride (int, optional):
+                    Stride of the convolution. Defaults to 1.
+                dilation (int, optional):
+                    The dilation rate of the kernel. Defaults to 1.
+                padding_mode (str, optional):
+                    Padding mode. Supported values are 'valid', 'full', 'same' and 'causal'. Defaults to 'same'.
+                bias (bool, optional):
+                    If True, adds a learnable bias to the output. Defaults to True.
+
+            Raises:
+                ValueError: If an unsupported padding mode is specified.
         """
         super().__init__()
 
         self.cutoff = False
         self.causal_padding = 0
+        self.dilation = dilation
 
         # no padding is used
         if padding_mode == 'valid':
             padding = 0
         # full padding
         elif padding_mode == 'full':
-            padding = kernel_size - 1
+            padding = dilation * (kernel_size - 1)
         # same padding, the output is the same in dimension with input
         elif padding_mode == 'same':
-            padding = kernel_size // 2
+            assert stride == 1, "Stride should be 1 for 'same' padding mode"
             if kernel_size % 2 == 0:
+                padding = dilation * kernel_size // 2
                 self.cutoff = True
+            else:
+                padding = dilation * (kernel_size - 1) // 2
         # causal padding
         elif padding_mode == 'causal':
             padding = 0
-            self.causal_padding = kernel_size - 1
+            self.causal_padding = dilation * (kernel_size - 1)
         else:
-            raise ValueError
+            raise ValueError("Unsupported padding mode. Supported modes are 'valid', 'full', 'same' and 'causal'.")
 
         self.conv_lyr = torch.nn.Conv1d(
             in_channels=in_channels, out_channels=out_channels,
-            kernel_size=kernel_size, stride=stride, padding=padding, bias=bias
+            kernel_size=kernel_size, stride=stride, dilation=dilation, padding=padding, bias=bias
         )
+        if use_weight_norm:
+            self.conv_lyr = weight_norm(self.conv_lyr)
 
     def forward(self, feat):
         """
+        Performs a forward pass through the convolutional layer.
 
         Args:
-            feat: (batch, feat_dim, feat_maxlen)
+            feat (torch.Tensor):
+                The input feature tensor. Shape: (batch, feat_dim, feat_maxlen).
 
         Returns:
+            torch.Tensor:
+                The output tensor. Shape: (batch, out_channels, output_len).
 
         """
         # attach additional paddings at the end for the 'causal' padding mode
@@ -69,7 +109,7 @@ class Conv1dEv(torch.nn.Module):
         output = self.conv_lyr(feat)
         # cut off the redundant tails for the 'same' padding mode
         if self.cutoff:
-            output = output[:, :, :-1]
+            output = output[:, :, :-self.dilation]
         return output
 
 

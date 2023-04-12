@@ -19,19 +19,23 @@ from speechain.utilbox.import_util import parse_path_args
 def read_data_by_path(data_path: str, return_tensor: bool = False, return_sample_rate: bool = False) \
         -> np.ndarray or torch.Tensor:
     """
-    This function automatically reads the data from the file in your specified path by the file format and extension.
+    This function reads data from the file in the specified path, considering the file format and extension.
 
     Args:
-        data_path: str
-            The path where the data file you want to read is placed.
-        return_tensor: bool = False
-            Whether the returned data is in the form of torch.Tensor.
-        return_sample_rate: bool = False
-            Whether the sample_rate is also returned
+        data_path (str):
+            The path where the data file to be read is placed.
+        return_tensor (bool, optional):
+            Whether to return data as torch.Tensor. Defaults to False.
+        return_sample_rate (bool, optional):
+            Whether to return the sample rate. Defaults to False.
 
     Returns:
-        Array-like data.
-        If return_tensor is False, the data type will be numpy.ndarray; Otherwise, the data type will be torch.Tensor.
+        np.ndarray or torch.Tensor:
+            Array-like data. If return_tensor is False, the data type will be numpy.ndarray;
+            otherwise, the data type will be torch.Tensor.
+
+    Raises:
+        NotImplementedError: If the file format is not supported, this error is raised.
 
     """
     # get the folder directory and data file name
@@ -85,21 +89,27 @@ def read_data_by_path(data_path: str, return_tensor: bool = False, return_sample
 def load_idx2data_file(file_path: str or List[str], data_type: type = str, separator: str = ' ',
                        do_separate: bool = True) -> Dict[str, Any]:
     """
-    This function loads one file named as 'idx2XXX' from the disk into a dictionary.
+    Load a dictionary from a file or a list of files containing key-value pairs,
+    where the key is the index of a data instance and the value is the target data.
 
     Args:
-        file_path: str or List[str]
-            Absolute path of the file to be loaded.
-        data_type: type = str
-            The data type of the values in the returned Dict. It should be the Python built-in data type.
-        separator: str = " "
-            The separator between the data instance index and the data value in each line of the 'idx2data' file.
-        do_separate: bool = True
-            Whether separate each row by the given separator
+        file_path (str or List[str]):
+            Absolute path of the file(s) to be loaded.
+        data_type (type, optional):
+            The data type of the values in the returned dictionary.
+            It should be a Python built-in data type. Defaults to str.
+        separator (str, optional):
+            The separator between the data instance index and the data value in each line of the file.
+            Defaults to ' '.
+        do_separate (bool, optional):
+            Whether to separate each row by the given separator. Defaults to True.
 
-    Returns: Dict[str, str]
-        In each key-value item, the key is the index of a data instance and the value is the target data.
+    Returns:
+        Dict[str, Any]: A dictionary containing key-value pairs, where the key is the index of a data instance and
+        the value is the target data.
 
+    Raises:
+        AssertionError: If the given file does not exist, this error is raised.
     """
 
     def load_single_file(_file_path: str):
@@ -113,12 +123,12 @@ def load_idx2data_file(file_path: str or List[str], data_type: type = str, separ
             # (n,) List -> (n, 2) List or (n,) List. Then, the index and sentence are separated by the first blank
             data = [row.replace('\n', '').split(separator, 1) if do_separate else row.replace('\n', '') for row in data]
 
-            if isinstance(data[0], List):
+            if isinstance(data[0], List) and len(data[0]) > 1:
                 # (n, 2) List -> Dict[str, data_type]
                 return {key: data_type(value) for key, value in data}
             else:
                 # (n,) List -> Dict[str, data_type]
-                return {key: data_type(value) for key, value in enumerate(data)}
+                return {key: data_type(value[0] if isinstance(value, List) else value) for key, value in enumerate(data)}
         # .json metadata file
         else:
             # str -> (n,) np.ndarray. First read the content of the .json file into a string.
@@ -142,16 +152,8 @@ def load_idx2data_file(file_path: str or List[str], data_type: type = str, separ
 
     # data file reading, List[str] -> List[Dict[str, str]]
     idx2data_dict = [load_single_file(parse_path_args(f_p)) for f_p in file_path]
-
-    # multiple Dict case
-    if len(idx2data_dict) > 1:
-        # data Dict combination, List[Dict[str, str]] -> Dict[str, str]
-        idx2data_dict = {f"{index}_{key}": value for index, _idx2data_dict in enumerate(idx2data_dict)
-                         for key, value in _idx2data_dict.items()}
-    # single Dict case
-    else:
-        idx2data_dict = idx2data_dict[0]
-
+    # data Dict combination, List[Dict[str, str]] -> Dict[str, str]
+    idx2data_dict = {key: value for _idx2data_dict in idx2data_dict for key, value in _idx2data_dict.items()}
     # sort the key-value items in the dict by their key names
     idx2data_dict = dict(sorted(idx2data_dict.items(), key=lambda x: x[0]))
     return idx2data_dict
@@ -210,9 +212,26 @@ def read_idx2data_file_to_dict(path_dict: Dict[str, str or List[str]]) -> (Dict[
     return output_dict, sorted(key_intsec)
 
 
-def search_file_in_subfolder(curr_query: str, tgt_match_fn=None):
+def search_file_in_subfolder(curr_query: str, tgt_match_fn: callable = None,
+                             return_name: bool = False, return_sorted: bool = True):
     """
-    Find out all the files or directories in dir_name with the name tgt_name.
+    Recursively searches for files in subdirectories of a given path, optionally filtering by name.
+
+    Args:
+        curr_query (str):
+            The path of the directory to start the search from.
+        tgt_match_fn (callable, optional):
+            A function to filter files by name. It should take a string as input and return a boolean.
+            If not provided, all files will be returned. Defaults to None.
+        return_name (bool, optional):
+            Whether to return the full file paths (default) or just the file names. Defaults to False.
+        return_sorted:
+
+    Returns:
+        List[str]: A list of file paths (default) or file names that match the given criteria.
+
+    Raises:
+        RuntimeError: If the input query is the path of a file and it doesn't match the target.
 
     """
     candidates = []
@@ -220,11 +239,11 @@ def search_file_in_subfolder(curr_query: str, tgt_match_fn=None):
 
     # input query is the path of a file
     if os.path.isfile(curr_query):
-        dir_name, node_name = '/'.join(curr_query.split('/')[:-1]), curr_query.split('/')[-1]
+        dir_name, node_name = os.path.dirname(curr_query), os.path.basename(curr_query)
         if tgt_match_fn is None or tgt_match_fn(node_name):
             # skip the soft link, only return the existing file
             if not os.path.islink(curr_query):
-                return candidates + [curr_query]
+                return candidates + [curr_query] if not return_name else candidates + [node_name]
         else:
             raise RuntimeError(f"Your input query is the path of a file {curr_query} and it doesn't match your target!")
 
@@ -232,10 +251,12 @@ def search_file_in_subfolder(curr_query: str, tgt_match_fn=None):
     for node_name in os.listdir(curr_query):
         node_path = os.path.join(curr_query, node_name)
         if os.path.isdir(node_path):
-            candidates = candidates + search_file_in_subfolder(node_path, tgt_match_fn)
+            # recursively search subdirectories
+            candidates = candidates + search_file_in_subfolder(node_path, tgt_match_fn,
+                                                               return_name=return_name, return_sorted=return_sorted)
         elif tgt_match_fn is None or tgt_match_fn(node_name):
             # skip the soft link, only return the existing file
             if not os.path.islink(node_path):
-                candidates = candidates + [node_path]
+                candidates = candidates + [node_path] if not return_name else candidates + [node_name]
 
-    return candidates
+    return sorted(candidates) if return_sorted else candidates

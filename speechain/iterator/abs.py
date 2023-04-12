@@ -8,6 +8,7 @@ import warnings
 import numpy as np
 import random
 import torch
+import os
 
 from functools import partial
 from torch.utils.data import DataLoader
@@ -18,15 +19,15 @@ from speechain.utilbox.import_util import import_class
 from speechain.utilbox.data_loading_util import load_idx2data_file, read_idx2data_file_to_dict
 
 
-def worker_init_fn(worker_id, base_seed: int = 0):
+def worker_init_fn(worker_id: int, base_seed: int, same_worker_seed: bool):
     """
     Set random seed for each worker in DataLoader to ensure the reproducibility.
-    Borrowed from https://github.com/espnet/espnet/blob/master/espnet2/iterators/sequence_iter_factory.py#L13
 
     """
-    seed = base_seed + worker_id
+    seed = base_seed if same_worker_seed else base_seed + worker_id
     random.seed(seed)
     np.random.seed(seed)
+    os.environ['PYTHONHASHSEED'] = str(seed)
 
 
 class Iterator(ABC):
@@ -56,6 +57,7 @@ class Iterator(ABC):
                  seed: int = 0,
                  ngpu: int = 1,
                  num_workers: int = 1,
+                 same_worker_seed: bool = False,
                  pin_memory: bool = True,
                  distributed: bool = False,
                  **iter_conf):
@@ -120,6 +122,7 @@ class Iterator(ABC):
         self.seed = seed
         self.ngpu = ngpu
         self.num_workers = num_workers
+        self.same_worker_seed = same_worker_seed
         self.pin_memory = pin_memory
         self.distributed = distributed
 
@@ -384,15 +387,17 @@ class Iterator(ABC):
                           num_workers=self.num_workers,
                           pin_memory=self.pin_memory,
                           collate_fn=self.dataset.collate_fn,
-                          worker_init_fn=partial(worker_init_fn, base_seed=epoch + self.seed))
+                          worker_init_fn=partial(worker_init_fn, base_seed=epoch + self.seed,
+                                                 same_worker_seed=self.same_worker_seed))
 
     def __repr__(self):
         batch_len = [len(batch) for batch in self.batches]
         return f"{self.__class__.__name__}(" \
-               f"dataset={self.dataset.__class__.__name__}, " \
+               f"dataset=({str(self.dataset)}), " \
                f"seed={self.seed}, " \
                f"ngpu={self.ngpu}, " \
                f"num_workers={self.num_workers}, " \
+               f"same_worker_seed={self.same_worker_seed}, " \
                f"pin_memory={self.pin_memory}, " \
                f"is_descending={self.is_descending}, " \
                f"shuffle={self.shuffle}, " \

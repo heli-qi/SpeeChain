@@ -17,7 +17,7 @@ class GraphemeToPhonemeTokenizer(Tokenizer):
     References: https://github.com/Kyubyong/g2p
 
     """
-    def text2tensor(self, text: str or List[str], no_sos: bool = False, no_eos: bool = False) -> torch.LongTensor:
+    def text2tensor(self, text: str or List[str], no_sos: bool = False, no_eos: bool = False, return_tensor: bool = True):
         """
         This text-to-tensor function can take two types of input:
         1. raw string of the transcript sentence
@@ -56,4 +56,8 @@ class GraphemeToPhonemeTokenizer(Tokenizer):
         # whether to attach eos at the end of the tokens
         if not no_eos:
             tokens.append(self.sos_eos_idx)
-        return torch.LongTensor(tokens)
+
+        if return_tensor:
+            return torch.LongTensor(tokens)
+        else:
+            return tokens

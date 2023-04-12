@@ -18,11 +18,11 @@ class BCELogits(Criterion):
 
     """
 
-    def criterion_init(self, pos_weight: float = 5.0, is_normalized: bool = True):
+    def criterion_init(self, pos_weight: float = 1.0, is_normalized: bool = True):
         """
 
         Args:
-            pos_weight: float = 5.0
+            pos_weight: float = 1.0
                 The weight putted on stop points for stop loss calculation.
             is_normalized: bool = True
                 Controls whether the sentence normalization is performed for stop loss calculation.

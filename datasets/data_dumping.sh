@@ -20,7 +20,6 @@ function print_help_message {
       [--feat_config FEAT_CONFIG] \\                        # The name of acoustic feature extraction configuration file under ${SPEECHAIN_ROOT}/config/feat/{feat_type}/. (default: none)
       [--sample_rate SAMPLE_RATE] \\                        # The sampling rate you want the waveforms to have. (default: none)
       [--spk_emb_model SPK_EMB_MODEL] \\                    # The model you want to use to extractor speaker embeddings from the raw waveforms. (default: none)
-      [--comp_chunk_ext COMP_CHUNK_EXT] \\                  # The file extension of the compressed chunk files. (default: none)
       [--token_type TOKEN_TYPE] \\                          # The type of the token you want your tokenizer to have. (default: char)
       [--txt_format TXT_FORMAT] \\                          # The text processing format for the transcripts in the dataset. (default: normal)
       [--ncpu NCPU] \\                                      # The number of processes used for all the multiprocessing jobs. (default: 8)
@@ -61,10 +60,9 @@ feat_config=
 sample_rate=
 # empty spk_emb_model means no speaker embedding will be extracted
 spk_emb_model=
-# empty comp_chunk_ext means no data compression will be done
-comp_chunk_ext=
+
 token_type=char
-txt_format=normal
+txt_format=no-punc
 ncpu=8
 ngpu=1
 
@@ -118,10 +116,6 @@ while getopts ":h-:" optchar; do
         spk_emb_model)
           val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
           spk_emb_model=${val}
-          ;;
-        comp_chunk_ext)
-          val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
-          comp_chunk_ext=${val}
           ;;
         token_type)
           val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
@@ -310,30 +304,8 @@ if [ -n "${spk_emb_model}" ] && [ ${feat_type} == 'wav' ] && [ ${start_step} -le
 fi
 
 
-# --- Step7: Data Packaging --- #
-if [ -n "${comp_chunk_ext}" ] && [ ${start_step} -le 7 ] && [ ${stop_step} -ge 7 ]; then
-#  if [ ${feat_type} != 'wav' ]; then
-#    folder_name=${feat_config}
-#  else
-#    folder_name=${feat_type}${sample_rate}
-#  fi
-#
-#  for set in ${subsets}; do
-#    echo "Packaging ${feat_type} data in ${data_root}/${dataset_name}/data/${folder_name}/${set}/......"
-#    ${SPEECHAIN_PYTHON} "${pyscript_root}"/data_packager.py \
-#      --src_path "${data_root}"/${dataset_name}/data/${folder_name}/${set} \
-#      --comp_chunk_ext ${comp_chunk_ext} \
-#      --feat_type ${feat_type} \
-#      --ncpu ${ncpu}
-#  done
-
-  echo "Data Packaging is not available yet~~~~"
-  exit 1
-fi
-
-
-# --- Step8: Meta Data Post-processing after all the Speech-related Steps --- #
-if [ ${start_step} -le 8 ] && [ ${stop_step} -ge 8 ]; then
+# --- Step7: Meta Data Post-processing after all the Speech-related Steps --- #
+if [ ${start_step} -le 7 ] && [ ${stop_step} -ge 7 ]; then
   if [ ${feat_type} != 'wav' ]; then
     folder_name=${feat_config}
   else
@@ -349,8 +321,8 @@ if [ ${start_step} -le 8 ] && [ ${stop_step} -ge 8 ]; then
 fi
 
 
-# --- Step9: Vocabulary List and Sentence Length Generation --- #
-if [ ${start_step} -le 9 ] && [ ${stop_step} -ge 9 ]; then
+# --- Step8: Vocabulary List and Sentence Length Generation --- #
+if [ ${start_step} -le 8 ] && [ ${stop_step} -ge 8 ]; then
   for set in ${vocab_src_subsets}; do
     echo "Generating ${token_type} vocabulary by ${tgt_path}/${dataset_name}/data/wav/${set}/idx2${txt_format}_text......"
     ${SPEECHAIN_PYTHON} "${pyscript_root}"/vocab_generator.py \

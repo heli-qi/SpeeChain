@@ -14,13 +14,14 @@ class CharTokenizer(Tokenizer):
 
     """
 
-    def text2tensor(self, text: str, no_sos: bool = False, no_eos: bool = False):
+    def text2tensor(self, text: str, no_sos: bool = False, no_eos: bool = False, return_tensor: bool = True):
         """
 
         Args:
             text:
             no_sos:
             no_eos:
+            return_tensor:
 
         Returns:
 
@@ -36,4 +37,7 @@ class CharTokenizer(Tokenizer):
         if not no_eos:
             tokens.append(self.sos_eos_idx)
         # turn the token list into a long-type tensor
-        return torch.LongTensor(tokens)
+        if return_tensor:
+            return torch.LongTensor(tokens)
+        else:
+            return tokens

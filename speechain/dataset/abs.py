@@ -11,6 +11,7 @@ from typing import List, Dict, Any
 from abc import ABC
 
 from speechain.utilbox.data_loading_util import load_idx2data_file, read_idx2data_file_to_dict, parse_path_args
+from speechain.utilbox.error_util import BatchEmptyError
 
 
 class Dataset(torch.utils.data.Dataset, ABC):
@@ -324,7 +325,7 @@ class Dataset(torch.utils.data.Dataset, ABC):
         outputs = self.extract_main_data_fn(outputs)
         return outputs
 
-    def extract_main_data_fn(self, main_data: Dict) -> Dict[str, Any]:
+    def extract_main_data_fn(self, main_data: Dict) -> Dict[str, Any] or None:
         """
         This hook function extracts the selected data instance from the disk to the memory. If you want to implement
         your own data instance extraction, please override this hook function and give your logic here.
@@ -364,10 +365,11 @@ class Dataset(torch.utils.data.Dataset, ABC):
         outputs = dict()
         while len(batch) != 0:
             ele_dict = batch[0]
-            for key in ele_dict.keys():
-                if key not in outputs.keys():
-                    outputs[key] = []
-                outputs[key].append(ele_dict[key])
+            if ele_dict is not None:
+                for key in ele_dict.keys():
+                    if key not in outputs.keys():
+                        outputs[key] = []
+                    outputs[key].append(ele_dict[key])
             # remove the redundant data for memory safety
             batch.remove(ele_dict)
 
@@ -412,3 +414,6 @@ class Dataset(torch.utils.data.Dataset, ABC):
                 raise RuntimeError
 
         return batch_dict
+
+    def __repr__(self):
+        return self.__class__.__name__
