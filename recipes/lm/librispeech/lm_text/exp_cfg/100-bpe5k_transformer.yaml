@@ -44,9 +44,10 @@ warmup_steps: 50000
 
 # running-related
 seed: 0
-num_workers: 1
-pin_memory: True
-non_blocking: True
+train_num_workers: 0
+valid_num_workers: 0
+pin_memory: False
+non_blocking: False
 
 # gradient-related
 accum_grad: 8
@@ -63,6 +64,7 @@ best_model_selection:
   - !tuple (valid, text_ppl, min, 5)
   - !tuple (valid, loss, min, 5)
 early_stopping_patience: 5
+num_epochs: 20
 
 # snapshot-related
 visual_snapshot_number: 3
