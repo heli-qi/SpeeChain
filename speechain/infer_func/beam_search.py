@@ -121,6 +121,7 @@ def beam_searching(enc_feat: torch.Tensor,
                    eos_threshold: float = 1.5,
                    ctc_weight: float = 0.0,
                    ctc_decode_fn = None,
+                   ctc_temperature: float = 1.0,
                    partial_ctc_score: bool = False,
                    lm_weight: float = 0.2,
                    lm_temperature: float = 1.0,
@@ -204,7 +205,14 @@ def beam_searching(enc_feat: torch.Tensor,
         raise NotImplementedError("Currently, sent_per_beam > 1 is not supported....")
     assert 0.0 <= ctc_weight, f"ctc_weight should be a non-negative float number, but got ctc_weight={ctc_weight}!"
     assert 0.0 <= lm_weight, f"lm_weight should be a non-negative float number, but got lm_weight={lm_weight}!"
-    assert 0.0 <= ilm_sub_weight, f"ilm_sub_weight should be a non-negative float number, but got ilm_sub_weight={ilm_sub_weight}!"
+    assert 0.0 <= ilm_sub_weight, \
+        f"ilm_sub_weight should be a non-negative float number, but got ilm_sub_weight={ilm_sub_weight}!"
+
+    assert ctc_temperature > 0.0, \
+        f"ctc_temperature should be a positive float number, but got ctc_temperature={ctc_temperature}"
+    assert temperature > 0.0, f"temperature should be a positive float number, but got temperature={temperature}"
+    assert lm_temperature > 0.0, \
+        f"lm_temperature should be a positive float number, but got lm_temperature={lm_temperature}"
 
     # --- 1. Reference Initialization --- #
     batch_size = enc_feat.size(0)
@@ -236,7 +244,8 @@ def beam_searching(enc_feat: torch.Tensor,
     # --- 3. CTC Initialization --- #
     if ctc_decode_fn is not None and ctc_weight > 0:
         ctc_scorer = CTCPrefixScorer(
-            x=torch.softmax(ctc_decode_fn(enc_feat), dim=-1), enc_lens=make_len_from_mask(enc_feat_mask),
+            x=torch.log_softmax(ctc_decode_fn(enc_feat)  / ctc_temperature, dim=-1),
+            enc_lens=make_len_from_mask(enc_feat_mask),
             batch_size=batch_size, beam_size=beam_size, blank_index=padding_idx, eos_index=sos_eos
         )
     else:
@@ -265,7 +274,7 @@ def beam_searching(enc_feat: torch.Tensor,
         next_token_scores = torch.log_softmax(curr_outputs / temperature, dim=-1)
 
         # --- 5.2. CTC Scorer Forward --- #
-        if ctc_decode_fn is not None and ctc_weight > 0:
+        if ctc_scorer is not None:
             # block blank token
             next_token_scores[:, padding_idx] = ctc_scorer.minus_inf
             if ctc_weight != 1.0 and partial_ctc_score:
@@ -409,9 +418,9 @@ def beam_searching(enc_feat: torch.Tensor,
         # align encoder_out with input_tokens
         enc_feat, enc_feat_mask = enc_feat[beam_idx], enc_feat_mask[beam_idx]
         if ctc_memory is not None:
-            ctc_memory = ctc_scorer.permute_mem(
-                ctc_memory, beam_idx,
-                beam_tokens.view(batch_size, beam_size) + (torch.arange(beam_size, device=cuda_device) * vocab_size).unsqueeze(0))
+            token_idx = beam_tokens.view(batch_size, beam_size) + \
+                        (torch.arange(beam_size, device=cuda_device) * vocab_size).unsqueeze(0)
+            ctc_memory = ctc_scorer.permute_mem(ctc_memory, beam_idx, token_idx)
 
     # --- 6. Post-processing --- #
     # for the predictions that end without an eos token at the end because of the max length

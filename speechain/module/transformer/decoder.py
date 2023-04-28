@@ -30,6 +30,7 @@ class TransformerDecoderLayer(Module):
                     num_heads: int = 8,
                     att_dropout: float = 0.1,
                     fdfwd_dim: int = 0,
+                    fdfwd_activation: str = 'ReLU',
                     fdfwd_dropout: float = 0.1,
                     res_dropout: float = 0.1,
                     layernorm_first: bool = True):
@@ -47,6 +48,8 @@ class TransformerDecoderLayer(Module):
             fdfwd_dim: int
                 The value of the out_features of the first linear feedforward layer and the in_features of the second
                 linear feedforward layer in each Transformer layer.
+            fdfwd_activation: str
+                The name of the activation function of feedforward layers. Should be the name of functions in 'torch.nn'.
             fdfwd_dropout: float
                 The dropout rate for the Dropout layer after the first linear feedforward layer in each Transformer layer
             res_dropout: float
@@ -65,7 +68,8 @@ class TransformerDecoderLayer(Module):
         self.encdec_att = MultiHeadedAttention(num_heads=num_heads, d_model=d_model, dropout=att_dropout)
 
         # initialize feedforward layer
-        self.feed_forward = PositionwiseFeedForward(d_model=d_model, fdfwd_dim=fdfwd_dim, dropout=fdfwd_dropout)
+        self.feed_forward = PositionwiseFeedForward(d_model=d_model, fdfwd_dim=fdfwd_dim,
+                                                    fdfwd_activation=fdfwd_activation, dropout=fdfwd_dropout)
 
         # initialize layernorm layers
         self.layernorm_first = layernorm_first
@@ -149,6 +153,7 @@ class TransformerDecoder(Module):
                     num_heads: int = 4,
                     num_layers: int = 8,
                     fdfwd_dim: int = 2048,
+                    fdfwd_activation: str = 'ReLU',
                     fdfwd_dropout: float = 0.1,
                     att_dropout: float = 0.1,
                     res_dropout: float = 0.1,
@@ -189,21 +194,12 @@ class TransformerDecoder(Module):
             fdfwd_dim: int
                 The value of the out_features of the first linear feedforward layer and the in_features of the second
                 linear feedforward layer in each Transformer layer.
+            fdfwd_activation: str
+                The name of the activation function of feedforward layers. Should be the name of functions in 'torch.nn'.
             fdfwd_dropout: float
                 The dropout rate for the Dropout layer after the first linear feedforward layer in each Transformer layer
             res_dropout: float
                 The dropout rate for the Dropout layer before adding the output of each Transformer layer into its input
-            dwsmpl_factors: int or List[int]
-                The downsampling factor for each Transformer layer.
-                If only an integer is given, it will be treated as the factor of the last layer and the factors of
-                previous layers will be set to 1.
-                If a list of integers is given but the length is shorter than the number of layers, this list will be
-                padded with several 1 on the front to make sure that the length is equal to the layer number.
-            dwsmpl_type: str
-                The downsampling type of each Transformer layer. It can be either 'drop' or 'concat'.
-                'drop' downsampling means one of two neighbouring time steps will be dropped.
-                'concat' downsampling means the features of two neighbouring time steps will be concatenated to become
-                a new time step.
             layernorm_first: bool
                 controls whether the LayerNorm layer appears at the beginning or at the end of each Transformer layer.
                 True means the LayerNorm layer appears at the beginning; False means the LayerNorm layer appears at the end.
@@ -237,6 +233,7 @@ class TransformerDecoder(Module):
                                     num_heads=num_heads,
                                     att_dropout=att_dropout,
                                     fdfwd_dim=fdfwd_dim,
+                                    fdfwd_activation=fdfwd_activation,
                                     fdfwd_dropout=fdfwd_dropout,
                                     res_dropout=res_dropout)
             for _ in range(num_layers)])

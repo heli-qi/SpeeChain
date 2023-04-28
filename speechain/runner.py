@@ -81,7 +81,7 @@ class Runner(object):
             "--config",
             type=str,
             # default=None,
-            default="recipes/tts/libritts/train-clean-100/exp_cfg/16khz_ecapa_mfa_fastspeech2_40gb.yaml",
+            default="recipes/asr/libritts_librispeech/train-960/exp_cfg/960-bpe5k_transformer-wide_ctc_perturb.yaml",
             help="The path of the all-in-one experiment configuration file. You can write all the arguments in this "
                  "all-in-one file instead of giving them to `runner.py` by command lines."
         )
@@ -387,7 +387,7 @@ class Runner(object):
         group.add_argument(
             '--early_stopping_threshold',
             type=float,
-            default=0.005,
+            default=0.001,
             help="The threshold to refresh the early-stopping status in the monitor during model training. "
                  "Positive float numbers in (0.0, 1.0) mean the relative threshold over the current best performance. "
                  "Negative float numbers main the absolute threshold over the current best performance. "
@@ -923,6 +923,7 @@ class Runner(object):
                         # skip the empty validation batch
                         if cls.is_empty_batch(train_batch):
                             continue
+
                     # multi-GPU case, scatter the skip flag to all nodes
                     else:
                         skip_flag_list = torch.LongTensor(
@@ -1055,7 +1056,12 @@ class Runner(object):
                 if args.distributed:
                     torch.distributed.barrier()
 
-            # store the checkpoint of the current epoch for resuming later
+            # finish_valid_epoch() should be called before checkpoint saving
+            finish_valid_flag = None
+            if not args.distributed or args.rank == 0:
+                finish_valid_flag = monitor.finish_valid_epoch(valid_flag=valid_flag, valid_per_epochs=args.valid_per_epochs)
+
+            # store the checkpoint of the current epoch for later resuming
             if not args.distributed or args.rank == 0:
                 if not args.dry_run and not args.no_optim:
                     torch.save(
@@ -1069,8 +1075,7 @@ class Runner(object):
                     )
 
             # early-stopping checking for single-GPU
-            if not args.distributed and \
-                    monitor.finish_valid_epoch(valid_flag=valid_flag, valid_per_epochs=args.valid_per_epochs):
+            if not args.distributed and finish_valid_flag:
                 break
 
             # early-stopping checking for multi-GPU
@@ -1079,7 +1084,7 @@ class Runner(object):
                 flag_list = None
 
                 if args.rank == 0:
-                    if monitor.finish_valid_epoch(valid_flag=valid_flag, valid_per_epochs=args.valid_per_epochs):
+                    if finish_valid_flag:
                         stop_flag = torch.BoolTensor([True]).cuda(model.device)
                     flag_list = [stop_flag for _ in range(torch.distributed.get_world_size())]
 

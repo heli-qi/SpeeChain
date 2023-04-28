@@ -185,7 +185,7 @@ case "${dump_part}" in
   100)
     subsets="train-clean-100"
     subsets_args="train-clean-100"
-    vocab_src_subsets="${subsets} dev-clean dev-other dev test-clean test-other"
+    vocab_src_subsets="${subsets} dev-clean test-clean"
 
     if [ ${token_type} == 'sentencepiece' ] && [ -z ${vocab_size} ]; then
       vocab_size=1000
@@ -196,7 +196,7 @@ case "${dump_part}" in
   460)
     subsets="train-clean-100 train-clean-360"
     subsets_args="train-clean-100${separator}train-clean-360"
-    vocab_src_subsets="${subsets} train-clean-460 dev-clean dev-other dev test-clean test-other"
+    vocab_src_subsets="${subsets} train-clean-460 dev-clean test-clean"
 
     if [ ${token_type} == 'sentencepiece' ] && [ -z ${vocab_size} ]; then
       vocab_size=5000

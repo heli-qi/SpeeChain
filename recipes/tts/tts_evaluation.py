@@ -106,7 +106,7 @@ def calculate_metric(idx2hypo_refer_list: List[str], tgt_metric: str = 'mcd'):
 
 
 def save_results(idx2metric_list: List[List], metric_name: str, save_path: str, vocoder_name: str,
-                 desec_sort: True, topn_num: int):
+                 desec_sort: True, topn_num: int = 30):
     # save the idx2feat file to feat_path as the reference
     np.savetxt(os.path.join(save_path, f'idx2{f"{vocoder_name}_" if vocoder_name is not None else ""}{metric_name}'),
                sorted(idx2metric_list, key=lambda x: x[0]), fmt='%s')
@@ -153,8 +153,8 @@ def main(hypo_path: str, refer_path: str, metric_list: List[str], result_path: s
         refer_path = parse_path_args(refer_path)
         # for folder input, automatically find out all the idx2xxx_wav candidates as refer_idx2wav
         if os.path.isdir(refer_path):
-            refer_idx2wav_list = search_file_in_subfolder(refer_path,
-                                                          lambda x: x.startswith('idx2') and x.endswith('wav'))
+            refer_idx2wav_list = search_file_in_subfolder(
+                refer_path, lambda x: x.startswith('idx2') and x.endswith('wav'))
         # for file input, directly use it as hypo_idx2wav
         else:
             refer_idx2wav_list = [refer_path]

@@ -59,7 +59,7 @@ spk_emb_model=
 token_type=g2p
 # empty vocab_size will be automatically initialized if token_type is 'word' or 'sentencepiece':
 # 1000 for dump_part '100'; 5000 for dump_part '460'; 10000 for dump_part '960'
-vocab_size=
+vocab_size=stress
 # sentencepiece-specific arguments, won't be used if token_type is 'char' or 'word'
 model_type=bpe
 character_coverage=1.0

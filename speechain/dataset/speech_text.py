@@ -78,6 +78,11 @@ class SpeechTextDataset(Dataset):
 
         # pitch extraction
         if pitch_conf is not None:
+            if 'sr' in pitch_conf.keys():
+                assert pitch_conf['sr'] == self.sample_rate, \
+                    f"The sampling rate in your given 'pitch_conf' ({pitch_conf['sr']}) is different from your " \
+                    f"given sample_rate ({self.sample_rate})!"
+            pitch_conf['sr'] = self.sample_rate
             self.pitch_extract_fn = partial(convert_wav_to_pitch, return_tensor=True, **pitch_conf)
 
     @staticmethod

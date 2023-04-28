@@ -16,7 +16,7 @@ from collections import Counter
 
 from speechain.tokenizer.g2p import abnormal_phns
 from speechain.tokenizer.sp import SentencePieceTokenizer
-from speechain.utilbox.type_util import str2bool
+from speechain.utilbox.type_util import str2bool, str_or_int
 from speechain.utilbox.dump_util import get_readable_number
 from speechain.utilbox.text_util import text2word_list
 from speechain.utilbox.data_loading_util import load_idx2data_file, parse_path_args
@@ -34,7 +34,7 @@ def parse():
     group.add_argument('--txt_format', type=str, default='no-punc',
                        help="The text processing format controlling how to process the transcript sentence of each "
                             "utterance before saving them into 'idx2sent' and 'text'.")
-    group.add_argument('--vocab_size', type=int, default=None,
+    group.add_argument('--vocab_size', type=str_or_int, default=None,
                        help="The number of tokens in the vocabulary of the tokenizer. (default: None)")
 
     group = parser.add_argument_group("Specific arguments used by the sentencepiece token type")
@@ -57,7 +57,7 @@ def parse():
     return parser.parse_args()
 
 
-def save_token_vocab(save_path: str, text_path: str, txt_format: str, text2tokens_func, vocab_size: int,
+def save_token_vocab(save_path: str, text_path: str, txt_format: str, text2tokens_func: callable, vocab_size: int or str,
                      save_idx2text: bool = False, save_idx2text_len: bool = False):
     """
     Obtain and save the token vocabulary for char and word tokenizers.
@@ -83,46 +83,48 @@ def save_token_vocab(save_path: str, text_path: str, txt_format: str, text2token
 
     """
     # --- 1. Data Initialization --- #
-    # read the index-to-text file and turn the information into a Dict
-    idx2text = load_idx2data_file(os.path.join(text_path, f"idx2{txt_format}_text"))
-    # convert each string sentence into its token sentence
-    idx2text_token = {idx: text2tokens_func(text) for idx, text in tqdm(idx2text.items())}
-    if vocab_size is not None:
+    if isinstance(vocab_size, int):
         save_path = os.path.join(save_path, get_readable_number(vocab_size), txt_format)
     else:
-        save_path = os.path.join(save_path, 'full_tokens', txt_format)
+        save_path = os.path.join(save_path, 'full_tokens' if vocab_size is None else vocab_size, txt_format)
     os.makedirs(save_path, exist_ok=True)
 
-    # --- 2. Token Vocabulary Saving --- #
-    # gather the tokens of all the sentences into a single list
-    tokens = []
-    for value in idx2text_token.values():
-        tokens += value
-    # collect the occurrence frequency of each token
-    token2freq = sorted(Counter(tokens).items(), key=lambda x: x[1], reverse=True)
-    token_vocab = [token for token, _ in token2freq]
-    # change the token list and saving path only when the number of token_vocab is larger than vocab_size
-    if vocab_size is not None and len(token_vocab) >= vocab_size - 3:
-        token_vocab = token_vocab[: vocab_size - 3]
-
-    # 0 is designed for the blank (the padding index)
-    # -2 is designed for the unknowns
-    # -1 is designed for the beginning and end of sentence
-    token_vocab = ["<blank>"] + token_vocab + ['<unk>', '<sos/eos>']
     vocab_path = os.path.join(save_path, 'vocab')
-    np.savetxt(vocab_path, token_vocab, fmt="%s")
-    print(f"Token vocabulary has been successfully saved to {vocab_path}.")
+    if not os.path.exists(vocab_path):
+        # read the index-to-text file and turn the information into a Dict
+        idx2text = load_idx2data_file(os.path.join(text_path, f"idx2{txt_format}_text"))
+        # convert each string sentence into its token sentence
+        idx2text_token = {idx: text2tokens_func(text) for idx, text in tqdm(idx2text.items())}
 
-    # --- 3. Tokenized Text and its Length Saving --- #
-    if save_idx2text:
-        text_token_path = os.path.join(save_path, 'idx2text')
-        np.savetxt(text_token_path, [[idx, str(text_token)] for idx, text_token in idx2text_token.items()], fmt="%s")
-        print(f"Tokenized text has been successfully saved to {text_token_path}.")
+        # --- 2. Token Vocabulary Saving --- #
+        # gather the tokens of all the sentences into a single list
+        tokens = []
+        for value in idx2text_token.values():
+            tokens += value
+        # collect the occurrence frequency of each token
+        token2freq = sorted(Counter(tokens).items(), key=lambda x: x[1], reverse=True)
+        token_vocab = [token for token, _ in token2freq]
+        # change the token list and saving path only when the number of token_vocab is larger than vocab_size
+        if isinstance(vocab_size, int) and len(token_vocab) >= vocab_size - 3:
+            token_vocab = token_vocab[: vocab_size - 3]
 
-    if save_idx2text_len:
-        text_len_path = os.path.join(save_path, 'idx2text_len')
-        np.savetxt(text_len_path, [[idx, len(text_token)] for idx, text_token in idx2text_token.items()], fmt="%s")
-        print(f"The length of tokenized text has been successfully saved to {text_len_path}.")
+        # 0 is designed for the blank (the padding index)
+        # -2 is designed for the unknowns
+        # -1 is designed for the beginning and end of sentence
+        token_vocab = ["<blank>"] + token_vocab + ['<unk>', '<sos/eos>']
+        np.savetxt(vocab_path, token_vocab, fmt="%s")
+        print(f"Token vocabulary has been successfully saved to {vocab_path}.")
+
+        # --- 3. Tokenized Text and its Length Saving --- #
+        if save_idx2text:
+            text_token_path = os.path.join(save_path, 'idx2text')
+            np.savetxt(text_token_path, [[idx, str(text_token)] for idx, text_token in idx2text_token.items()], fmt="%s")
+            print(f"Tokenized text has been successfully saved to {text_token_path}.")
+
+        if save_idx2text_len:
+            text_len_path = os.path.join(save_path, 'idx2text_len')
+            np.savetxt(text_len_path, [[idx, len(text_token)] for idx, text_token in idx2text_token.items()], fmt="%s")
+            print(f"The length of tokenized text has been successfully saved to {text_len_path}.")
 
 
 def generate_vocab_char(save_path: str, text_path: str, txt_format: str, vocab_size: int):
@@ -191,11 +193,22 @@ def generate_vocab_sentencepiece(save_path: str, text_path: str, txt_format: str
         print(f"The length of SentencePiece tokenized text has been successfully saved to {idx2text_len_path}.")
 
 
-def generate_vocab_g2p(save_path: str, text_path: str, txt_format: str, vocab_size: int):
+def generate_vocab_g2p(save_path: str, text_path: str, txt_format: str, vocab_size: str):
+    assert vocab_size in ['stress', 'no-stress'], "vocab_size for g2p should be one of ['stress', 'no-stress']!"
     g2p = G2p()
     def text2phn_list(x: str):
-        phn_list = g2p(x)
-        return [phn if phn != ' ' else '<space>' for phn in phn_list if phn not in abnormal_phns]
+        _phn_list, phn_list = g2p(x), []
+        for phn in _phn_list:
+            if phn in abnormal_phns:
+                continue
+
+            if phn == ' ':
+                phn_list.append('<space>')
+            elif vocab_size == 'no-stress' and phn[-1].isdigit():
+                phn_list.append(phn[:-1])
+            else:
+                phn_list.append(phn)
+        return phn_list
 
     # --- Vocabulary List Generation --- #
     save_token_vocab(
@@ -216,7 +229,7 @@ def generate_vocab_word(save_path: str, text_path: str, txt_format: str, vocab_s
     )
 
 
-def main(text_path: str, save_path: str, token_type: str, txt_format: str, vocab_size: int,
+def main(text_path: str, save_path: str, token_type: str, txt_format: str, vocab_size: int or str,
          model_type: str, character_coverage: float, split_by_whitespace: bool):
     # --- Arguments Initialization --- #
     text_path, save_path = parse_path_args(text_path), parse_path_args(save_path)

@@ -17,6 +17,7 @@ function print_help_message {
       [--pretrained PRETRAINED] \\                          # Whether to use the pretrained acoustic model for alignment. If pretrained is set to true but pretrained_dataset and pretrained_subset are not give, the pretrained English model provided by MFA toolkit will be used which is pretrained on LibriSpeech corpus. (default: true)
       [--pretrained_dataset PRETRAINED_DATASET] \\          # The dataset name which is used to train the pretrained model you want to use for alignment. (default: none)
       [--pretrained_subset PRETRAINED_SUBSET] \\            # The subset name of your given pretrained_dataset which your target pretrained model is trained on.  (default: none)
+      [--retain_stress RETAIN_STRESS] \\                    # Whether to retain the stress indicators at the end of each vowel phonemes.  (default: true)
       [--ncpu NCPU] \\                                      # The number of processes used for the alignment jobs. (default: 8)
       --dataset_name DATASET_NAME \\                        # The name of the dataset you want to get the MFA files.
       [--subset_name SUBSET_NAME]                          # The name of the subset in your specified dataset you want to use. If not given, the entire dataset will be procesed. (default: none)" >&2
@@ -28,6 +29,7 @@ tgt_path=
 pretrained=true
 pretrained_dataset=
 pretrained_subset=
+retain_stress=true
 ncpu=8
 dataset_name=
 subset_name=
@@ -56,6 +58,10 @@ while getopts ":h-:" optchar; do
         pretrained_subset)
           val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
           pretrained_subset=${val}
+          ;;
+        retain_stress)
+          val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
+          retain_stress=${val}
           ;;
         ncpu)
           val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
@@ -195,13 +201,20 @@ fi
 
 # skip this step if the folder TextGrid doesn't exist
 if [ -d ${tgt_path}/${dataset_name}/data/mfa/${pretrained_model_name}/TextGrid/${subset_name} ];then
+  if [ -n "${subset_name}" ];then
+    args="--subset_name ${subset_name}"
+  else
+    args=
+  fi
+
   # --- Generate idx2duration.json by .TextGrid Files --- #
   ${SPEECHAIN_PYTHON} "${SPEECHAIN_ROOT}"/datasets/pyscripts/duration_calculator.py \
       --data_path ${tgt_path}/${dataset_name}/data \
       --save_path ${tgt_path}/${dataset_name}/data/mfa/${pretrained_model_name} \
       --pretrained_model_name ${pretrained_model_name} \
+      --retain_stress ${retain_stress} \
       --dataset_name ${dataset_name} \
-      --subset_name ${subset_name}
+      ${args}
 else
   echo ".TextGrid files don't exist in ${tgt_path}/${dataset_name}/data/mfa/TextGrid. Please use mfa commands in the documents to prepare them and then run this script again."
   exit 1

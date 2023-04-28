@@ -1,0 +1,40 @@
+##############################################################################
+# Testing: dev-clean of LibriSpeech
+# Authors: Heli Qi
+# Description: This configuration is used to replace data_cfg in exp_cfg for tuning the inference hyperparamters on dev-clean
+# ############################################################################
+
+
+###################################
+# Experiment Parameters and setup #
+###################################
+# if your dumped dataset is outside the toolkit folder, please change dataset_path. There should be a folder named 'librispeech' in dataset_path
+dataset_path: datasets/
+dataset: librispeech
+valid_dset: &valid_dset dev-other
+
+wav_format: wav
+txt_format: no-punc
+
+
+
+##############################
+# Data Loading Configuration #
+##############################
+data_root: !ref <dataset_path>/<dataset>/data
+# Note: there must be a blank between the anchor '*valid_dset' and the colon ':'
+test:
+    *valid_dset :
+        type: abs.Iterator
+        conf:
+            dataset_type: speech_text.SpeechTextDataset
+            dataset_conf:
+                main_data:
+                    feat: !ref <data_root>/<wav_format>/<valid_dset>/idx2wav
+                    text: !ref <data_root>/<wav_format>/<valid_dset>/idx2<txt_format>_text
+
+            shuffle: False
+            data_len: !ref <data_root>/<wav_format>/<valid_dset>/idx2wav_len
+            group_info:
+                speaker: !ref <data_root>/<wav_format>/<valid_dset>/idx2spk
+                gender: !ref <data_root>/<wav_format>/<valid_dset>/idx2gen

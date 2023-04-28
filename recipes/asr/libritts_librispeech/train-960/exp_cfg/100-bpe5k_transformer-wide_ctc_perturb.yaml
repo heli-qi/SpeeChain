@@ -67,6 +67,7 @@ gpus: null # null means the GPUs with the largest free memory will be used
 train: False
 best_model_selection: !tuple (valid, accuracy, max, 10)
 early_stopping_patience: 10
+num_epochs: 100
 
 # snapshot-related
 visual_snapshot_number: 3
@@ -92,10 +93,10 @@ infer_cfg:
     beam_size: 16
   exclu_args:
     # ASR-only decoding
-    - temperature: 1.5
+    - ctc_weight: 0.2
     # ASR-LM decoding
-    - lm_weight: 0.2
-      ilm_sub_weight: 0.1
+    - ctc_weight: 0.4
+      lm_weight: 0.4
 
 
 

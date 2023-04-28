@@ -7,9 +7,9 @@
 # Validation: dev-clean of LibriSpeech
 # Testing: test-clean & test-other of LibriSpeech
 # Authors: Heli Qi
-# Required GPUs: 2 × NVIDIA RTX A5000 (24GB)
-# Required Time: up to 4 hours
-# Expected WER performance (test-clean / test-other): ASR-only (10.47% / 25.17%) and ASR-LM (8.41% / 20.94%)
+# Required GPUs: 1 × NVIDIA RTX A6000 (49GB)
+# Required Time: up to 7 hours
+# Expected WER performance (test-clean / test-other): ASR-only (% / %) and ASR-LM (% / %)
 # ############################################################################
 
 
@@ -66,6 +66,7 @@ gpus: null # null means the GPUs with the largest free memory will be used
 train: False
 best_model_selection: !tuple (valid, accuracy, max, 10)
 early_stopping_patience: 10
+num_epochs: 200
 
 # snapshot-related
 visual_snapshot_number: 3
@@ -88,11 +89,10 @@ infer_cfg:
     beam_size: 16
   exclu_args:
     # ASR-only decoding
-    - temperature: 1.3
+    - ctc_weight: 0.2
     # ASR-LM decoding
-    - lm_weight: 0.2
-      ilm_sub_weight: 0.1
-      lm_window_size: 50
+    - ctc_weight: 0.4
+      lm_weight: 0.4
 
 
 ##############################

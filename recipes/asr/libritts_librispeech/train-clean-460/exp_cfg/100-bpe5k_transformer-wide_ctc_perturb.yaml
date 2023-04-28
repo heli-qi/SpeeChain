@@ -67,6 +67,7 @@ gpus: null # null means the GPUs with the largest free memory will be used
 train: False
 best_model_selection: !tuple (valid, accuracy, max, 10)
 early_stopping_patience: 10
+num_epochs: 100
 
 # snapshot-related
 visual_snapshot_number: 3
@@ -85,17 +86,15 @@ libritts_data_root: !ref <dataset_path>/libritts/data
 #################################
 # Model Inference Configuration #
 #################################
-# Before evaluating the trained model on test-clean and test-other, we need to find the best softmax temperature on dev-clean.
-# Here the searching range is all the odd number from 1.1 to 1.9.
 infer_cfg:
   shared_args:
     beam_size: 16
   exclu_args:
     # ASR-only decoding
-    - temperature: 1.5
+    - ctc_weight: 0.2
     # ASR-LM decoding
-    - lm_weight: 0.2
-      ilm_sub_weight: 0.1
+    - ctc_weight: 0.4
+      lm_weight: 0.4
 
 
 

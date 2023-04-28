@@ -683,7 +683,7 @@ class ARASR(Model):
             # lazily initialize the language model only at the first time
             if not hasattr(self, 'lm'):
                 # use the built-in lm configuration if lm_model_cfg is not given
-                if self.lm_model_cfg is None or not os.path.exists(self.lm_model_cfg):
+                if self.lm_model_cfg is None:
                     self.lm_model_cfg = os.path.join(self.result_path, 'lm_model_cfg.yaml')
 
                 # get the Dict-like configuration for the language model
@@ -700,8 +700,9 @@ class ARASR(Model):
                 self.lm = LanguageModel(vocab_size=self.tokenizer.vocab_size, **self.lm_model_cfg).cuda(self.device)
 
                 # use the built-in lm model if lm_model_path is not given
-                if self.lm_model_path is None or not os.path.exists(self.lm_model_path):
+                if self.lm_model_path is None:
                     self.lm_model_path = os.path.join(self.result_path, 'lm_model.pth')
+
                 # load the parameters of the target lm
                 _lm_model_para = torch.load(parse_path_args(self.lm_model_path), map_location=self.device)
                 lm_model_para = OrderedDict()

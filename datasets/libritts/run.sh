@@ -60,7 +60,7 @@ token_type=g2p
 # 1000 (sentencepiece) & 5000 (word) for dump_part '100';
 # 5000 (sentencepiece) & 10000 (word) for dump_part '460';
 # 5000 (sentencepiece) & 10000 (word) for dump_part '960'
-vocab_size=
+vocab_size=stress
 # sentencepiece-specific arguments, won't be used if token_type is not 'sentencepiece'
 model_type=bpe
 character_coverage=1.0

@@ -217,7 +217,11 @@ class Monitor(ABC):
         for rank, gpu in enumerate(self.gpus):
             # recover the GPU number from 'CUDA_VISIBLE_DEVICES'
             if 'CUDA_VISIBLE_DEVICES' in os.environ.keys():
-                gpu = int(os.environ['CUDA_VISIBLE_DEVICES'].split(',')[gpu])
+                gpu = os.environ['CUDA_VISIBLE_DEVICES'].split(',')[gpu]
+                # if gpu is in the form of the local ID, it will be converted into an integer for List indexing
+                if gpu.isdigit():
+                    gpu = int(gpu)
+                # if gpu is in the form of the UUID, it will be kept as a string
 
             # --- torch.cuda is only able to report the GPU used in the current rank --- #
             # --- but torch.cuda can report the precise allocated and reserved memory information of the model --- #
@@ -236,9 +240,23 @@ class Monitor(ABC):
             # --- which means that if there are more than one jobs running on the same GPU, --- #
             # --- the used memory is not precise for the current job. --- #
             memory_used = 0
-            if len(gpus) != 0:
+            # for local GPU ID
+            if isinstance(gpu, int) and gpu < len(gpus):
                 memory_used = gpus[gpu].memoryUsed
-            epoch_message += f"GPU rank no.{rank} (cuda:{gpu}): {memory_used} MB -- "
+                gpu_name = f'cuda:{gpu}'
+            # for GPU UUID
+            elif isinstance(gpu, str):
+                curr_gpu = None
+                for g in gpus:
+                    if g.uuid == gpu:
+                        curr_gpu = g
+                if curr_gpu is not None:
+                    memory_used = curr_gpu.memoryUsed
+                gpu_name = gpu
+            else:
+                raise RuntimeError(f'Unexpected errors happen when retrieving GPU IDs. (got {gpu})')
+            # if some unexpected errors happen above, memory_used will remain 0
+            epoch_message += f"GPU rank no.{rank} ({gpu_name}): {memory_used} MB -- "
 
             if f'Rank{rank}' not in self.epoch_records['consumed_memory'].keys():
                 self.epoch_records['consumed_memory'][f'Rank{rank}'] = []
@@ -750,12 +768,15 @@ class ValidMonitor(Monitor):
         saved_epochs = self.saved_model_epoch.copy()
         for epoch in saved_epochs:
             epoch_model_path = os.path.join(self.model_save_path, f"epoch_{epoch}.pth")
-            if whether_remove(epoch) and os.path.exists(epoch_model_path):
-                # ensure that the model to be removed is successfully removed
-                while os.path.exists(epoch_model_path):
-                    os.remove(epoch_model_path)
-                # after removing the model file, remove its record in the memory
+            if whether_remove(epoch):
+                # remove the record of epoch in the memory
                 self.saved_model_epoch.remove(epoch)
+
+                # remove the model file if it exists
+                if os.path.exists(epoch_model_path):
+                    # ensure that the model to be removed is successfully removed
+                    while os.path.exists(epoch_model_path):
+                        os.remove(epoch_model_path)
 
         # --- Early-Stopping epoch number checking for the early-stopping metric --- #
         if len(metric_epoch_records[self.early_stopping_metric]['sorted_epochs']) != 0:
@@ -1246,7 +1267,7 @@ class TestMonitor(Monitor):
             if not os.path.isdir(os.path.join(self.result_path, file_name)):
                 continue
             # only consider the folders not named as 'figures' and 'rank_tmp'
-            if file_name.startswith('rank') or file_name == 'figures':
+            if file_name.startswith('rank') or file_name == 'figures' or '=' in file_name:
                 continue
             idx2path = []
             for data_file in search_file_in_subfolder(

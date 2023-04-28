@@ -236,6 +236,15 @@ def str2none(input_str: str) -> str or None:
         return input_str
 
 
+def str_or_int(input_str: str) -> str or int or None:
+    if input_str.isdigit():
+        return int(input_str)
+    elif input_str == '':
+        return None
+    else:
+        return input_str
+
+
 if __name__ == '__main__':
     # # test str2list function
     # result_list = str2list('[a,[1,2,[1.1, 2.2, 3.3],[h,i, j, k]], c,[d, e,[f,g,[h,i,j,k]]]]')

@@ -29,6 +29,7 @@ class TransformerEncoderLayer(Module):
                     att_dropout: float = 0.1,
                     fdfwd_dim: int = 2048,
                     fdfwd_type: str = 'linear',
+                    fdfwd_activation: str = 'ReLU',
                     fdfwd_kernel: int = 9,
                     fdfwd_dropout: float = 0.1,
                     res_dropout: float = 0.1,
@@ -47,6 +48,8 @@ class TransformerEncoderLayer(Module):
                 linear feedforward layer in each Transformer layer.
             fdfwd_type: str
                 The type of the feed-forward layer. 'linear' means the Linear layer while 'conv' means the Conv1d layer.
+            fdfwd_activation: str
+                The name of the activation function of feedforward layers. Should be the name of functions in 'torch.nn'.
             fdfwd_kernel: int
                 The kernal size of the Conv1d feed-forward layer. This argument is not effective if fdfwd_type == 'linear'.
             fdfwd_dropout: float
@@ -66,7 +69,8 @@ class TransformerEncoderLayer(Module):
 
         # initialize feedforward layer
         self.feed_forward = PositionwiseFeedForward(d_model=d_model, fdfwd_dim=fdfwd_dim, fdfwd_type=fdfwd_type,
-                                                    fdfwd_kernel=fdfwd_kernel, dropout=fdfwd_dropout)
+                                                    fdfwd_activation=fdfwd_activation, fdfwd_kernel=fdfwd_kernel,
+                                                    dropout=fdfwd_dropout)
 
         # initialize residual dropout layer
         self.dropout = nn.Dropout(res_dropout)
@@ -152,6 +156,7 @@ class TransformerEncoder(Module):
                     att_dropout: float = 0.1,
                     fdfwd_dim: int = 2048,
                     fdfwd_type: str = 'linear',
+                    fdfwd_activation: str = 'ReLU',
                     fdfwd_kernel: int = 9,
                     fdfwd_dropout: float = 0.1,
                     res_dropout: float = 0.1,
@@ -197,6 +202,8 @@ class TransformerEncoder(Module):
                 linear feedforward layer in each Transformer layer.
             fdfwd_type: str
                 The type of the feed-forward layer. 'linear' means the Linear layer while 'conv' means the Conv1d layer.
+            fdfwd_activation: str
+                The name of the activation function of feedforward layers. Should be the name of functions in 'torch.nn'.
             fdfwd_kernel: int
                 The kernal size of the Conv1d feed-forward layer. This argument is not effective if fdfwd_type == 'linear'.
             fdfwd_dropout: float
@@ -273,6 +280,7 @@ class TransformerEncoder(Module):
                                     att_dropout=att_dropout,
                                     fdfwd_dim=fdfwd_dim,
                                     fdfwd_type=fdfwd_type,
+                                    fdfwd_activation=fdfwd_activation,
                                     fdfwd_kernel=fdfwd_kernel,
                                     fdfwd_dropout=fdfwd_dropout,
                                     res_dropout=res_dropout,

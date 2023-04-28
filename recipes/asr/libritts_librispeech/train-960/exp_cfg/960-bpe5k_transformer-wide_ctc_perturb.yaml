@@ -8,8 +8,8 @@
 # Testing: test-clean & test-other of LibriSpeech
 # Authors: Heli Qi
 # Required GPUs: 2 × NVIDIA RTX A6000 (49GB)
-# Required Time:
-# Expected WER performance (test-clean / test-other): ASR-only () and ASR-LM ()
+# Required Time: up to 1.5 day
+# Expected WER performance (test-clean / test-other): ASR-only (3.84% / 9.66%) and ASR-LM (3.01% / 7.43%)
 # ############################################################################
 
 
@@ -64,16 +64,17 @@ ngpu: 2 # please change ngpu based on the situation of your machine
 gpus: null # null means the GPUs with the largest free memory will be used
 
 # training-related
-train: False
+train: True
 best_model_selection: !tuple (valid, accuracy, max, 10)
 early_stopping_patience: 10
+num_epochs: 100
 
 # snapshot-related
 visual_snapshot_number: 3
 visual_snapshot_interval: 5
 
 # testing-related
-test: True
+test: False
 test_model: 10_valid_accuracy_average
 
 # These arguments are shared by data_cfg and train_cfg
@@ -92,10 +93,10 @@ infer_cfg:
     beam_size: 16
   exclu_args:
     # ASR-only decoding
-    - temperature: 1.5
+    - ctc_weight: 0.2
     # ASR-LM decoding
-    - lm_weight: 0.2
-      ilm_sub_weight: 0.1
+    - ctc_weight: 0.4
+      lm_weight: 0.4
 
 
 
@@ -180,8 +181,8 @@ train_cfg:
         ctc_weight: !ref <ctc_weight>
         token_type: !ref <token_type>
         token_path: !ref <librispeech_data_root>/<token_type>/<vocab_subset>/<token_num>/<txt_format>
-        lm_model_cfg: recipes/lm/librispeech/lm_text/exp/100-bpe5k_transformer/train_cfg.yaml
-        lm_model_path: recipes/lm/librispeech/lm_text/exp/100-bpe5k_transformer/models/5_valid_text_ppl_average.pth
+        lm_model_cfg: recipes/lm/librispeech/train-960_lm_text/exp/960-bpe5k_transformer/train_cfg.yaml
+        lm_model_path: recipes/lm/librispeech/train-960_lm_text/exp/960-bpe5k_transformer/models/5_valid_text_ppl_average.pth
 
     module_conf:
       frontend:

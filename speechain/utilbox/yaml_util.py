@@ -3,6 +3,8 @@
     Affiliation: NAIST
     Date: 2022.09
 """
+import os
+
 import ruamel.yaml
 from ruamel.yaml.scalarfloat import ScalarFloat
 from ruamel.yaml.scalarstring import PlainScalarString
@@ -94,6 +96,7 @@ def load_yaml(yaml_file) -> Dict:
     """
     # turn the input file path into file IO stream
     if isinstance(yaml_file, str):
+        assert os.path.exists(yaml_file), f"Your input .yaml file {yaml_file} doesn't exist!"
         yaml_file = open(yaml_file, mode='r', encoding='utf-8')
 
     # parse the yaml file with !-prefixed representers

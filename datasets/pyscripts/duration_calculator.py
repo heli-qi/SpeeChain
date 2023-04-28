@@ -10,9 +10,8 @@ from typing import Dict, List
 import textgrid as tg
 import numpy as np
 
-from tqdm import tqdm
 from multiprocessing import Pool
-from decimal import Decimal
+from functools import partial
 from tqdm import tqdm
 from collections import Counter
 
@@ -29,6 +28,8 @@ def parse():
                         help="The path where you want to save the duration metadata files. If not given, the files will be saved to {data_path}/mfa. (default: None)")
     parser.add_argument('--pretrained_model_name', type=str, required=True,
                         help="The name of the pretrained model you have used to get the .TextGrid files.")
+    parser.add_argument('--retain_stress', type=str2bool, default=True,
+                        help="Whether to retain the stress indicators at the end of each vowel phonemes. (default: True)")
     parser.add_argument('--dataset_name', type=str, required=True,
                         help="The name of the dataset you want to process.")
     parser.add_argument('--subset_name', type=str2none, default=None,
@@ -38,7 +39,8 @@ def parse():
     return parser.parse_args()
 
 
-def dump_subset_metadata(dataset_path: str, save_path: str, subset_name: str, idx2text: Dict, idx2duration: Dict):
+def dump_subset_metadata(dataset_path: str, save_path: str, subset_name: str, retain_stress: bool,
+                         idx2text: Dict, idx2duration: Dict):
     """
         Save the subset-specific idx2text and idx2duration dictionaries as metadata files.
 
@@ -49,58 +51,65 @@ def dump_subset_metadata(dataset_path: str, save_path: str, subset_name: str, id
                 The path to save the metadata files.
             subset_name (str):
                 The name of the subset to process.
+            retain_stress (bool):
+                Whether to retain the stress indicators at the end of each vowel phonemes.
             idx2text (Dict):
                 The dictionary mapping file indices to tokenized text.
             idx2duration (Dict):
                 The dictionary mapping file indices to phoneme durations.
     """
+
+
     # get the subset-specific idx2text and idx2duration Dicts
     subset_indices = list(load_idx2data_file(os.path.join(dataset_path, subset_name, 'idx2wav')).keys())
     subset_idx2text = {index: idx2text[index] for index in subset_indices if index in idx2text.keys()}
     subset_idx2duration = {index: idx2duration[index] for index in subset_indices if index in idx2duration.keys()}
-    subset_path = os.path.join(save_path, subset_name)
+    subset_path = os.path.join(save_path, subset_name, 'stress' if retain_stress else 'no-stress')
 
-    if len(subset_idx2text) == len(subset_indices):
-        os.makedirs(subset_path, exist_ok=True)
-        # save the subet-specific idx2text Dict to a metadata file
-        text_path = os.path.join(subset_path, 'idx2text')
-        np.savetxt(text_path, [[idx, str(text)] for idx, text in subset_idx2text.items()], fmt="%s")
-        print(f"Tokenized text has been successfully saved to {text_path}.")
+    # --- idx2text & idx2text_len Saving --- #
+    os.makedirs(subset_path, exist_ok=True)
+    # save the subet-specific idx2text Dict to a metadata file
+    text_path = os.path.join(subset_path, 'idx2text')
+    np.savetxt(text_path, [[idx, str(text)] for idx, text in subset_idx2text.items()], fmt="%s")
+    print(f"Tokenized text has been successfully saved to {text_path}.")
 
-        # save the length information of the subet-specific idx2text Dict to a metadata file
-        text_len_path = os.path.join(subset_path, 'idx2text_len')
-        np.savetxt(text_len_path, [[idx, len(text)] for idx, text in subset_idx2text.items()], fmt="%s")
-        print(f"The length of tokenized text has been successfully saved to {text_len_path}.")
+    # save the length information of the subet-specific idx2text Dict to a metadata file
+    text_len_path = os.path.join(subset_path, 'idx2text_len')
+    np.savetxt(text_len_path, [[idx, len(text)] for idx, text in subset_idx2text.items()], fmt="%s")
+    print(f"The length of tokenized text has been successfully saved to {text_len_path}.")
 
-        subset_phns = []
-        for text in subset_idx2text.values():
-            subset_phns += text
-        # collect the occurrence frequency of each phoneme
-        phn2freq = sorted(Counter(subset_phns).items(), key=lambda x: x[1], reverse=True)
-        subset_phns = [phn for phn, _ in phn2freq]
-        if '<unk>' in subset_phns:
-            subset_phns.remove('<unk>')
-        # <sos/eos> is added here for the compatibility with autoregressive TTS model
-        subset_phn_vocab = ["<blank>"] + subset_phns + ['<unk>', '<sos/eos>']
+    # --- vocab Saving --- #
+    subset_phns = []
+    for text in subset_idx2text.values():
+        subset_phns += text
+    # collect the occurrence frequency of each phoneme
+    phn2freq = sorted(Counter(subset_phns).items(), key=lambda x: x[1], reverse=True)
+    subset_phns = [phn for phn, _ in phn2freq]
+    if '<unk>' in subset_phns:
+        subset_phns.remove('<unk>')
+    # <sos/eos> is added here for the compatibility with autoregressive TTS model
+    subset_phn_vocab = ["<blank>"] + subset_phns + ['<unk>', '<sos/eos>']
 
-        vocab_path = os.path.join(save_path, subset_name, 'vocab')
-        np.savetxt(vocab_path, subset_phn_vocab, fmt="%s")
-        print(f"Phoneme vocabulary has been successfully saved to {vocab_path}.")
+    vocab_path = os.path.join(subset_path, 'vocab')
+    np.savetxt(vocab_path, subset_phn_vocab, fmt="%s")
+    print(f"Phoneme vocabulary has been successfully saved to {vocab_path}.")
 
-    if len(subset_idx2duration) == len(subset_indices):
-        os.makedirs(subset_path, exist_ok=True)
-        # save the subet-specific idx2duration Dict to a metadata file
-        duration_path = os.path.join(subset_path, 'idx2duration')
-        np.savetxt(duration_path, [[idx, str(duration)] for idx, duration in subset_idx2duration.items()], fmt="%s")
-        print(f"The duration of tokenized text has been successfully saved to {duration_path}.")
+    # --- idx2duration Saving --- #
+    os.makedirs(subset_path, exist_ok=True)
+    # save the subet-specific idx2duration Dict to a metadata file
+    duration_path = os.path.join(subset_path, 'idx2duration')
+    np.savetxt(duration_path, [[idx, str(duration)] for idx, duration in subset_idx2duration.items()], fmt="%s")
+    print(f"The duration of tokenized text has been successfully saved to {duration_path}.")
 
-def cal_duration_by_tg(tg_file_list: List[str]):
+def cal_duration_by_tg(tg_file_list: List[str], retain_stress: bool):
     """
         Calculate the phoneme duration for each TextGrid file and return idx2text and idx2duration dictionaries.
 
         Args:
             tg_file_list (List[str]):
                 List of paths to TextGrid files.
+            retain_stress (bool):
+                Whether to retain the stress indicators at the end of each vowel phonemes.
 
         Returns:
             Tuple[Dict, Dict]:
@@ -122,7 +131,13 @@ def cal_duration_by_tg(tg_file_list: List[str]):
 
             # for the non-silence phoneme tokens, repeating of non-silence phonemes is retained
             if phn.mark not in ['sp', '', 'sil']:
-                idx2text[file_name].append(phn.mark if phn.mark != 'spn' else '<unk>')
+                # remove the stress number at the end if retain_stress is set to False
+                if not retain_stress and phn.mark[-1].isdigit():
+                    phn_token = phn.mark[:-1]
+                else:
+                    phn_token = phn.mark
+
+                idx2text[file_name].append(phn_token if phn_token != 'spn' else '<unk>')
                 idx2duration[file_name].append(phn_duration)
             # for the silence tokens
             else:
@@ -145,7 +160,7 @@ def cal_duration_by_tg(tg_file_list: List[str]):
 
     return idx2text, idx2duration
 
-def main(data_path: str, pretrained_model_name: str, dataset_name: str, subset_name: str = None,
+def main(data_path: str, pretrained_model_name: str, retain_stress: bool, dataset_name: str, subset_name: str = None,
          save_path: str = None, ncpu: int = 8):
     """
         Main function to process TextGrid files and save metadata files for a given dataset and subset.
@@ -155,6 +170,8 @@ def main(data_path: str, pretrained_model_name: str, dataset_name: str, subset_n
                 The path where you placed the dumped data.
             pretrained_model_name (str):
                 The name of the pretrained model you have used to get the .TextGrid files.
+            retain_stress: bool
+                Whether to retain the stress indicators at the end of each vowel phonemes.
             dataset_name (str):
                 The name of the dataset you want to process.
             subset_name (str):
@@ -181,10 +198,11 @@ def main(data_path: str, pretrained_model_name: str, dataset_name: str, subset_n
     if len(tg_file_list) == 0:
         raise RuntimeError(f".TextGrid files have not been successfully saved to {textgrid_path}!")
     func_args = [tg_file_list[i::ncpu] for i in range(ncpu)]
+    cal_duration_by_tg_func = partial(cal_duration_by_tg, retain_stress=retain_stress)
 
     # start the executing jobs
     with Pool(ncpu) as executor:
-        text_duration_results = executor.map(cal_duration_by_tg, func_args)
+        text_duration_results = executor.map(cal_duration_by_tg_func, func_args)
 
     # gather the results from all the processes
     idx2text, idx2duration = {}, {}
@@ -196,28 +214,23 @@ def main(data_path: str, pretrained_model_name: str, dataset_name: str, subset_n
     dataset_path = os.path.join(data_path, 'wav')
     # process all the subsets in the given dataset
     if subset_name is None:
-        for file_name in os.listdir(dataset_path):
-            if dataset_name in ['libritts', 'librispeech'] and \
-                    file_name not in ['dev', 'dev-clean', 'dev-other', 'test-clean', 'test-other', 'train-clean-100',
-                              'train-clean-360', 'train-clean-460', 'train-other-500', 'train-960']:
-                continue
-            if dataset_name == 'ljspeech' and file_name not in ['train', 'valid', 'test']:
-                continue
+        for file_name in os.listdir(textgrid_path):
             dump_subset_metadata(dataset_path=dataset_path, save_path=save_path, subset_name=file_name,
-                                 idx2text=idx2text, idx2duration=idx2duration)
+                                 retain_stress=retain_stress, idx2text=idx2text, idx2duration=idx2duration)
     else:
         dump_subset_metadata(dataset_path=dataset_path, save_path=save_path, subset_name=subset_name,
-                             idx2text=idx2text, idx2duration=idx2duration)
+                             retain_stress=retain_stress, idx2text=idx2text, idx2duration=idx2duration)
 
 
 if __name__ == '__main__':
-    # args = parse()
-    # main(**vars(args))
+    args = parse()
+    main(**vars(args))
 
-    main(
-        data_path="datasets/librispeech/data",
-        pretrained_model_name="librispeech_train-clean-100",
-        dataset_name='librispeech',
-        subset_name=None,
-        ncpu=8
-    )
+    # main(
+    #     data_path="datasets/libritts/data",
+    #     pretrained_model_name="librispeech_train-clean-100",
+    #     dataset_name='libritts',
+    #     subset_name=None,
+    #     retain_stress=False,
+    #     ncpu=8
+    # )

@@ -10,7 +10,6 @@ In the sub-folder of each task, each dataset has a second-level sub-folder.
    1. [ASR (Automatic Speech Recognition)](https://github.com/ahclab/SpeeChain/tree/main/recipes#automatic-speech-recognition-asr)
    2. [TTS (Text-To-Speech Synthesis)](https://github.com/ahclab/SpeeChain/tree/main/recipes#text-to-speech-synthesis-tts)
    3. [Offline TTS-to-ASR Chain](https://github.com/ahclab/SpeeChain/tree/main/recipes#offline-tts-to-asr-chain)
-   4. Speech Enhancement [to do]
 2. [**Experimental File System**](https://github.com/ahclab/SpeeChain/tree/main/recipes#experimental-file-system)
 
 
@@ -29,12 +28,11 @@ Please press the hyperlinks below and jump to the README.md of your target task 
         /train-960              # Labeled data: train-960 (train-clean-460 + train-other-500)
             ...
     /librispeech+libritts   # ASR Recipes for the joint dataset of LibriSpeech and 16khz-downsampled LibriTTS
-        /train-clean-100-360    # Labeled data: LibriSpeech_train-clean-100 & 16khz-LibriTTS_train-clean-360
+        /train-clean-100        # Labeled data: LibriSpeech_train-clean-100 & 16khz-LibriTTS_train-clean-100
+            ...
+        /train-clean-460        # Labeled data: LibriSpeech_train-clean-460 & 16khz-LibriTTS_train-clean-460
             ...
         /train-960              # Labeled data: LibriSpeech_train-960 & 16khz-LibriTTS_train-960
-            ...
-    /libritts               # ASR Recipes for the 22.05khz-LibriTTS dataset
-        /train-960              # Labeled data: 22.05khz-LibriTTS_train-960
             ...
 ```
 <table>
@@ -49,37 +47,35 @@ Please press the hyperlinks below and jump to the README.md of your target task 
 	    <td rowspan="3">LibriSpeech (test-clean / test-other)</td>
 	    <td rowspan="3">Speech-Transformer</td>
 	    <td>train-clean-100</td>
-	    <td>12.10% / 29.10%</td>
-	    <td>coming soon~~~</td>
+	    <td> % / % </td>
+	    <td> % / % </td>
 	</tr>
 	<tr>
 	    <td>train-clean-460</td>
-	    <td>5.73% / 16.63%</td>
-        <td>coming soon~~~</td>
+	    <td> % / % </td>
+        <td> % / % </td>
 	</tr>
 	<tr>
 	    <td>train-960</td>
-	    <td>4.45% / 10.46%</td>
-        <td>coming soon~~~</td>
+	    <td> 4.11% / 9.98% </td>
+        <td> 2.94% / 7.52% </td>
 	</tr>
     <tr>
-	    <td rowspan="2">LibriSpeech + 16khz-LibriTTS (test-clean / test-other)</td>
-	    <td rowspan="2">Speech-Transformer</td>
-	    <td>train-clean-100-360</td>
-	    <td>7.11% / 20.32%</td>
-	    <td>coming soon~~~</td>
+	    <td rowspan="3">LibriSpeech + 16khz-LibriTTS (test-clean / test-other)</td>
+	    <td rowspan="3">Speech-Transformer</td>
+	    <td>train-clean-100</td>
+	    <td> % / % </td>
+	    <td> % / % </td>
+	</tr>
+    <tr>
+	    <td>train-clean-460</td>
+	    <td> % / % </td>
+        <td> % / % </td>
 	</tr>
 	<tr>
 	    <td>train-960</td>
-	    <td>coming soon~~~</td>
-        <td>coming soon~~~</td>
-	</tr>
-    <tr>
-	    <td rowspan="1">22.05khz-LibriTTS (test-clean / test-other)</td>
-	    <td rowspan="1">Speech-Transformer</td>
-	    <td>train-960</td>
-	    <td>coming soon~~~</td>
-	    <td>coming soon~~~</td>
+	    <td> 3.84% / 9.66% </td>
+        <td> 3.01% / 7.43% </td>
 	</tr>
 </table>
 

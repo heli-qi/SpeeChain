@@ -5,8 +5,7 @@ from speechain.utilbox.train_util import make_mask_from_len
 class CTCPrefixScorer:
     """This class implements the CTC prefix scorer of Algorithm 2 in
     reference: https://www.merl.com/publications/docs/TR2017-190.pdf.
-    The codes are borrowed from
-        https://github.com/speechbrain/speechbrain/blob/205e5237584b8c3f3609eee01dda732f61fef90c/speechbrain/decoders/ctc.py#L13
+    Official implementation: https://github.com/espnet/espnet/blob/master/espnet/nets/ctc_prefix_score.py
     Arguments
     ---------
     x : torch.Tensor
@@ -34,6 +33,7 @@ class CTCPrefixScorer:
         beam_size,
         blank_index,
         eos_index,
+        ctc_window_size=0,
     ):
         self.blank_index = blank_index
         self.eos_index = eos_index
@@ -44,9 +44,10 @@ class CTCPrefixScorer:
         self.device = x.device
         self.minus_inf = -1e20
         self.last_frame_index = enc_lens - 1
+        self.ctc_window_size = ctc_window_size
 
-        # (batch_size * beam_size, max_enc_len, vocab_size)
-        mask = ~make_mask_from_len(enc_lens, return_3d=False).unsqueeze(-1).expand(-1, -1, x.size(-1))
+        # mask frames > enc_lens
+        mask = ~make_mask_from_len(enc_lens, return_3d=False).unsqueeze(-1).expand(-1, -1, self.vocab_size)
         x.masked_fill_(mask, self.minus_inf)
         x[:, :, 0] = x[:, :, 0].masked_fill_(mask[:, :, 0], 0)
 
@@ -58,7 +59,7 @@ class CTCPrefixScorer:
             .expand(-1, -1, self.vocab_size)
         )
 
-        # (2, max_enc_len, batch_size * beam_size, vocab_size)
+        # (2, L, batch_size * beam_size, vocab_size)
         self.x = torch.stack([xnb, xb])
 
         # The first index of each sentence.
@@ -70,7 +71,7 @@ class CTCPrefixScorer:
             torch.arange(batch_size, device=self.device) * self.vocab_size
         )
 
-    def forward_step(self, g, state, candidates=None):
+    def forward_step(self, g, state, candidates=None, attn=None):
         """This method if one step of forwarding operation
         for the prefix ctc scorer.
         Arguments
@@ -90,16 +91,17 @@ class CTCPrefixScorer:
             self.vocab_size if candidates is None else candidates.size(-1)
         )
         if state is None:
-            # r_prev: (max_enc_len, 2, batch_size * beam_size)
+            # r_prev: (L, 2, batch_size * beam_size)
             r_prev = torch.full(
                 (self.max_enc_len, 2, self.batch_size * self.beam_size),
                 self.minus_inf,
                 device=self.device,
             )
 
+            # r_prev[:, 0] = r^n(g), r_prev[:, 1] = r^b(g)
             # Accumulate blank posteriors at each step
             r_prev[:, 1] = torch.cumsum(
-                self.x[0, :, :, self.blank_index], 0
+                self.x[0, :, :, self.blank_index], dim=0
             )
             psi_prev = 0.0
         else:
@@ -135,14 +137,10 @@ class CTCPrefixScorer:
         # for full search
         else:
             scoring_table = None
-            x_inflate = (
-                self.x.unsqueeze(3)
-                .view(
-                    2, -1, self.batch_size * self.beam_size, self.num_candidates
-                )
-            )
+            x_inflate = self.x
 
         # Prepare forward probs
+        # r[:, 0] = r^n(h), r[:, 1] = r^b(h)
         r = torch.full(
             (
                 self.max_enc_len,
@@ -173,8 +171,16 @@ class CTCPrefixScorer:
                 phi[:, i, last_char[i]] = r_prev[:, 1, i]
 
         # Start, end frames for scoring (|g| < |h|).
-        start = max(1, prefix_length)
-        end = self.max_enc_len
+        # Scoring based on attn peak if ctc_window_size > 0
+        if self.ctc_window_size == 0 or attn is None:
+            start = max(1, prefix_length)
+            end = self.max_enc_len
+        else:
+            _, attn_peak = torch.max(attn, dim=1)
+            max_frame = torch.max(attn_peak).item() + self.ctc_window_size
+            min_frame = torch.min(attn_peak).item() - self.ctc_window_size
+            start = max(max(1, prefix_length), int(min_frame))
+            end = min(self.max_enc_len, int(max_frame))
 
         # Compute forward prob log(r_t^nb(h)) and log(r_t^b(h)):
         for t in range(start, end):
@@ -220,25 +226,25 @@ class CTCPrefixScorer:
 
         return psi - psi_prev, (r, psi, scoring_table)
 
-    def permute_mem(self, memory, beam_idx, index):
+    def permute_mem(self, memory, beam_idx, token_idx):
         """This method permutes the CTC model memory
         to synchronize the memory index with the current output.
         Arguments
         ---------
         memory : No limit
             The memory variable to be permuted.
-        index : torch.Tensor, (batch_size, beam_size)
+        index : torch.Tensor
             The index of the previous path.
         Return
         ------
         The variable of the memory being permuted.
         """
         r, psi, scoring_table = memory
-        r, psi = r[:,:,beam_idx], psi[beam_idx]
+        r, psi = r[:, :, beam_idx], psi[beam_idx]
         # The index of top-K vocab came from in (t-1) timesteps.
         best_index = (
-            index
-            + (self.beam_offset.unsqueeze(1).expand_as(index) * self.vocab_size)
+            token_idx
+            + (self.beam_offset.unsqueeze(1).expand_as(token_idx) * self.vocab_size)
         ).view(-1)
         # synchronize forward prob
         psi = torch.index_select(psi.view(-1), dim=0, index=best_index)
@@ -251,9 +257,9 @@ class CTCPrefixScorer:
         # synchronize ctc states
         if scoring_table is not None:
             effective_index = (
-                index // self.vocab_size + self.beam_offset.view(-1, 1)
+                token_idx // self.vocab_size + self.beam_offset.view(-1, 1)
             ).view(-1)
-            selected_vocab = (index % self.vocab_size).view(-1)
+            selected_vocab = (token_idx % self.vocab_size).view(-1)
             score_index = scoring_table[effective_index, selected_vocab]
             score_index[score_index == -1] = 0
             best_index = score_index + effective_index * self.num_candidates

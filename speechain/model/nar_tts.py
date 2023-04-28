@@ -21,12 +21,11 @@ from speechain.module.encoder.tts import TTSEncoder
 from speechain.module.decoder.nar_tts import FastSpeech2Decoder
 
 from speechain.criterion.least_error import LeastError
-from speechain.criterion.bce_logits import BCELogits
-from speechain.criterion.fbeta_score import FBetaScore
 
 from speechain.utilbox.data_loading_util import parse_path_args
 from speechain.utilbox.tensor_util import to_cpu
 from speechain.utilbox.train_util import get_min_indices_by_freq
+from speechain.utilbox.sb_util import get_speechbrain_hifigan
 
 
 class FastSpeech2(Model):
@@ -53,6 +52,7 @@ class FastSpeech2(Model):
                     spk_list: str = None,
                     spk_emb: Dict = None,
                     sample_rate: int = 22050,
+                    vocoder: str = 'hifigan',
                     audio_format: str = 'wav',
                     reduction_factor: int = 1,
                     return_att_type: List[str] or str = None,
@@ -125,9 +125,11 @@ class FastSpeech2(Model):
         # --- 2.2. Decoder construction --- #
         # check the sampling rate of the decoder frontend
         if 'sr' not in feat_frontend['conf'].keys():
-            raise RuntimeError("Please specify the sampling rate by 'sr' in feat_frontend['conf']")
-        # update the sampling rate by the one in the feature extraction frontend
-        self.sample_rate = feat_frontend['conf']['sr']
+            # update the sampling rate of the frontend by the built-in one in the model
+            feat_frontend['conf']['sr'] = self.sample_rate
+        elif feat_frontend['conf']['sr'] != self.sample_rate:
+            raise RuntimeError(f"The sampling rate given in your feat_frontend['conf'] ({feat_frontend['conf']['sr']}) "
+                               f"is different from your given sample_rate ({self.sample_rate})!")
 
         # check the speaker embedding configuration
         if spk_emb is not None:
@@ -157,6 +159,16 @@ class FastSpeech2(Model):
             distributed=self.distributed,
             reduction_factor=self.reduction_factor
         )
+
+        # --- 3. Vocoding Backend Construction --- #
+        assert vocoder in ['gl', 'hifigan'], \
+            f"Currently, we only support 'gl' and 'hifigan' as vocoder, but got vocoder={vocoder}!"
+        self.vocoder = vocoder
+        if self.vocoder == 'gl':
+            self.vocode_func = self.decoder.feat_frontend.recover
+        else:
+            self.vocode_func = get_speechbrain_hifigan(device=self.device, sample_rate=self.sample_rate,
+                                                       use_multi_speaker=spk_emb is not None)
 
     @staticmethod
     def bad_cases_selection_init_fn() -> List[List[str or int]] or None:
@@ -451,7 +463,7 @@ class FastSpeech2(Model):
                   spk_feat: torch.Tensor = None):
 
         if len(self.visual_infer_conf) == 0:
-            self.visual_infer_conf = dict(teacher_forcing=False, return_gl_wav=False, return_feat=True)
+            self.visual_infer_conf = dict(teacher_forcing=False, return_wav=False, return_feat=True)
 
         # obtain the inference results
         infer_results = self.inference(infer_conf=self.visual_infer_conf, return_att=True,
@@ -588,34 +600,10 @@ class FastSpeech2(Model):
                   domain: str = None,
                   return_att: bool = False,
                   return_feat: bool = False,
-                  return_gl_wav: bool = True,
+                  return_wav: bool = True,
                   use_before: bool = False,
                   teacher_forcing: bool = False) -> Dict[str, Dict[str, str or List]]:
-        """
 
-        Args:
-            # --- TTS decoding arguments --- #
-            infer_conf:
-            # --- Testing data arguments --- #
-            text:
-            text_len:
-            feat:
-            feat_len:
-            pitch:
-            pitch_len:
-            duration:
-            duration_len:
-            spk_ids:
-            spk_feat:
-            spk_feat_ids:
-            # --- General inference arguments --- #
-            domain:
-            return_att:
-            return_gl_wav:
-            use_before:
-            teacher_forcing:
-
-        """
         assert text is not None and text_len is not None
 
         # --- 0. Hyperparameter & Model Preparation Stage --- #
@@ -633,13 +621,13 @@ class FastSpeech2(Model):
         if 'use_before' in infer_conf.keys():
             use_before = infer_conf.pop('use_before')
 
-        # return_gl_wav in infer_conf has the higher priority and will not be passed to self.module_forward()
-        if 'return_gl_wav' in infer_conf.keys():
-            return_gl_wav = infer_conf.pop('return_gl_wav')
+        # return_wav in infer_conf has the higher priority and will not be passed to self.module_forward()
+        if 'return_wav' in infer_conf.keys():
+            return_wav = infer_conf.pop('return_wav')
         # return_feat in infer_conf has the higher priority and will not be passed to self.module_forward()
         if 'return_feat' in infer_conf.keys():
             return_feat = infer_conf.pop('return_feat')
-        assert return_gl_wav or return_feat, "return_gl_wav and return_feat cannot be False at the same time."
+        assert return_wav or return_feat, "return_wav and return_feat cannot be False at the same time."
 
         # return_sr in infer_conf has the higher priority and will not be passed to self.module_forward()
         return_sr = None
@@ -781,9 +769,9 @@ class FastSpeech2(Model):
         feat_token_len_ratio = hypo_feat_len / (text_len + 1e-10)
 
         # convert the acoustic features back to GL waveforms if specified
-        if return_gl_wav:
+        if return_wav:
             try:
-                hypo_wav, hypo_wav_len = self.decoder.feat_frontend.recover(hypo_feat, hypo_feat_len)
+                hypo_wav, hypo_wav_len = self.vocode_func(hypo_feat, hypo_feat_len)
             # do not save waveforms if there is a RuntimeError
             except RuntimeError:
                 pass
@@ -795,11 +783,10 @@ class FastSpeech2(Model):
                 hypo_wav_len = [wav.size(0) for wav in hypo_wav]
 
                 # the sampling rate of the waveforms will be changed to return_sr
-                outputs.update(
-                    gl_wav=dict(format='wav', sample_rate=self.sample_rate if return_sr is None else return_sr,
-                                group_ids=spk_ids, content=to_cpu(hypo_wav, tgt='numpy')),
-                    gl_wav_len=dict(format='txt', content=to_cpu(hypo_wav_len))
-                )
+                outputs[f'{self.vocoder}_wav'] = dict(format='wav',
+                                                      sample_rate=self.sample_rate if return_sr is None else return_sr,
+                                                      group_ids=spk_ids, content=to_cpu(hypo_wav, tgt='numpy'))
+                outputs[f'{self.vocoder}_wav_len'] = dict(format='txt', content=to_cpu(hypo_wav_len))
 
         # return the acoustic features if specified
         if return_feat:

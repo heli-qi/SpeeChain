@@ -10,42 +10,21 @@ import numpy as np
 import torch
 
 from tqdm import tqdm
-from typing import Dict, List
+from typing import Dict, List, Union
 from functools import partial
 from multiprocessing import Pool
 from speechbrain.pretrained import HIFIGAN
 
-from speechain.utilbox.type_util import str2dict
+from speechain.utilbox.type_util import str2dict, str2bool
 from speechain.utilbox.data_loading_util import parse_path_args, load_idx2data_file, read_data_by_path, search_file_in_subfolder
 from speechain.utilbox.yaml_util import load_yaml
 from speechain.utilbox.import_util import get_idle_gpu
 from speechain.utilbox.data_saving_util import save_data_by_format
+from speechain.utilbox.sb_util import get_speechbrain_hifigan
 
+from speechain.module.abs import Module
 from speechain.module.frontend.speech2mel import Speech2MelSpec
 from speechain.module.frontend.speech2linear import Speech2LinearSpec
-
-
-class SpeechBrainWrapper:
-    """
-    A wrapper class for the vocoder forward function of the speechbrain package.
-
-    Before wrapping:
-        feat -> vocode_func -> wav
-    After wrapping:
-        feat, feat_len -> SpeechBrainWrapper(vocode_func) -> wav, wav_len
-
-    """
-    def __init__(self, vocode_func):
-        self.vocode_func = vocode_func
-
-    def __call__(self, feat: torch.Tensor, feat_len: torch.Tensor):
-        wav = self.vocode_func(feat.transpose(-2, -1)).transpose(-2, -1)
-        # the lengths of the shorter utterances in the batch are estimated by their feature lengths
-        wav_len = (feat_len * (wav.size(1) / feat.size(1))).long()
-        # make sure that the redundant parts are set to silence
-        for i in range(len(wav_len)):
-            wav[i][wav_len[i]:] = 0
-        return wav, wav_len
 
 
 def parse():
@@ -84,9 +63,8 @@ def parse():
     group = parser.add_argument_group("Neural Vocoder-specific Arguments")
     group.add_argument('--sample_rate', type=int, default=22050,
                        help="The sampling rate of generated waveforms. (default: 22050)")
-    group.add_argument('--vocoder_train_data', type=str, default='ljspeech',
-                       help="The dataset used to train the neural vocoder. "
-                            "This argument is required if your input vocoder is not 'gl'. (default: ljspeech)")
+    group.add_argument('--use_multi_speaker', type=str2bool, default=True,
+                       help="Whether to use multi-speaker vocoder, i.e., the one trained on LibriTTS. (default: True)")
     return parser.parse_args()
 
 
@@ -159,51 +137,24 @@ def vocode_by_gl(idx2feat: Dict, gpu_id: int, batch_size: int, save_path: str, f
     return idx2wav, idx2wav_len
 
 
-def vocode_by_hifigan(idx2feat: Dict, gpu_id: int,
-                      batch_size: int, save_path: str, sample_rate: int, vocoder_train_data: str):
-    """
+def vocode_by_hifigan(idx2feat: Dict, gpu_id: int, batch_size: int, save_path: str,
+                      sample_rate: int, use_multi_speaker: bool):
 
-    Args:
-        idx2feat:
-        gpu_id:
-        batch_size:
-        save_path:
-        sample_rate:
-        vocoder_train_data:
-
-    Returns:
-
-    """
-    # initialize the HiFiGAN model
+    # initialize the device for HifiGAN model
     device = f"cuda:{gpu_id}" if gpu_id >= 0 else 'cpu'
-    download_dir = parse_path_args("recipes/tts/speechbrain_vocoder")
-    if vocoder_train_data == 'ljspeech':
-        hifi_gan = HIFIGAN.from_hparams(source="speechbrain/tts-hifigan-ljspeech", run_opts=dict(device=device),
-                                        savedir=os.path.join(download_dir, 'hifigan-ljspeech'))
-    elif vocoder_train_data == 'libritts':
-        if sample_rate == 16000:
-            hifi_gan = HIFIGAN.from_hparams(source="speechbrain/tts-hifigan-libritts-16kHz",
-                                            savedir=os.path.join(download_dir, 'hifigan-libritts-16kHz'),
-                                            run_opts=dict(device=device))
-        elif sample_rate == 22050:
-            hifi_gan = HIFIGAN.from_hparams(source="speechbrain/tts-hifigan-libritts-22050Hz",
-                                            savedir=os.path.join(download_dir, 'hifigan-libritts-22050Hz'),
-                                            run_opts=dict(device=device))
-        else:
-            raise ValueError
-    else:
-        raise NotImplementedError
 
     # convert idx2feat into idx2wav by batches
-    idx2wav, idx2wav_len = convert_feat_to_wav(idx2feat=idx2feat, device=device, batch_size=batch_size,
-                                               sample_rate=sample_rate,
-                                               save_path=os.path.join(save_path, 'hifigan_wav'),
-                                               feat_to_wav_func=SpeechBrainWrapper(hifi_gan.decode_batch))
+    idx2wav, idx2wav_len = convert_feat_to_wav(
+        idx2feat=idx2feat, device=device, batch_size=batch_size, sample_rate=sample_rate,
+        save_path=os.path.join(save_path, 'hifigan_wav'),
+        feat_to_wav_func=get_speechbrain_hifigan(
+            device=device, sample_rate=sample_rate, use_multi_speaker=use_multi_speaker
+        ))
     return idx2wav, idx2wav_len
 
 
 def main(vocoder: str, feat_path: str, wav_path: str, batch_size: int, ngpu: int, ncpu: int,
-         tts_model_cfg: Dict or str, sample_rate: int, vocoder_train_data: str):
+         tts_model_cfg: Dict or str, sample_rate: int, use_multi_speaker: bool):
 
     feat_path = parse_path_args(feat_path)
     # for folder input, automatically find out all the idx2feat candidates as hypo_idx2feat
@@ -261,23 +212,8 @@ def main(vocoder: str, feat_path: str, wav_path: str, batch_size: int, ngpu: int
                                       batch_size=batch_size, save_path=save_path, frontend_cfg=frontend_cfg)
 
             elif vocoder == 'hifigan':
-                assert vocoder_train_data is not None, \
-                    "If you choose 'hifigan' as the vocoder, " \
-                    "please specify 'vocoder_train_data' to pick up the target hifigan model file."
-                vocoder_train_data = vocoder_train_data.lower()
-
-                if vocoder_train_data == 'ljspeech':
-                    assert sample_rate == 22050, \
-                        "If you choose 'ljspeech' as vocoder_train_data, sample_rate must be 22050."
-                elif vocoder_train_data == 'libritts':
-                    assert sample_rate in [16000, 22050], \
-                        "If you choose 'libritts' as vocoder_train_data, sample_rate must be either 16000 or 22050."
-                else:
-                    raise NotImplementedError(f"Unknown vocoder_train_data ({vocoder_train_data})! "
-                                              f"vocoder_train_data should be one of ['ljspeech', 'libritts'].")
-
                 vocode_func = partial(vocode_by_hifigan, batch_size=batch_size, save_path=save_path,
-                                      sample_rate=sample_rate, vocoder_train_data=vocoder_train_data)
+                                      sample_rate=sample_rate, use_multi_speaker=use_multi_speaker)
 
             else:
                 raise NotImplementedError(

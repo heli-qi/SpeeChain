@@ -17,7 +17,7 @@ class PositionwiseFeedForward(Module):
     """
 
     def module_init(self, d_model: int = 512, fdfwd_dim: int = 2048, fdfwd_type: str = 'linear',
-                    fdfwd_kernel: int = 9, dropout=0.1):
+                    fdfwd_activation: str = 'ReLU', fdfwd_kernel: int = 9, dropout=0.1):
         """
         Initializes position-wise feed-forward layer.
 
@@ -29,6 +29,8 @@ class PositionwiseFeedForward(Module):
                 linear feedforward layer
             fdfwd_type: str
                 The type of the feed-forward layer. 'linear' means the Linear layer while 'conv' means the Conv1d layer.
+            fdfwd_activation: str
+                The name of the activation function of feedforward layers. Should be the name of functions in 'torch.nn'.
             fdfwd_kernel: int
                 The kernal size of the Conv1d feed-forward layer. This argument is not effective if fdfwd_type == 'linear'.
             dropout: float
@@ -44,7 +46,7 @@ class PositionwiseFeedForward(Module):
                                       f"But got {fdfwd_type}!")
 
         # ReLU and DropOut layers in the middle
-        self.relu = nn.ReLU()
+        self.activation = getattr(torch.nn, fdfwd_activation)()
         self.dropout = nn.Dropout(dropout)
 
         # Out-layer at the end
@@ -75,7 +77,7 @@ class PositionwiseFeedForward(Module):
         x = self.in_layer(x)
 
         # pass the middle layers
-        x = self.dropout(self.relu(x))
+        x = self.dropout(self.activation(x))
 
         # pass the out-layer at the end
         # (batch, fdfwd_dim, seq_maxlen) -> (batch, d_model, seq_maxlen) or

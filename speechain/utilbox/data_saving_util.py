@@ -3,13 +3,14 @@ import torch
 import numpy as np
 import soundfile as sf
 
-from typing import List, Any
+from typing import List, Any, Union
 
 from speechain.utilbox.tensor_util import to_cpu
 
 
-def save_data_by_format(file_format: str, save_path: str, file_name_list: List[str] or str,
-                        file_content_list: List or Any, group_ids: List[str] = None, sample_rate: int = None):
+def save_data_by_format(file_format: str, save_path: str, file_name_list: Union[List[str] or str],
+                        file_content_list: Union[List, np.ndarray, torch.Tensor],
+                        group_ids: List[str] = None, sample_rate: int = None):
     """
     Save data in the specified format to disk.
 
