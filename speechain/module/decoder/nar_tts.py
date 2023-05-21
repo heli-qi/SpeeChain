@@ -201,15 +201,14 @@ class FastSpeech2Decoder(Module):
                 feat: torch.Tensor = None, feat_len: torch.Tensor = None,
                 energy: torch.Tensor = None, energy_len: torch.Tensor = None,
                 spk_feat: torch.Tensor = None, spk_ids: torch.Tensor = None,
-                epoch: int = None, rand_spk_feat: bool = False,
-                min_frame_num: int = None, max_frame_num: int = None,
+                epoch: int = None, min_frame_num: int = None, max_frame_num: int = None,
                 duration_alpha: torch.Tensor = None, energy_alpha: torch.Tensor = None,
                 pitch_alpha: torch.Tensor = None):
 
         # --- 1. Speaker Embedding Combination --- #
         if hasattr(self, 'spk_emb'):
             # extract and process the speaker features (activation is not performed for random speaker feature)
-            spk_feat_lookup, spk_feat = self.spk_emb(spk_ids=spk_ids, spk_feat=spk_feat, spk_feat_act=not rand_spk_feat)
+            spk_feat_lookup, spk_feat = self.spk_emb(spk_ids=spk_ids, spk_feat=spk_feat)
             # combine the speaker features with the encoder outputs (and the decoder prenet outputs if specified)
             enc_text, _ = self.spk_emb.combine_spk_feat(spk_feat=spk_feat, spk_feat_lookup=spk_feat_lookup,
                                                         enc_output=enc_text)

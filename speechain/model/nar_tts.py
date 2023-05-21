@@ -52,7 +52,6 @@ class FastSpeech2(Model):
                     spk_list: str = None,
                     spk_emb: Dict = None,
                     sample_rate: int = 22050,
-                    vocoder: str = 'hifigan',
                     audio_format: str = 'wav',
                     reduction_factor: int = 1,
                     return_att_type: List[str] or str = None,
@@ -139,8 +138,12 @@ class FastSpeech2(Model):
                     warnings.warn("Your input spk_num is different from the number of speakers in your given spk_list. "
                                   f"Currently, the spk_num is set to {len(self.spk2idx) + 1}.")
                 # all seen speakers plus an unknown speaker (ID: 0)
-                spk_emb['spk_num'], spk_emb['use_lookup'] = len(self.spk2idx) + 1, True
-            elif 'use_lookup' in spk_emb.keys() and spk_emb['use_lookup']:
+                spk_emb['spk_num'] = len(self.spk2idx) + 1
+                if 'spk_emb_dim_lookup' not in spk_emb.keys() or spk_emb['spk_emb_dim_lookup'] is None:
+                    raise RuntimeError("If you want to use speaker look-up table for multi-speaker TTS, "
+                                       "please give spk_emb_dim_lookup in model['module_conf']['spk_emb'].")
+
+            elif 'spk_emb_dim_lookup' in spk_emb.keys() and spk_emb['spk_emb_dim_lookup'] is not None:
                 raise RuntimeError("Please give spk_list in model['customize_conf'] if you want to use speaker lookup "
                                    "table for close-set multi-speaker TTS.")
 
@@ -159,16 +162,6 @@ class FastSpeech2(Model):
             distributed=self.distributed,
             reduction_factor=self.reduction_factor
         )
-
-        # --- 3. Vocoding Backend Construction --- #
-        assert vocoder in ['gl', 'hifigan'], \
-            f"Currently, we only support 'gl' and 'hifigan' as vocoder, but got vocoder={vocoder}!"
-        self.vocoder = vocoder
-        if self.vocoder == 'gl':
-            self.vocode_func = self.decoder.feat_frontend.recover
-        else:
-            self.vocode_func = get_speechbrain_hifigan(device=self.device, sample_rate=self.sample_rate,
-                                                       use_multi_speaker=spk_emb is not None)
 
     @staticmethod
     def bad_cases_selection_init_fn() -> List[List[str or int]] or None:
@@ -220,7 +213,6 @@ class FastSpeech2(Model):
                        energy_len: torch.Tensor = None,
                        spk_feat: torch.Tensor = None,
                        spk_ids: torch.Tensor = None,
-                       rand_spk_feat: bool = False,
                        return_att: bool = False,
                        min_frame_num: int = 0,
                        max_frame_num: int = None,
@@ -255,8 +247,6 @@ class FastSpeech2(Model):
                 Pre-extracted speaker embedding. (None means single-speaker TTS)
             spk_ids: (batch,)
                 The speaker ids of each speech data. In the form of integer values.
-            rand_spk_feat: bool
-                Whether spk_feat is randomly generated.
             epoch: int
                 The number of the current training epoch.
                 Mainly used for mean&std calculation in the feature normalization
@@ -340,8 +330,7 @@ class FastSpeech2(Model):
                                               duration=duration, duration_len=duration_len,
                                               feat=feat, feat_len=feat_len, pitch=pitch, pitch_len=pitch_len,
                                               energy=energy, energy_len=energy_len,
-                                              spk_feat=spk_feat, spk_ids=spk_ids,
-                                              rand_spk_feat=rand_spk_feat, epoch=epoch,
+                                              spk_feat=spk_feat, spk_ids=spk_ids, epoch=epoch,
                                               min_frame_num=min_frame_num, max_frame_num=max_frame_num,
                                               duration_alpha=duration_alpha, energy_alpha=energy_alpha,
                                               pitch_alpha=pitch_alpha)
@@ -602,6 +591,7 @@ class FastSpeech2(Model):
                   return_feat: bool = False,
                   return_wav: bool = True,
                   use_before: bool = False,
+                  vocoder: str = 'hifigan',
                   teacher_forcing: bool = False) -> Dict[str, Dict[str, str or List]]:
 
         assert text is not None and text_len is not None
@@ -620,6 +610,19 @@ class FastSpeech2(Model):
         # use_before in infer_conf has the higher priority and will not be passed to self.module_forward()
         if 'use_before' in infer_conf.keys():
             use_before = infer_conf.pop('use_before')
+        # vocoder in infer_conf has the higher priority and will not be passed to self.module_forward()
+        if 'vocoder' in infer_conf.keys():
+            vocoder = infer_conf.pop('vocoder')
+        # initialize the vocoder lazily
+        if not hasattr(self, 'vocode_func'):
+            assert vocoder in ['gl', 'hifigan'], \
+                f"Currently, we only support 'gl' and 'hifigan' as vocoder, but got vocoder={vocoder}!"
+            self.vocoder = vocoder
+            if self.vocoder == 'gl':
+                self.vocode_func = self.decoder.feat_frontend.recover
+            else:
+                self.vocode_func = get_speechbrain_hifigan(device=self.device, sample_rate=self.sample_rate,
+                                                           use_multi_speaker=hasattr(self.decoder, 'spk_emb'))
 
         # return_wav in infer_conf has the higher priority and will not be passed to self.module_forward()
         if 'return_wav' in infer_conf.keys():
@@ -687,7 +690,6 @@ class FastSpeech2(Model):
         hypo_feat, hypo_feat_len, hypo_duration, feat_token_len_ratio, hypo_att = None, None, None, None, None
 
         # Multi-speaker TTS scenario
-        rand_spk_feat = False
         if hasattr(self.decoder, 'spk_emb'):
             batch_size = text.size(0)
             # close-set multi-speaker TTS
@@ -707,7 +709,6 @@ class FastSpeech2(Model):
                     # the random spk_feat obey normal distribution
                     spk_feat = torch.randn((batch_size, self.decoder.spk_emb.spk_emb_dim), device=text.device)
                     spk_feat_ids = ['rand_spk' for _ in range(batch_size)]
-                    rand_spk_feat = True
 
         # copy the input data in advance for data safety
         model_input, outputs = copy.deepcopy(dict(text=text, text_len=text_len)), dict()
@@ -721,8 +722,7 @@ class FastSpeech2(Model):
                                             feat_len=feat_len if teacher_forcing else None,
                                             pitch=pitch if teacher_forcing else None,
                                             pitch_len=pitch_len if teacher_forcing else None,
-                                            spk_feat=spk_feat, spk_ids=spk_ids,
-                                            rand_spk_feat=rand_spk_feat, return_att=return_att,
+                                            spk_feat=spk_feat, spk_ids=spk_ids, return_att=return_att,
                                             min_frame_num=min_frame_num, max_frame_num=max_frame_num,
                                             duration_alpha=duration_alpha, energy_alpha=energy_alpha,
                                             pitch_alpha=pitch_alpha, **model_input)
@@ -740,9 +740,8 @@ class FastSpeech2(Model):
         else:
             # pred_duration is the duration in log scale
             hypo_duration = infer_results['tgt_duration']
-            hypo_duration = [hypo_duration[i][:text_len[i]].type(torch.int) for i in range(len(hypo_duration))]
             # convert the duration into integers for the hard regulation
-            hypo_duration = [h_d.type(torch.int) for h_d in hypo_duration]
+            hypo_duration = [hypo_duration[i][:text_len[i]].type(torch.int) for i in range(len(hypo_duration))]
             outputs.update(
                 duration=dict(format='txt', content=to_cpu(hypo_duration))
             )
@@ -779,14 +778,14 @@ class FastSpeech2(Model):
             else:
                 # remove the redundant silence parts at the end of the synthetic waveforms
                 hypo_wav = [hypo_wav[i][:hypo_wav_len[i]] if return_sr is None else
-                            self.resampler(hypo_wav[i][:hypo_wav_len[i]]) for i in range(len(hypo_wav))]
+                            self.resampler(hypo_wav[i][:hypo_wav_len[i]].squeeze(-1)) for i in range(len(hypo_wav))]
                 hypo_wav_len = [wav.size(0) for wav in hypo_wav]
 
                 # the sampling rate of the waveforms will be changed to return_sr
-                outputs[f'{self.vocoder}_wav'] = dict(format='wav',
-                                                      sample_rate=self.sample_rate if return_sr is None else return_sr,
-                                                      group_ids=spk_ids, content=to_cpu(hypo_wav, tgt='numpy'))
-                outputs[f'{self.vocoder}_wav_len'] = dict(format='txt', content=to_cpu(hypo_wav_len))
+                outputs['wav'] = dict(format='wav',
+                                      sample_rate=self.sample_rate if return_sr is None else return_sr,
+                                      group_ids=spk_ids, content=to_cpu(hypo_wav, tgt='numpy'))
+                outputs['wav_len'] = dict(format='txt', content=to_cpu(hypo_wav_len))
 
         # return the acoustic features if specified
         if return_feat:

@@ -7,6 +7,7 @@ import os
 import torch
 import copy
 import numpy as np
+from argparse import Namespace
 
 from typing import Dict, List
 from abc import ABC, abstractmethod
@@ -69,7 +70,7 @@ class Model(torch.nn.Module, ABC):
                  model_conf: Dict = None,
                  criterion_conf: Dict = None,
                  non_blocking: bool = False,
-                 distributed: bool = False,):
+                 distributed: bool = False):
         """
         In this initialization function, there are two parts of initialization: model-specific customized initialization
         and model-independent general initialization.
@@ -112,9 +113,7 @@ class Model(torch.nn.Module, ABC):
                 4. If you give 'frozen_modules: encoder_prenet.conv.0.bias', only the bias vector of the first
                 convolution layer of the prenet of your encoder will be frozen
 
-        Args:
-            args: argparse.Namespace
-                Experiment pipeline arguments received from the `Runner` object in `runner.py`.
+        Args:.
             device: torch.device
                 The computational device used for model calculation in the current GPU process.
             model_conf: Dict
@@ -379,8 +378,8 @@ class Model(torch.nn.Module, ABC):
                     # as long as one node meets an error, all nodes will skip the current step at the same time
                     torch.distributed.all_gather_into_tensor(skip_flag_list, skip_flag)
                     if skip_flag_list.sum() >= 1:
-                        raise RuntimeError("Other ranks meet errors during validation, "
-                                           "so this rank will also skip the current validation step!")
+                        raise RuntimeError("Other ranks meet errors during model forwarding, "
+                                           "so this rank will also skip the current step!")
 
         # copy.deepcopy() cannot receive the non-leaf nodes in the computation graph (model_outputs). Since
         # model_outputs cannot be detached from the graph (gradients necessary), copy.deepcopy() is not used below.

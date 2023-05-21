@@ -215,8 +215,8 @@ class OptimScheduler(ABC):
                     # optimize the target parameters only when the values of gradients are not infinite
                     if not torch.isfinite(grad_norm):
                         if logger is not None:
-                            logger.info("The grad_norm in the current step is infinite! "
-                                        "The parameters are not updated in this step.")
+                            logger.info(f"The grad_norm in the no.{real_step} real step is infinite! "
+                                        "So, the parameters are not updated in this step.")
                         if self.scaler is not None:
                             self.scaler.step(self.optimizer)
                             self.scaler.update()

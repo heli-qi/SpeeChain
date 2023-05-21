@@ -61,7 +61,7 @@ class Conv1dVarPredictor(Module):
                     conv_stride: int = 1,
                     conv_dropout: float or List[float] = 0.5,
                     use_conv_emb: bool = True,
-                    conv_emb_kernel: int = 3,
+                    conv_emb_kernel: int = 1,
                     conv_emb_dropout: float = 0.0):
         """
 
@@ -119,6 +119,12 @@ class Conv1dVarPredictor(Module):
         _prev_dim = feat_dim
         _tmp_conv = []
         for i in range(len(self.conv_dims)):
+            # 0 means go back to the input feat_dim
+            if self.conv_dims[i] == 0:
+                self.conv_dims[i] = feat_dim
+            # -1 means equal to the previous layer
+            elif self.conv_dims[i] == -1:
+                self.conv_dims[i] = self.conv_dims[i - 1]
             # Conv1d layer
             _tmp_conv.append(
                 Conv1dEv(in_channels=_prev_dim,

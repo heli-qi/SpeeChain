@@ -23,6 +23,7 @@ function print_help_message {
     [--ngpu NGPU] \\                                        # The value of 'ngpu' given to runner.py (default: none)
     [--gpus GPUS] \\                                        # The value of 'gpus' given to runner.py (default: none)
     [--train_num_workers TRAIN_NUM_WORKERS] \\              # The value of 'train_num_workers' given to runner.py (default: none)
+    [--valid_num_workers VALID_NUM_WORKERS] \\              # The value of 'valid_num_workers' given to runner.py (default: none)
     [--test_num_workers TEST_NUM_WORKERS] \\                # The value of 'test_num_workers' given to runner.py (default: none)
     [--accum_grad ACCUM_GRAD] \\                            # The value of 'accum_grad' given to runner.py (default: none)
     --task TASK \\                                          # The name of the task folder you want to run in ${SPEECHAIN_ROOT}/recipes/
@@ -78,6 +79,7 @@ infer_cfg=
 ngpu=
 gpus=
 train_num_workers=
+valid_num_workers=
 test_num_workers=
 accum_grad=
 
@@ -155,6 +157,10 @@ while getopts ":h-:" optchar; do
           val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
           train_num_workers=${val}
           ;;
+        valid_num_workers)
+          val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
+          valid_num_workers=${val}
+          ;;
         test_num_workers)
           val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
           test_num_workers=${val}
@@ -224,6 +230,11 @@ fi
 #
 if [ -n "${train_num_workers}" ];then
   args="${args} --train_num_workers ${train_num_workers}"
+fi
+
+#
+if [ -n "${valid_num_workers}" ];then
+  args="${args} --valid_num_workers ${valid_num_workers}"
 fi
 
 #

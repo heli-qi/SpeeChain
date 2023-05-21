@@ -7,7 +7,7 @@
 import torch
 import numpy as np
 
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Union, Optional
 from abc import ABC
 
 from speechain.utilbox.data_loading_util import load_idx2data_file, read_idx2data_file_to_dict, parse_path_args
@@ -16,30 +16,38 @@ from speechain.utilbox.error_util import BatchEmptyError
 
 class Dataset(torch.utils.data.Dataset, ABC):
     """
-    Dataset is the base class that takes charge of reading the data instances from the disk into the memory and
-    packaging them into a batch for model training or testing.
 
-    This object receives indices of the selected data instances from the Dataloader object created by the high-level
-    Iterator object. The output batches of packaged data instances may not be well-processed. Some post-processing steps
-    need to be done in the Model object later.
+    Base class for reading and packaging data instances from disk into memory for model training or testing.
+
+    The Dataset receives indices of selected data instances from a Dataloader object, created by a high-level Iterator.
+    Post-processing steps may need to be executed in the Model object later as the output batches might not be fully processed.
 
     """
 
     def __init__(self,
-                 main_data: Dict[str, str or List[str]],
-                 data_selection: List[List[str] or str] = None,
+                 main_data: Dict[str, Union[str, List[str]]],
+                 data_selection: Optional[List[Union[List[str], str]]] = None,
                  **dataset_conf):
         """
-        This initialization function reads the main body of the data instances into its memory. The main body is used to
+        This initialization function reads the main body of the data instances into the memory. The main body is used to
         extract individual data instances from the disk to form a batch during model training or testing.
 
         The hook dataset_init_fn() is executed here after reading the main body of data instances.
 
         Args:
-            main_data: Dict[str, str or List[str]]
-                The main body dictionary of the data instances used in this Dataset object. In each key-value item, the
-                key is the name of the data variable and the value is the absolute path of the target 'idx2data' files.
-                The value can be given as a single path string or a list of multiple path strings.
+            main_data (Dict[str, Union[str, List[str]]]):
+                Dictionary containing data instances used in the Dataset object. Each key-value pair consists of a data
+                variable name and an absolute path to the corresponding 'idx2data' file. The value can be a single path string
+                or a list of multiple path strings.
+
+            data_selection (Optional[List[Union[List[str], str]]]):
+                Strategies for data selection to limit used data instances during iterator initialization. Multiple strategies
+                can be specified in a list. Each data selection strategy should be either a bi-list (non-meta strategy)
+                or tri-list (meta strategy). Refer to the function docstring of data_selection() for more details on
+                the selection strategies.
+
+            **dataset_conf: Additional configuration arguments for custom Dataset initialization.
+
             data_selection: List[List[str] or str] = None
                 The strategies for data selection during the iterator initialization to shrink the used data instances.
                 Multiple strategies can be specified in a list. Each data selection strategy must be either a bi-list
@@ -64,175 +72,171 @@ class Dataset(torch.utils.data.Dataset, ABC):
                         1. 'min': Select the data instances whose metadata is smaller than the threshold.
                         2. 'max': Select the data instances whose metadata is larger than the threshold.
                         3. 'middle': Remove the data instances whose metadata is the largest and smallest.
-            **dataset_conf:
-                The configuration arguments for customized Dataset initialization.
         """
-        # For declaring some member variables in the initialization function, it's mandatory to write the code
-        # 'super(Dataset, self).__init__()' here.
         super(Dataset, self).__init__()
 
-        # --- 1. Loading the Main Body of Data Instances from the Disk to the Memory --- #
-        assert isinstance(main_data, Dict), \
-            f"main_data must be given in Dict, but got type(main_data)={type(main_data)}"
+        # Validate main_data
+        if not isinstance(main_data, Dict):
+            raise TypeError(f"Expected main_data to be a Dict, but got {type(main_data)}")
+
+        # Load main body of data instances
         self.main_data, self.data_index = read_idx2data_file_to_dict(main_data)
 
-        # --- 2. Executing the Data Selection --- #
-        # select a part of data instances to generate batches if specified
+        # Apply data selection if specified
         if data_selection is not None:
+            # Ensure data_selection is a list of lists
             if sum([isinstance(i, List) for i in data_selection]) != len(data_selection):
                 data_selection = [data_selection]
 
-            # loop each data selection strategy in order of the input list
+            # Iterate through each selection strategy
             for i in data_selection:
-                # non-meta selection
+                # Non-meta selection
                 if len(i) == 2:
                     selection_mode, selection_num, meta_info = i[0], i[1], None
-                    assert selection_mode in ['random', 'order', 'rev_order'], \
-                        f"If the metadata is not given in data_selection, the selection mode must be one of " \
-                        f"['random', 'order', 'rev_order'], but got {selection_mode}"
-                # meta-required selection
+                    if selection_mode not in ['random', 'order', 'rev_order']:
+                        raise ValueError(
+                            f"For non-meta selection, mode must be 'random', 'order', or 'rev_order'. Got {selection_mode}")
+                # Meta-required selection
                 elif len(i) == 3:
                     selection_mode, selection_num, meta_info = i[0], i[1], i[2]
-                    assert selection_mode in ['min', 'max', 'middle', 'group'], \
-                        f"If the metadata is given in data_selection, the selection mode must be one of " \
-                        f"['min', 'max', 'middle', 'group'], but got {selection_mode}"
+                    if selection_mode not in ['min', 'max', 'middle', 'group']:
+                        raise ValueError(
+                            f"For meta selection, mode must be 'min', 'max', 'middle', or 'group'. Got {selection_mode}")
                 else:
-                    raise ValueError("The elements of data_selection should be either a bi-list or tri-list, "
-                                     f"but got {i}!")
+                    raise ValueError("Each element of data_selection should be either a 2-element or 3-element list")
 
-                # for the strings whose contents are not numerical, turn into a list for identification
+                # Validate selection_num
                 if isinstance(selection_num, str):
+                    # Non-numerical contents are turned into a list for identification
                     if not selection_num.isdigit() and not selection_num.replace('.', '').isdigit():
+                        assert selection_mode == 'group'
                         selection_num = [selection_num]
 
-                assert (isinstance(selection_num, float) and 0 < selection_num < 1) or \
-                       (isinstance(selection_num, int) and -len(self.data_index) < selection_num < 0) or \
-                       isinstance(selection_num, (str, List)), \
-                    f"Data selection number should be either a float number between 0 and 1, a negative integer, " \
-                    f", a string, or a list of strings. But got selection_num={selection_num}"
+                valid_selection_num = (
+                        (isinstance(selection_num, float) and 0 < selection_num < 1) or
+                        (isinstance(selection_num, int) and -len(self.data_index) < selection_num < 0) or
+                        isinstance(selection_num, (str, List))
+                )
+                if not valid_selection_num:
+                    raise ValueError(
+                        "Data selection number should be a float number between 0 and 1, a negative integer, "
+                        "a string, or a list of strings")
 
-                if isinstance(selection_num, (int, float)) and selection_num < 0:
-                    assert -selection_num < len(self.data_index), \
-                        "The data selection amount cannot be larger than the total number of data instances. " \
-                        f"You have {len(self.data_index)} instances but give selection_num={-selection_num}."
+                if (isinstance(selection_num, (int, float)) and selection_num < 0) and \
+                        (-selection_num >= len(self.data_index)):
+                        raise ValueError("Data selection amount cannot be larger than total number of data instances")
 
-                # portion the old self.sorted_data to get the new self.sorted_data
+                # Apply the data selection
                 self.data_index = self.data_selection(self.data_index, selection_mode, selection_num, meta_info)
 
-        # --- 3. Customized Initialization for Individual Dataset Subclasses --- #
+        # Custom initialization for subclasses
         self.data_len = self.data_len_register_fn(self.main_data)
         self.dataset_init_fn(**dataset_conf)
 
     @staticmethod
-    def data_len_register_fn(main_data: Dict[str, Dict[str, str]]) -> Dict[str, int or float] or None:
+    def data_len_register_fn(main_data: Dict[str, Dict[str, str]]) -> Union[Dict[str, Union[int, float]], None]:
         """
-        This static hook function registers the default information about the length of each data instance.
-        This hook is not mandatory to be overridden and the original one in the base class does nothing.
-        If you want to decide the data length on-the-fly, please override this hook function and put your logic here.
+            Static hook function that registers default information about the length of each data instance.
 
+            By default, this function does nothing. If you need to decide the data length on-the-fly, override this function
+            with your own implementation.
+
+            Args:
+                main_data (Dict[str, Dict[str, str]]): Dictionary of main data from which length information is derived.
+
+            Returns:
+                Dict[str, Union[int, float]] or None: Dictionary mapping data instances to their lengths, or None if not implemented.
         """
         return None
 
     def dataset_init_fn(self, **dataset_conf):
         """
-        This hook function initializes the customized part of your dataset implementations.
-        This hook is not mandatory to be overridden and the original one in the base class does nothing.
-        If your Dataset subclass has some customized part, please override this hook function and put your logic here.
+            Hook function that initializes the custom parts of dataset implementations.
 
-        Args:
-            **dataset_conf:
-                The arguments used for the customized initialization of your Dataset subclass.
+            By default, this function does nothing. If your Dataset subclass has custom parts, override this function
+            with your own implementation.
 
+            Args:
+                **dataset_conf: Arguments for the custom initialization of the Dataset subclass.
         """
         pass
 
     @staticmethod
-    def data_selection(data_index: List[str], selection_mode: str, selection_num: float or int or str,
-                       meta_info: List[str] or str = None) -> List:
+    def data_selection(data_index: List[str], selection_mode: str, selection_num: Union[float, int, str],
+                       meta_info: Union[List[str], str, None] = None) -> List:
         """
-        This function performs the data selection by the input selection strategy arguments.
-        A new batching view of the selected data instances will be returned.
+        Selects data instances based on the provided selection strategy.
+
+        Returns a new list of selected data instances.
 
         Args:
-            data_index: List[str]
-                The list of data instance indices before data selection.
-            selection_num: float or int or str
-                This argument has the different usage with different data types.
-                1. float type:
-                    Float value represents the relative number of data instances to be selected.
-                    If selection_num is given as a float number, it must be between 0 and 1.
-                2. int type:
-                    Integer value represents the absolute number of data instances to be selected. If selection_num is
-                    given as an interger number, it must be negative (its absolute value will be taken).
-                3. str type:
-                    String value represents the metadata threshold used to select the data instances.
-                    Only 'min' and 'max' modes support string _selection_num_.
-                    Note: You can use the !-suffixed representer `!str` to convert a float or integer number to a
-                    string in your .yaml file.
+            data_index (List[str]):
+                List of data instance indices prior to data selection.
+            selection_num (Union[float, int, str]):
+                Indicates how many data instances to select, varying with its data type.
+                float: Represents the relative number of data instances to select (between 0 and 1).
+                int: Represents the absolute number of data instances to select. If negative, its absolute value is taken.
+                str: Represents the metadata threshold for data selection. Only 'min' and 'max' modes support this.
+                    You can use the !-suffixed representer `!str` to convert a float or integer number to a string in your .yaml file.
             selection_mode: str
-                The mode indicating how the data instances are selected.
-                Selection modes are grouped by different types of data selection strategies.
+                Defines the selection strategy:
                 1. non-meta strategy:
-                  The rule-based selection strategies that don't involve metadata.
-                  Currently, available non-meta selection modes include:
-                     1. 'order': Select the given number of data instances from the beginning.
-                     2. 'rev_order': Select the given number of data instances from the end.
-                     3. 'random': Randomly select the given number of data instances.
-                     Note: You should keep the same
-                     random seeds for all the GPU processes in the DDP mode to ensure that the selected data instances
-                     are the same in each process. In this case, please set the 'same_proc_seed' argument to True in
-                     your configuration given to speechain.runner.py.
+                   Rule-based selection strategies that do not involve metadata. Includes:
+                     1. 'order': Selects the given number of data instances from the beginning.
+                     2. 'rev_order': Selects the given number of data instances from the end.
+                     3. 'random': Selects the given number of data instances randomly.
+                         Note: You should keep the same random seeds for all the GPU processes in the DDP mode to ensure
+                         that the selected data instances are the same in each process. In this case, please set the
+                         'same_proc_seed' argument to True in your configuration given to speechain.runner.py.
                 2. meta strategy:
-                  The selection strategies that involves metadata.
-                  Currently, available meta selection modes include:
-                   1. 'min': Select the data instances whose metadata is smaller than the threshold.
-                   2. 'max': Select the data instances whose metadata is larger than the threshold.
-                   3. 'middle': Remove the data instances whose metadata is the largest and smallest.
-            meta_info: str = None
-                The path where the metadata information used for selection is placed.
+                   Selection strategies that involve metadata. Includes:
+                     1. 'min': Selects the data instances whose metadata is smaller than the threshold.
+                     2. 'max': Selects the data instances whose metadata is larger than the threshold.
+                     3. 'middle': Removes the data instances whose metadata is the largest and smallest.
+            meta_info (Union[List[str], str, None], optional):
+                Path to metadata information used for selection. Defaults to None.
 
         Returns: List[str]
-            A list of indices of the selected data instances
+            List[str]: A list of selected data instance indices.
 
         """
-        # turn into numpy.array for clipping operations
+        # Convert data_index to numpy.array for easier manipulation
         sorted_data = np.array(data_index, dtype=str)
 
-        # for non-meta selection strategies
+        # Non-metadata selection strategies
         if meta_info is None:
             assert isinstance(selection_num, (int, float))
-            # 0 < selection_num < 1 means that we relatively select data instances by a percentage number
-            # selection_num < 0 means that we absolutely select data instances by the given value
+            # Determine absolute or relative number of instances to select
             selection_num = int(-selection_num if selection_num < 0 else len(sorted_data) * selection_num)
-            # 'order' means we select the data instances from the beginning to the end
+            # Selection from the beginning
             if selection_mode == 'order':
                 sorted_data = sorted_data[:selection_num]
-            # 'rev_order' means we select the data instances from the end to the beginning
+            # Selection from the end
             elif selection_mode == 'rev_order':
                 sorted_data = sorted_data[-selection_num:]
-            # 'random' means we randomly select the data instances
+            # Random selection
             elif selection_mode == 'random':
                 sorted_data = sorted_data[np.random.randint(0, len(sorted_data), selection_num)]
 
-        # for meta-required selection strategies
+        # Metadata-based selection strategies
         else:
-            # read the metadata information for data selection
+            # Load metadata information
             meta_info = load_idx2data_file(meta_info)
             meta_info = np.array([[key, value] for key, value in meta_info.items()])
-            # initialize the sorted indices and metadata values of the data instances
+            # Initialize sorted indices and metadata values
             try:
                 meta_sorted_data = meta_info[:, 0][np.argsort(meta_info[:, 1].astype(float))]
                 meta_sorted_value = np.sort(meta_info[:, 1].astype(float))
-            # ValueError means the second column cannot be converted into float numbers
+            # Catch conversion errors
             except ValueError:
                 meta_sorted_data = meta_info[:, 0]
                 meta_sorted_value = meta_info[:, 1]
 
-            # retain only the intersection of data instances in case that there is an index mismatch
+            # Only retain data instances present in both datasets
             retain_flags = np.in1d(meta_sorted_data, sorted_data)
             meta_sorted_data, meta_sorted_value = meta_sorted_data[retain_flags], meta_sorted_value[retain_flags]
 
-            # select a certain amount of data instances
+            # Process selection based on provided selection_num
             if isinstance(selection_num, (int, float)):
                 # 0 < selection_num < 1 means that we relatively select data instances by a percentage number
                 # selection_num < 0 means that we absolutely select data instances by the given value
@@ -273,12 +277,12 @@ class Dataset(torch.utils.data.Dataset, ABC):
                     [True if value not in selection_num else False for value in meta_sorted_value]]
 
             else:
-                raise RuntimeError
+                raise ValueError("Invalid type for selection_num.")
 
-            # remove the undesired instances from the accessible instance indices
+            # Remove undesired instances from sorted_data
             sorted_data = np.setdiff1d(sorted_data, removed_sorted_data)
 
-        # return the list of indices
+        # Return selected indices as list
         return sorted_data.tolist()
 
     def get_data_index(self) -> List[str]:

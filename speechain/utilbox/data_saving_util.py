@@ -9,8 +9,8 @@ from speechain.utilbox.tensor_util import to_cpu
 
 
 def save_data_by_format(file_format: str, save_path: str, file_name_list: Union[List[str] or str],
-                        file_content_list: Union[List, np.ndarray, torch.Tensor],
-                        group_ids: List[str] = None, sample_rate: int = None):
+                        file_content_list: Union[List[Union[np.ndarray, torch.Tensor]], np.ndarray, torch.Tensor],
+                        group_ids: List[str] or str = None, sample_rate: int = None):
     """
     Save data in the specified format to disk.
 
@@ -23,7 +23,7 @@ def save_data_by_format(file_format: str, save_path: str, file_name_list: Union[
             A list of strings with the names of the files to be saved.
         file_content_list (List):
             A list with the content of the files to be saved.
-        group_ids (List[str], optional):
+        group_ids (List[str] or str, optional):
             A list of strings with the group ids of the files. If provided, it will be used to create a subdirectory
             for each group of files inside the save_path. Defaults to None.
         sample_rate (int, optional):
@@ -50,6 +50,10 @@ def save_data_by_format(file_format: str, save_path: str, file_name_list: Union[
         file_name_list = [file_name_list]
     if not isinstance(file_content_list, List):
         file_content_list = [file_content_list]
+    assert len(file_name_list) == len(file_content_list)
+
+    if isinstance(group_ids, str):
+        group_ids = [group_ids for _ in file_name_list]
 
     # loop over each file name and content pair
     for i, (name, content) in enumerate(zip(file_name_list, file_content_list)):

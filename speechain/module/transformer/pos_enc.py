@@ -22,8 +22,8 @@ class PositionalEncoding(Module):
     def module_init(self,
                     posenc_type: str = 'mix',
                     d_model: int = 512,
-                    emb_scale: bool = True,
-                    emb_layernorm: bool = False,
+                    emb_scale: bool = False,
+                    emb_layernorm: bool = True,
                     posenc_scale: bool = False,
                     init_alpha: float = 1.0,
                     max_len: int = 5000,
@@ -105,7 +105,7 @@ class PositionalEncoding(Module):
         if hasattr(self, 'alpha'):
             self.alpha.data = torch.tensor(self.init_alpha)
 
-    def update_posenc(self, max_len: int, d_model: int):
+    def update_posenc(self, max_len: int, d_model: int = None):
         """
 
         Args:
@@ -113,6 +113,9 @@ class PositionalEncoding(Module):
             d_model:
 
         """
+        if d_model is None:
+            d_model = self.d_model
+
         # positional encoding calculation
         position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
         div_term = torch.exp(
@@ -136,7 +139,7 @@ class PositionalEncoding(Module):
         # here register_buffer() allows posenc to be automatically put onto GPUs as a buffer member
         self.register_buffer('posenc', posenc.unsqueeze(0))
 
-    def forward(self, emb_feat):
+    def forward(self, emb_feat: torch.Tensor):
         """
         Embedded feature
             -> LayerNorm(Embedded feature)

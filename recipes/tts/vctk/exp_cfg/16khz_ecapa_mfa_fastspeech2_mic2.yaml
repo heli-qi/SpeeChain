@@ -1,0 +1,280 @@
+##############################################################################
+# Model: FastSpeech2 with ECAPA speaker embedding
+# Tokens: Phoneme by MFA (pretrained model: librispeech_train-clean-100)
+# losses: L1 for mel prediction, L2 for variance prediction
+# Training: train-clean-100 of 22.05khz-LibriTTS
+# Validation: dev-clean of 22.05khz-LibriTTS
+# Testing: test_clean of 22.05khz-LibriTTS
+# Authors: Heli Qi
+# Required GPUs: 1 × NVIDIA RTX A6000 (49GB)
+# Required Time: up to 64 hours
+# ############################################################################
+
+
+###################################
+# Experiment Parameters and setup #
+###################################
+# dataset-related
+# if your dumped dataset is outside the toolkit folder, please change dataset_path. There should be a folder named 'libritts' in dataset_path
+dataset_path: datasets/
+dataset: vctk
+train_set: train
+valid_set: valid
+
+# waveform-related
+wav_format: wav16000
+sample_rate: 16000
+hop_length: 256
+
+# tokenizer-related
+token_type: mfa
+mfa_model: librispeech_train-clean-100
+token_num: stress
+txt_format: no-punc # used for testing by the G2P package
+
+# batch-related
+batch_len: 1e7
+
+# model-related
+reduction_factor: 1
+spk_emb_model: ecapa
+spk_emb_dim_pretrained: 192
+layer_num: 4
+head_num: 2
+d_model: 384
+fdfwd_dim: 1536
+trmf_dropout: 0.2
+conv_dropout: 0.5
+
+# optimizer-related
+warmup_steps: 8000
+
+# running-related
+seed: 0
+train_num_workers: 10
+valid_num_workers: 5
+pin_memory: True
+non_blocking: True
+
+# gradient-related
+accum_grad: 1
+ft_factor: 1.0
+grad_clip: 1.0
+
+# multi-GPU-related
+ngpu: 1 # please change ngpu based on the situation of your machine
+gpus: null # null means the GPUs with the largest free memory will be used
+
+# training-related
+train: True
+num_epochs: 500
+early_stopping_patience: 20
+best_model_selection: !tuple (train, loss, min, 10)
+last_model_number: 10
+valid_per_epochs: 10
+
+# snapshot-related
+visual_snapshot_number: 3
+visual_snapshot_interval: 10
+
+# testing-related
+test: False
+test_model: 10_train_loss_average
+
+# This argument is shared by data_cfg and train_cfg
+data_root: !ref <dataset_path>/<dataset>/data
+
+
+
+##############################
+# Data Loading Configuration #
+##############################
+data_cfg:
+  train:
+    type: block.BlockIterator
+    conf:
+      dataset_type: speech_text.SpeechTextDataset
+      dataset_conf:
+        main_data:
+          feat: !ref <data_root>/<wav_format>/<train_set>/idx2wav
+          text: !ref <data_root>/<token_type>/<mfa_model>/<train_set>/<token_num>/idx2text
+          duration: !ref <data_root>/<token_type>/<mfa_model>/<train_set>/<token_num>/idx2duration
+          spk_feat: !ref <data_root>/<wav_format>/<train_set>/idx2<spk_emb_model>_spk_feat
+        data_selection:
+          - group
+          - mic2
+          - !ref <data_root>/<wav_format>/<train_set>/idx2mic
+
+        pitch_conf:
+          hop_length: !ref <hop_length>
+        sample_rate: !ref <sample_rate>
+
+      data_len: !ref <data_root>/<wav_format>/<train_set>/idx2wav_len
+      shuffle: True
+      is_descending: True
+      batch_len: !ref <batch_len>
+
+  valid:
+    type: abs.Iterator
+    conf:
+      dataset_type: speech_text.SpeechTextDataset
+      dataset_conf:
+        main_data:
+          feat: !ref <data_root>/<wav_format>/<valid_set>/idx2wav
+          text: !ref <data_root>/<token_type>/<mfa_model>/<valid_set>/<token_num>/idx2text
+          duration: !ref <data_root>/<token_type>/<mfa_model>/<valid_set>/<token_num>/idx2duration
+          spk_feat: !ref <data_root>/<wav_format>/<valid_set>/idx2<spk_emb_model>_spk_feat
+        data_selection:
+          - group
+          - mic2
+          - !ref <data_root>/<wav_format>/<valid_set>/idx2mic
+
+        pitch_conf:
+          hop_length: !ref <hop_length>
+        sample_rate: !ref <sample_rate>
+
+      shuffle: False
+      data_len: !ref <data_root>/<wav_format>/<valid_set>/idx2wav_len
+
+  test:
+    test:
+      type: abs.Iterator
+      conf:
+        dataset_type: speech_text.RandomSpkFeatDataset
+        dataset_conf:
+          main_data:
+            text: !ref <data_root>/g2p/test/<token_num>/<txt_format>/idx2text
+          data_selection:
+            - group
+            - mic2
+            - !ref <data_root>/<wav_format>/test/idx2mic
+
+          spk_feat: !ref <data_root>/<wav_format>/<train_set>/idx2<spk_emb_model>_spk_feat
+          use_aver_feat: True
+
+        shuffle: False
+        data_len: !ref <data_root>/g2p/test/<token_num>/<txt_format>/idx2text_len
+
+
+
+####################################
+# Model Construction Configuration #
+####################################
+train_cfg:
+  model:
+    model_type: nar_tts.FastSpeech2
+    model_conf:
+      customize_conf:
+        sample_rate: !ref <sample_rate>
+        token_type: !ref <token_type>
+        token_path: !ref <data_root>/<token_type>/<mfa_model>/<train_set>/<token_num>
+        reduction_factor: !ref <reduction_factor>
+
+    module_conf:
+      enc_emb:
+        type: emb
+        conf:
+          embedding_dim: !ref <d_model>
+
+      encoder:
+        type: transformer
+        conf:
+          posenc_dropout: !ref <trmf_dropout>
+          posenc_scale: true
+          emb_scale: false
+          emb_layernorm: true
+          d_model: !ref <d_model>
+          num_heads: !ref <head_num>
+          num_layers: !ref <layer_num>
+          att_dropout: !ref <trmf_dropout>
+          fdfwd_dim: !ref <fdfwd_dim>
+          fdfwd_type: conv
+          fdfwd_kernel: 3
+          fdfwd_dropout: !ref <trmf_dropout>
+          res_dropout: !ref <trmf_dropout>
+          layernorm_first: true
+
+      duration_predictor:
+        type: conv1d
+        conf:
+          conv_dims: !list [256, -1]
+          conv_kernel: 3
+          conv_dropout: !ref <conv_dropout>
+
+      pitch_predictor:
+        type: conv1d
+        conf:
+          conv_dims: !list [256, -1, -1, -1, -1]
+          conv_kernel: 5
+          conv_dropout: !ref <conv_dropout>
+          conv_emb_kernel: 1
+          conv_emb_dropout: 0.0
+
+      energy_predictor:
+        type: conv1d
+        conf:
+          conv_dims: !list [256, -1]
+          conv_kernel: 3
+          conv_dropout: !ref <conv_dropout>
+          conv_emb_kernel: 1
+          conv_emb_dropout: 0.0
+
+      feat_frontend:
+        type: mel_fbank
+        conf:
+          sr: !ref <sample_rate>
+          mag_spec: True
+          hop_length: !ref <hop_length>
+          win_length: 1024
+          n_mels: 80
+          fmin: 0
+          fmax: 8000
+          log_base: null
+          clamp: 1e-5
+
+      feat_normalize: True
+      pitch_normalize: True
+      energy_normalize: True
+
+      spk_emb:
+        spk_emb_dim_pretrained: !ref <spk_emb_dim_pretrained>
+        spk_emb_comb: concat
+
+      decoder:
+        type: transformer
+        conf:
+          posenc_dropout: !ref <trmf_dropout>
+          posenc_scale: true
+          emb_scale: false
+          emb_layernorm: true
+          d_model: !ref <d_model>
+          num_heads: !ref <head_num>
+          num_layers: !ref <layer_num>
+          att_dropout: !ref <trmf_dropout>
+          fdfwd_dim: !ref <fdfwd_dim>
+          fdfwd_type: conv
+          fdfwd_kernel: 3
+          fdfwd_dropout: !ref <trmf_dropout>
+          res_dropout: !ref <trmf_dropout>
+          layernorm_first: true
+
+      dec_postnet:
+        type: conv1d
+        conf:
+          conv_dims: !list [256, -1, -1, -1, 0]
+          conv_kernel: 5
+          conv_batchnorm: true
+          conv_activation: Tanh
+          conv_dropout: !ref <conv_dropout>
+
+
+  optim_sches:
+    type: noam.Noamlr
+    conf:
+      optim_type: Adam
+      optim_conf:
+        betas:
+          - 0.9
+          - 0.98
+        eps: 1.0e-9
+      warmup_steps: !ref <warmup_steps>

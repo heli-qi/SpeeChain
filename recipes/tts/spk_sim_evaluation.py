@@ -9,8 +9,9 @@ from typing import List, Union
 from speechain.utilbox.import_util import get_idle_gpu
 from speechain.utilbox.type_util import str2list
 from speechain.utilbox.data_loading_util import parse_path_args, load_idx2data_file, search_file_in_subfolder, read_data_by_path
-from speechain.utilbox.spk_util import extract_spk_feat, average_spk_feat
+from speechain.utilbox.spk_util import extract_spk_feat
 from speechain.utilbox.md_util import save_md_report
+
 
 def parse():
     parser = argparse.ArgumentParser(description='params')
@@ -22,9 +23,9 @@ def parse():
                              "automatically found out and used as the reference. The hypo 'idx2xxx_wav' and refer "
                              "'idx2wav' will be matched by the data indices. You can also directly specify the path of "
                              "your target 'spk2aver_xxx_spk_feat' file by this argument.")
-    parser.add_argument("--spk_emb_model_list", type=str2list, default='ecapa',
+    parser.add_argument("--spk_emb_model_list", type=str2list, default=['ecapa', 'xvector'],
                         help="Speaker recognition model to use for extracting speaker embeddings. "
-                             "Must be 'xvector' or 'ecapa' or both of them. (default: ecapa)")
+                             "Must be 'xvector' or 'ecapa' or both of them. (default: ['ecapa', 'xvector'])")
     parser.add_argument("--ncpu", type=int, default=8,
                         help="Number of CPU processes for extracting speaker embeddings. "
                              "Ignored if 'ngpu' is provided. (default: 8)")
@@ -34,8 +35,39 @@ def parse():
 
     return parser.parse_args()
 
-def main(hypo_path: str, refer_path: str, spk_emb_model_list: Union[List[str], str] = 'ecapa',
-         downsample_package: str = 'librosa', batch_size: int = 10, ncpu: int = 8, ngpu: int = 0):
+def main(hypo_path: str, refer_path: str, spk_emb_model_list: Union[List[str], str] = ['ecapa', 'xvector'],
+         batch_size: int = 10, ncpu: int = 8, ngpu: int = 0):
+    """
+        Processes the data from a given path using specified speaker embedding models, computes cosine similarity
+        between reference and hypothesis features, and finally saves the results in Markdown format.
+
+        Arguments:
+            hypo_path (str):
+                The path to the hypothesis data. It can be either a directory containing multiple files or a single file.
+            refer_path (str):
+                The path to the reference data. Similar to hypo_path, it can be a directory or a file.
+            spk_emb_model_list (Union[List[str], str], optional):
+                A list of speaker embedding models to use. The models should be either 'ecapa' or 'xvector'.
+                Defaults to ['ecapa', 'xvector'].
+            batch_size (int, optional):
+                The size of the batch to use for feature extraction. Defaults to 10.
+            ncpu (int, optional):
+                The number of CPU cores to use for the processing. Defaults to 8.
+            ngpu (int, optional):
+                The number of GPU cores to use for the processing. Defaults to 0, meaning no GPU is used.
+
+        Notes:
+            For each speaker embedding model, the function calculates the cosine similarity between the average feature
+            vectors of the reference and hypothesis for each speaker. The results are then saved in a markdown file named
+            '[model_name]_similarity_results.md' in the same directory as the input hypothesis data.
+
+            The function is multi-process friendly and will automatically distribute the work across the specified number
+            of CPU cores or GPU cores.
+
+        Raises:
+            AssertionError: If the provided speaker embedding models are not 'ecapa' or 'xvector'.
+            AssertionError: If the provided paths do not exist or do not contain the required data.
+    """
 
     # --- 1. Argument Preparation stage --- #
     # argument checking
@@ -84,33 +116,32 @@ def main(hypo_path: str, refer_path: str, spk_emb_model_list: Union[List[str], s
         hypo_idx2wav_list = [hypo_path]
 
     for hypo_idx2wav in hypo_idx2wav_list:
-        exp_folder_path = os.path.join(os.path.dirname(hypo_idx2wav))
+        exp_folder_path = os.path.dirname(hypo_idx2wav)
+        # read the source files from a string into a Dict, str -> Dict[str, str]
         hypo_idx2spk = load_idx2data_file(os.path.join(exp_folder_path, 'idx2ref_spk'))
-        spk_list = sorted(set(hypo_idx2spk.values()))
+        hypo_idx2wav = load_idx2data_file(hypo_idx2wav).items()
 
-        # read the source idx2wav file into a Dict, str -> Dict[str, str]
-        hypo_idx2wav = list(load_idx2data_file(hypo_idx2wav).items())
-        func_args = [[dict(hypo_idx2wav[i::n_proc]), device_list[i]] for i in range(n_proc)]
+        spk_list, spk2wav_dict = sorted(set(hypo_idx2spk.values())), {}
+        for spk in spk_list:
+            if spk not in spk2wav_dict.keys():
+                spk2wav_dict[spk] = {idx: wav for idx, wav in hypo_idx2wav if hypo_idx2spk[idx] == spk}
 
+        func_args = [[dict(list(spk2wav_dict.items())[i::n_proc]), device_list[i]] for i in range(n_proc)]
         for spk_emb_model in spk_emb_model_list:
             if not os.path.exists(os.path.join(exp_folder_path, f'{spk_emb_model}_similarity_results.md')):
                 print(f'Start to create {spk_emb_model}_similarity_results.md in {exp_folder_path}!')
 
                 # initialize the arguments for the execution function
-                extract_spk_feat_func = partial(extract_spk_feat, spk_emb_model=spk_emb_model,
-                                                downsample_package=downsample_package, batch_size=batch_size)
+                extract_spk_feat_func = partial(extract_spk_feat, spk_emb_model=spk_emb_model, batch_size=batch_size)
 
                 # start the executing jobs
                 with Pool(n_proc) as executor:
                     extraction_results = executor.starmap(extract_spk_feat_func, func_args)
 
                 # gather the results from all the processes
-                hypo_idx2spk_feat = {}
-                for _hypo_idx2spk_feat in extraction_results:
-                    hypo_idx2spk_feat.update(_hypo_idx2spk_feat)
-
-                # initialize the arguments for the execution function
-                hypo_spk2aver_spk_feat = average_spk_feat(spk_list, hypo_idx2spk, hypo_idx2spk_feat)
+                hypo_spk2aver_spk_feat = {}
+                for _, _hypo_spk2aver_spk_feat in extraction_results:
+                    hypo_spk2aver_spk_feat.update(_hypo_spk2aver_spk_feat)
 
                 # pick up the corresponding ground-truth in refer_data_per_model[spk_emb_model]
                 refer_spk2aver_spk_feat, key_match_flag, hypo_spk_keys = None, False, set(hypo_spk2aver_spk_feat.keys())
@@ -141,11 +172,5 @@ def main(hypo_path: str, refer_path: str, spk_emb_model_list: Union[List[str], s
                                save_path=exp_folder_path, desec_sort=False)
 
 if __name__ == '__main__':
-    # args = parse()
-    # main(**vars(args))
-
-    main(
-        hypo_path='recipes/tts/libritts/train-clean-100/exp',
-        refer_path='datasets/libritts/data/wav16000/dev-clean',
-        ngpu=1
-    )
+    args = parse()
+    main(**vars(args))

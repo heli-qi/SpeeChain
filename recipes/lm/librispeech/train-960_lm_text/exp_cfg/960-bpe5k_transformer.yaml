@@ -7,8 +7,8 @@
 # Testing: test-clean & test-other of LibriSpeech
 # Authors: Heli Qi
 # Required GPUs: 2 × NVIDIA RTX A6000 (49GB)
-# Required Time: up to 3 days 8 hours
-# Expected Perplexity performance (test-clean / test-other): 45.80 / 49.95
+# Required Time: up to
+# Expected Perplexity performance (test-clean / test-other):  /
 # ############################################################################
 
 
@@ -28,7 +28,7 @@ token_type: sentencepiece
 token_num: bpe5k
 
 # batch-related values
-batch_len: 4.5e4
+batch_len: 6e4
 
 # model-related
 label_smoothing: 0.0
@@ -57,6 +57,7 @@ grad_clip: 5.0
 # multi-GPU-related
 ngpu: 2 # please change ngpu based on the situation of your machine
 gpus: null # null means the GPUs with the largest free memory will be used
+ignore_train_exception: True
 
 # training-related
 train: True
@@ -72,7 +73,7 @@ visual_snapshot_interval: 5
 
 # testing-related
 test: False
-test_model: !ref 5_valid_text_ppl_average
+test_model: valid_text_ppl_best
 
 # These arguments are shared by data_cfg and train_cfg
 data_root: !ref <dataset_path>/librispeech/data
@@ -149,13 +150,14 @@ train_cfg:
         conf:
           posenc_dropout: !ref <dropout>
           posenc_scale: false
-          emb_layernorm: true
+          emb_layernorm: false
           emb_scale: false
           d_model: !ref <d_model>
           num_heads: !ref <num_heads>
           num_layers: !ref <enc_layer_num>
           att_dropout: !ref <dropout>
           fdfwd_dim: !ref <fdfwd_dim>
+          fdfwd_activation: GELU
           fdfwd_dropout: !ref <dropout>
           res_dropout: !ref <dropout>
           layernorm_first: true

@@ -39,6 +39,41 @@ def parse():
     return parser.parse_args()
 
 
+def convert_phns_to_vocab(phn_list: List[str]):
+    """
+        Converts a list of phonemes to a vocabulary list, sorted by frequency.
+
+        Args:
+            phn_list (List[str]):
+                A list of phonemes.
+
+        Returns:
+            List[str]:
+                A list of unique phonemes sorted by frequency, with additional tokens for special purposes.
+
+        This function calculates the frequency of each phoneme in the input list, sorts them in descending order, and
+        returns a new list with the unique phonemes along with some special tokens for compatibility with
+        autoregressive TTS models.
+    """
+    # Collect the occurrence frequency of each phoneme
+    phn2freq = sorted(Counter(phn_list).items(), key=lambda x: x[1], reverse=True)
+
+    # Extract only the phonemes from the frequency list
+    phn_list = [phn for phn, _ in phn2freq]
+
+    # Remove special tokens: '<blank>', '<unk>', and '<sos/eos>' if present, as they will be added later
+    if '<unk>' in phn_list:
+        phn_list.remove('<unk>')
+    if '<blank>' in phn_list:
+        phn_list.remove('<blank>')
+    if '<sos/eos>' in phn_list:
+        phn_list.remove('<sos/eos>')
+
+    # Add special tokens: '<blank>', '<unk>', and '<sos/eos>'
+    # <sos/eos> is added here for the compatibility with autoregressive TTS model
+    return ["<blank>"] + phn_list + ['<unk>', '<sos/eos>']
+
+
 def dump_subset_metadata(dataset_path: str, save_path: str, subset_name: str, retain_stress: bool,
                          idx2text: Dict, idx2duration: Dict):
     """
@@ -82,14 +117,7 @@ def dump_subset_metadata(dataset_path: str, save_path: str, subset_name: str, re
     subset_phns = []
     for text in subset_idx2text.values():
         subset_phns += text
-    # collect the occurrence frequency of each phoneme
-    phn2freq = sorted(Counter(subset_phns).items(), key=lambda x: x[1], reverse=True)
-    subset_phns = [phn for phn, _ in phn2freq]
-    if '<unk>' in subset_phns:
-        subset_phns.remove('<unk>')
-    # <sos/eos> is added here for the compatibility with autoregressive TTS model
-    subset_phn_vocab = ["<blank>"] + subset_phns + ['<unk>', '<sos/eos>']
-
+    subset_phn_vocab = convert_phns_to_vocab(subset_phns)
     vocab_path = os.path.join(subset_path, 'vocab')
     np.savetxt(vocab_path, subset_phn_vocab, fmt="%s")
     print(f"Phoneme vocabulary has been successfully saved to {vocab_path}.")
@@ -160,6 +188,68 @@ def cal_duration_by_tg(tg_file_list: List[str], retain_stress: bool):
 
     return idx2text, idx2duration
 
+
+def combine_subsets(subset_path_list: List[str], new_subset_name: str, save_path: str):
+    """
+        Combines the metadata of multiple subsets into a single new subset.
+
+        Args:
+            subset_path_list (List[str]):
+                A list of paths to the individual subset directories.
+            new_subset_name (str):
+                The name of the new combined subset directory.
+            save_path (str):
+                The path where the new combined subset directory will be saved.
+
+        This function computes the intersection of directories from the input subsets, merges their metadata,
+        calculates the phoneme vocabulary, and saves the new combined metadata into the specified save path.
+    """
+    # Get directory content for each subset path
+    dir_content_list = [os.listdir(subset_path) for subset_path in subset_path_list]
+
+    # Calculate the intersection of directories
+    exclu_folder_set = set(dir_content_list[0])
+    for lst in dir_content_list[1:]:
+        exclu_folder_set.intersection_update(set(lst))
+    exclu_folder_list = list(exclu_folder_set)
+
+    # Initialize metadata dictionary
+    meta_data_dict = {folder: {'idx2duration': {}, 'idx2text': {}, 'idx2text_len': {}} for folder in exclu_folder_list}
+
+    # Merge metadata from all subsets
+    for folder in exclu_folder_list:
+        for subset_path in subset_path_list:
+            curr_metadata_path = os.path.join(subset_path, folder)
+
+            for metadata in os.listdir(curr_metadata_path):
+                if not metadata.startswith('idx2'):
+                    continue
+                meta_data_dict[folder][metadata].update(load_idx2data_file(os.path.join(curr_metadata_path, metadata)))
+
+        # Calculate the phoneme vocabulary
+        subset_phns = []
+        for text in meta_data_dict[folder]['idx2text'].values():
+            subset_phns += [phoneme[1:-1] for phoneme in text[1:-1].split(', ')]
+        meta_data_dict[folder]['vocab'] = convert_phns_to_vocab(subset_phns)
+
+    # Save the new combined metadata
+    new_subset_path = os.path.join(save_path, new_subset_name)
+    for folder in meta_data_dict.keys():
+        folder_path = os.path.join(new_subset_path, folder)
+        os.makedirs(folder_path, exist_ok=True)
+
+        for metadata in meta_data_dict[folder].keys():
+            metadata_path = os.path.join(folder_path, metadata)
+
+            if isinstance(meta_data_dict[folder][metadata], Dict):
+                np.savetxt(metadata_path, [[idx, str(m_d)] for idx, m_d in meta_data_dict[folder][metadata].items()],
+                           fmt="%s")
+            else:
+                np.savetxt(metadata_path, meta_data_dict[folder][metadata], fmt="%s")
+
+            print(f"{metadata} has successfully been saved to {metadata_path}!")
+
+
 def main(data_path: str, pretrained_model_name: str, retain_stress: bool, dataset_name: str, subset_name: str = None,
          save_path: str = None, ncpu: int = 8):
     """
@@ -182,8 +272,6 @@ def main(data_path: str, pretrained_model_name: str, retain_stress: bool, datase
             ncpu (int, optional):
                 The number of processes you want to use to calculate the phoneme duration. Defaults to 8.
     """
-    assert dataset_name in ['ljspeech', 'libritts', 'librispeech'], \
-        f"Unknown dataset: {dataset_name}! It must be one of ['ljspeech', 'libritts', 'librispeech']."
 
     data_path = parse_path_args(data_path)
     if save_path is None:
@@ -215,22 +303,39 @@ def main(data_path: str, pretrained_model_name: str, retain_stress: bool, datase
     # process all the subsets in the given dataset
     if subset_name is None:
         for file_name in os.listdir(textgrid_path):
+            # skip the non-directory file
+            if os.path.isfile(os.path.join(textgrid_path, file_name)):
+                continue
             dump_subset_metadata(dataset_path=dataset_path, save_path=save_path, subset_name=file_name,
                                  retain_stress=retain_stress, idx2text=idx2text, idx2duration=idx2duration)
     else:
         dump_subset_metadata(dataset_path=dataset_path, save_path=save_path, subset_name=subset_name,
                              retain_stress=retain_stress, idx2text=idx2text, idx2duration=idx2duration)
 
+    # post-processing: combine specific subsets into a larger one
+    if dataset_name == 'libritts':
+        # train-clean-460 = train-clean-100 + train-clean-360
+        clean_100_path = os.path.join(save_path, 'train-clean-100')
+        clean_360_path = os.path.join(save_path, 'train-clean-360')
+        if os.path.exists(clean_100_path) and os.path.exists(clean_360_path):
+            combine_subsets(subset_path_list=[clean_100_path, clean_360_path],
+                            new_subset_name='train-clean-460', save_path=save_path)
+
+            # train-960 = train-clean-460 + train-other-500
+            clean_460_path = os.path.join(save_path, 'train-clean-460')
+            other_500_path = os.path.join(save_path, 'train-other-500')
+            if os.path.exists(clean_460_path) and os.path.exists(other_500_path):
+                combine_subsets(subset_path_list=[clean_460_path, other_500_path],
+                                new_subset_name='train-960', save_path=save_path)
+
+        # dev = dev-clean + dev-other
+        dev_clean_path = os.path.join(save_path, 'dev-clean')
+        dev_other_path = os.path.join(save_path, 'dev-other')
+        if os.path.exists(dev_clean_path) and os.path.exists(dev_other_path):
+            combine_subsets(subset_path_list=[dev_clean_path, dev_other_path],
+                            new_subset_name='dev', save_path=save_path)
+
 
 if __name__ == '__main__':
     args = parse()
     main(**vars(args))
-
-    # main(
-    #     data_path="datasets/libritts/data",
-    #     pretrained_model_name="librispeech_train-clean-100",
-    #     dataset_name='libritts',
-    #     subset_name=None,
-    #     retain_stress=False,
-    #     ncpu=8
-    # )

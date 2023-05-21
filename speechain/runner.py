@@ -6,6 +6,7 @@
 import argparse
 import os
 import sys
+import time
 import warnings
 from contextlib import contextmanager
 
@@ -81,7 +82,7 @@ class Runner(object):
             "--config",
             type=str,
             # default=None,
-            default="recipes/asr/libritts_librispeech/train-960/exp_cfg/960-bpe5k_transformer-wide_ctc_perturb.yaml",
+            default="recipes/tts/vctk/exp_cfg/16khz_ecapa_mfa_fastspeech2.yaml",
             help="The path of the all-in-one experiment configuration file. You can write all the arguments in this "
                  "all-in-one file instead of giving them to `runner.py` by command lines."
         )
@@ -281,6 +282,31 @@ class Runner(object):
                  "Note: please set this argument to True if you want to use random data selection for your dataloaders "
                  "in the DDP mode. (default: False)"
         )
+        group.add_argument(
+            '--ignore_train_exception',
+            type=str2bool,
+            default=False,
+            help="Whether to ignore the exceptions happening during training and validation. "
+                 "If set to True, your training would not be interrupted by some nonfatal errors, such as occasional "
+                 "'RuntimeError: CUDA Out of memory', and etc. (default: False)"
+        )
+        group.add_argument(
+            '--ignore_test_exception',
+            type=str2bool,
+            default=False,
+            help="Whether to ignore the exceptions happening during testing. "
+                 "If set to True, your testing would not be interrupted by some nonfatal errors, such as occasional "
+                 "'RuntimeError: CUDA Out of memory', and etc. (default: False)"
+        )
+        group.add_argument(
+            '--enable_syncbatchnorm',
+            type=str2bool,
+            default=True,
+            help="Whether to process the model by 'torch.nn.SyncBatchNorm.convert_sync_batchnorm' for multi-GPU "
+                 "distributed training. Sometimes your training may be stuck at some points or terminate without being "
+                 "notified of any errors in the multi-GPU distributed mode. If that happens, you can disable "
+                 "SyncBatchNorm and debug your codes. (default: True)"
+        )
 
         # Training monitoring
         group = parser.add_argument_group("Group 4: Model Training")
@@ -475,6 +501,12 @@ class Runner(object):
                  "('selection_metric', 'selection_mode', 'case_number'). "
                  "For example, ('wer', 'max', 50) means 50 testing waveforms with the largest WER will be selected. "
                  "Multiple tuples can be given to present different sets of top-n bad cases. (default: None)"
+        )
+        group.add_argument(
+            '--saving_proc_num',
+            type=int,
+            default=1,
+            help="The number of daemon processes used to save data generated during testing to the disk. (default: 1)"
         )
 
         # Experiment configuration
@@ -944,7 +976,18 @@ class Runner(object):
                     # --- model forward part --- #
                     with autocast(enabled=args.use_amp):
                         with cls.measure_time(None if monitor is None else monitor.train_monitor)("model_forward_time"):
-                            losses, train_metrics = model(batch_data=train_batch, epoch=epoch)
+                            try:
+                                losses, train_metrics = model(batch_data=train_batch, epoch=epoch)
+                            except Exception as e:
+                                if args.ignore_train_exception:
+                                    warnings.warn(f'Rank no.{args.rank} meets error {e}! '
+                                                  f'no.{step} training step will be skipped!')
+                                    if logger is not None:
+                                        logger.warning(f'Rank no.{args.rank} meets error {e}! '
+                                                       f'no.{step} training step will be skipped!')
+                                    continue
+                                else:
+                                    raise e
 
                     # whether to skip the model optimization part
                     if not args.no_optim:
@@ -1258,11 +1301,14 @@ class Runner(object):
                             test_results = model.evaluate(test_batch=test_batch, infer_conf=infer_cfg)
                         # skip the current step if encounter an error (any kind)
                         except Exception as e:
-                            logger.warn(
-                                f"Rank no.{torch.distributed.get_rank() if args.distributed else '0'} meets the error "
-                                f"{e} at step no.{i}. "
-                                f"Indices of the involved testing samples in this step is {test_indices[i]}.")
-                            continue
+                            if args.ignore_test_exception:
+                                logger.warn(
+                                    f"Rank no.{torch.distributed.get_rank() if args.distributed else '0'} meets the error "
+                                    f"{e} at step no.{i}. "
+                                    f"Indices of the involved testing samples in this step is {test_indices[i]}.")
+                                continue
+                            else:
+                                raise e
                         # record evaluation results
                         monitor.step(step_num=i + 1, test_results=test_results, test_index=test_indices[i])
 
@@ -1502,8 +1548,9 @@ class Runner(object):
 
             # DDP Wrapping of the model must be done after model checkpoint loading
             if args.distributed:
-                # turn the batchnorm layers into the sync counterparts
-                model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
+                if args.enable_syncbatchnorm:
+                    # turn the batchnorm layers into the sync counterparts
+                    model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
                 # Here the model buffers and parameters of the master process are broadcast to the other processes
                 model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], output_device=args.gpu)
 

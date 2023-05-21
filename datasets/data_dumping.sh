@@ -181,7 +181,7 @@ while getopts ":h-:" optchar; do
 done
 
 # --- Arguments Checking --- #
-if [ ${start_step} \> ${stop_step} ]; then
+if [ ${start_step} -gt ${stop_step} ]; then
    echo "start_step should not be greater than stop_step!"
    exit 1
 fi

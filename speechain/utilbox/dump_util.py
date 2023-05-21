@@ -98,6 +98,12 @@ def en_text_process(input_text: str, txt_format: str) -> str:
     input_text = input_text.replace('¯', '')
     input_text = input_text.replace('/', ' ')
 
+    # remove the blanks at the beginning and end
+    while input_text.startswith(' '):
+        input_text = ''.join(input_text[1:])
+    while input_text.endswith(' '):
+        input_text = ''.join(input_text[:-1])
+
     # remain all the punctuation marks
     if txt_format == 'punc':
         return input_text

@@ -14,6 +14,7 @@ from speechain.module.norm.feat_norm import FeatureNormalization
 from speechain.module.augment.specaug import SpecAugment
 from speechain.module.prenet.conv2d import Conv2dPrenet
 from speechain.module.transformer.encoder import TransformerEncoder
+from speechain.module.conformer.encoder import ConformerEncoder
 
 
 class ASREncoder(Module):
@@ -29,7 +30,8 @@ class ASREncoder(Module):
     )
 
     encoder_class_dict = dict(
-        transformer=TransformerEncoder
+        transformer=TransformerEncoder,
+        conformer=ConformerEncoder
     )
 
     def module_init(self,

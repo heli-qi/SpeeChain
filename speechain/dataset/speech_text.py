@@ -61,7 +61,7 @@ class SpeechTextDataset(Dataset):
                       f"Please make sure that {sample_rate} is the same with your model! "
                       f"If this is not your target sampling rate, "
                       f"please change it by the key 'sample_rate' in the item 'dataset_conf' under 'data_cfg'. "
-                      f"If you are training Language Model, you can ignore this warning.")
+                      f"If you want to train Language Models or synthesize speech by text, you can ignore this warning.")
 
         assert 0 <= unk_mask_prob <= 1, f"unk_mask_prob should be a float number in [0, 1], but got {unk_mask_prob}!"
         self.unk_mask_prob = unk_mask_prob
@@ -238,6 +238,9 @@ class SpeechTextDataset(Dataset):
             # read the selected data speech feature as a tensor by its path
             main_data['feat'], sample_rate = \
                 read_data_by_path(main_data['feat'], return_sample_rate=True, return_tensor=True)
+            # sometimes the extracted waveform data from an audio file can be empty, skip the current file if that happens
+            if main_data['feat'].size(0) == 0:
+                return None
 
             # on-the-fly downsampling if extracted sampling rate is larger than the built-in one
             if sample_rate > self.sample_rate:
@@ -430,7 +433,7 @@ class RandomSpkFeatDataset(SpeechTextDataset):
     """
     def dataset_init_fn(self,
                         spk_feat: List[str] or str = None,
-                        use_aver_feat: bool = False,
+                        use_aver_feat: bool = True,
                         mixup_number: int = 1,
                         same_gender_mixup: bool = True,
                         tgt_gender: str = None,

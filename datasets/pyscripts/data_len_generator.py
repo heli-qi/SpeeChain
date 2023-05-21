@@ -39,7 +39,7 @@ def get_data_length(idx2data: List[List[str]]):
     return [[idx, read_data_by_path(data_path).shape[0]] for idx, data_path in tqdm(idx2data, desc="Processing data files")]
 
 
-def main(src_file: str, ncpu: int):
+def main(src_file: str, ncpu: int = 8):
     """
         Main function that extracts feature lengths and saves them to file.
 

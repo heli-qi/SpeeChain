@@ -34,8 +34,8 @@ class Conv2dPrenet(Module):
                     conv_dims: int or List[int] = [64, 64],
                     conv_kernel: int or List[int] = 3,
                     conv_stride: int or List[int] = 2,
-                    conv_padding: str or int or List[int] = 0,
-                    conv_batchnorm: bool = True,
+                    conv_padding: int or List[int] = 0,
+                    conv_batchnorm: bool = False,
                     conv_activation: str = 'ReLU',
                     conv_dropout: float or List[float] = None,
                     lnr_dims: int or List[int] = 512,
@@ -60,7 +60,7 @@ class Conv2dPrenet(Module):
                 The value of stride of all Conv2d layers.
                 An integer means the same stride for time and frequency dimension.
                 List[int] is needed if you would like to make different dimensions have different strides.
-            conv_padding: str or int or List[int]
+            conv_padding: int or List[int]
                 The padding added to all four sides of the input. It can be either a string {‘valid’, ‘same’} or a
                 list of integers giving the amount of implicit padding applied on both sides.
             conv_batchnorm: bool
@@ -97,7 +97,7 @@ class Conv2dPrenet(Module):
             "The sizes of convolutional kernels must be given as a list of integers or an integer!"
         assert isinstance(conv_stride, (List, int)), \
             "The lengths of convolutional strides must be given as a list of integers or an integer!"
-        assert isinstance(conv_padding, (List, int, str)), \
+        assert isinstance(conv_padding, (List, int)), \
             "The lengths of convolutional paddings must be given as a list of integers, an integer, or a string!"
         if conv_dropout is not None:
             assert isinstance(conv_dropout, (List, float)), \
@@ -122,9 +122,13 @@ class Conv2dPrenet(Module):
         self.conv_dims = conv_dims if isinstance(conv_dims, List) else [conv_dims]
         self.conv_kernel = tuple(conv_kernel) if isinstance(conv_kernel, List) else (conv_kernel, conv_kernel)
         self.conv_stride = tuple(conv_stride) if isinstance(conv_stride, List) else (conv_stride, conv_stride)
-        if not isinstance(conv_padding, str):
-            self.conv_padding = tuple(conv_padding) if isinstance(conv_padding, List) else (conv_padding, conv_padding)
+        self.conv_padding = tuple(conv_padding) if isinstance(conv_padding, List) else (conv_padding, conv_padding)
         self.conv_dropout = conv_dropout
+
+        self.min_height, self.min_width = 1, 1
+        for _ in self.conv_dims:
+            self.min_height = (self.min_height - 1) * self.conv_stride[0] + self.conv_kernel[0] - 2 * self.conv_padding[0]
+            self.min_width = (self.min_width - 1) * self.conv_stride[0] + self.conv_kernel[0] - 2 * self.conv_padding[0]
 
         # Conv2d blocks construction
         _prev_dim = 1
@@ -184,6 +188,16 @@ class Conv2dPrenet(Module):
             The embedded feature vectors with their lengths.
 
         """
+        # check the height and width before forwarding
+        if feat.size(1) < self.min_height:
+            len_diff = self.min_height - feat.size(1)
+            feat = torch.nn.functional.pad(feat, (0, 0, int(len_diff / 2), len_diff - int(len_diff / 2)))
+            feat_len += len_diff
+
+        if feat.size(2) < self.min_width:
+            len_diff = self.min_width - feat.size(2)
+            feat = torch.nn.functional.pad(feat, (int(len_diff / 2), len_diff - int(len_diff / 2)))
+
         # forward the convolutional layers
         # (batch, feat_maxlen, feat_dim) -> (batch, 1, feat_maxlen, feat_dim)
         feat = feat.unsqueeze(1)

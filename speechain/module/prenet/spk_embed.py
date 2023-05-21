@@ -8,72 +8,75 @@ from speechain.module.prenet.embed import EmbedPrenet
 
 class SpeakerEmbedPrenet(Module):
     """
-
+        SpeakerEmbedPrenet is a module for integrating speaker embeddings into a TTS model.
+        It supports both open-set and close-set multi-speaker TTS and can combine speaker embeddings with encoder
+        and/or decoder inputs.
     """
 
     def module_init(self,
                     d_model: int,
-                    spk_emb_dim: int,
+                    spk_emb_dim_lookup: int = None,
+                    spk_emb_dim_pretrained: int = None,
                     spk_num: int = None,
-                    use_lookup: bool = False,
-                    use_pretrain: bool = False,
                     spk_emb_comb: str = 'concat',
-                    spk_emb_act: str = 'Softsign',
                     dec_comb: bool = False,
                     encdec_same_proj: bool = True):
         """
+            Initialize the SpeakerEmbedPrenet module with the given configuration.
 
-        Args:
-            d_model:
-            spk_emb_dim:
-            spk_num:
-            use_lookup:
-            use_pretrain:
-            spk_emb_comb:
-            spk_emb_act:
-            dec_comb:
-            encdec_same_proj:
+            Args:
+                d_model: int
+                    input/output feature dimension for the TTS model
+                spk_emb_dim_lookup: int
+                    speaker embedding dimension for close-set TTS with lookup table (optional)
+                spk_emb_dim_pretrained: int
+                    speaker embedding dimension for open-set TTS with pretrained embeddings (optional)
+                spk_num: int
+                    number of speakers for close-set TTS (optional)
+                spk_emb_comb: str
+                    method for combining speaker embeddings with encoder/decoder inputs, either 'add' or 'concat'
+                dec_comb: bool
+                    whether to combine speaker embeddings with decoder inputs
+                encdec_same_proj: bool
+                    whether to use the same projection layer for encoder and decoder
 
-        Returns:
-
+            Returns:
+                None
         """
-        assert use_lookup or use_pretrain, \
-            "use_lookup and use_pretrain cannot be False at the same time! Please set at least one of them to True."
+        self.use_lookup, self.use_pretrain = spk_emb_dim_lookup is not None, spk_emb_dim_pretrained is not None
+        assert self.use_lookup or self.use_pretrain, \
+            "spk_emb_dim_lookup and spk_emb_dim_pretrained cannot be None at the same time! " \
+            "Please specify the value of at least one of them."
         assert spk_emb_comb in ['add', 'concat'], \
             f"spk_emb_comb must be either 'add' or 'concat', but got {spk_emb_comb}."
-        assert 'ReLU' not in spk_emb_act, \
-            "Please don't use the activation function from 'ReLU' family for speaker embedding because they will " \
-            "change the centroid of a vector."
 
-        self.spk_emb_dim = spk_emb_dim
         # for close-set multi-speaker TTS, speaker lookup table is created for extracting embeddings from speaker IDs
-        self.use_lookup = use_lookup
-        if use_lookup:
-            self.spk_lookup = EmbedPrenet(embedding_dim=spk_emb_dim, vocab_size=spk_num)
+        if self.use_lookup:
+            assert spk_emb_dim_lookup is not None
+            self.spk_emb_dim_lookup = spk_emb_dim_lookup
+            self.spk_lookup = EmbedPrenet(embedding_dim=self.spk_emb_dim_lookup, vocab_size=spk_num)
             # for dimension consistency with the model
-            if spk_emb_comb == 'add' and spk_emb_dim != d_model:
-                self.pre_add_proj_lookup = torch.nn.Linear(spk_emb_dim, d_model)
+            if spk_emb_comb == 'add' and self.spk_emb_dim_lookup != d_model:
+                self.pre_add_proj_lookup = torch.nn.Linear(self.spk_emb_dim_lookup, d_model)
 
         # initialize the linear projection layer
         self.spk_emb_comb = spk_emb_comb
+        self.spk_emb_dim_pretrained = spk_emb_dim_pretrained
         # for open-set multi-speaker TTS, speaker embedding is extracted by a pretrained speaker embedding model
-        self.use_pretrain = use_pretrain
-        if use_pretrain:
+        if self.use_pretrain:
+            assert spk_emb_dim_pretrained is not None
+            self.spk_emb_dim_pretrained = spk_emb_dim_pretrained
             # for dimension consistency with the model
-            if spk_emb_comb == 'add' and spk_emb_dim != d_model:
-                self.pre_add_proj_pretrain = torch.nn.Linear(spk_emb_dim, d_model)
-
-        # initialize the activation function for the speaker embedding
-        self.spk_emb_act = spk_emb_act
-        self.activation = getattr(torch.nn, spk_emb_act)()
+            if spk_emb_comb == 'add' and self.spk_emb_dim_pretrained != d_model:
+                self.pre_add_proj_pretrain = torch.nn.Linear(self.spk_emb_dim_pretrained, d_model)
 
         # at the end of SpeakerEmbedPrenet, there is a linear projection layer shared by both open-set and close-set
         # multi-speaker TTS models before passing the results to the TTS decoder
         proj_in_size = d_model
-        if use_lookup and spk_emb_comb == 'concat':
-            proj_in_size += spk_emb_dim
-        if use_pretrain and spk_emb_comb == 'concat':
-            proj_in_size += spk_emb_dim
+        if self.use_lookup and spk_emb_comb == 'concat':
+            proj_in_size += self.spk_emb_dim_lookup
+        if self.use_pretrain and spk_emb_comb == 'concat':
+            proj_in_size += self.spk_emb_dim_pretrained
         self.final_proj_enc = torch.nn.Linear(proj_in_size, d_model)
 
         # the projection layer can also be applied to the input of AR-TTS decoder
@@ -82,16 +85,18 @@ class SpeakerEmbedPrenet(Module):
         if self.dec_comb and not self.encdec_same_proj:
             self.final_proj_dec = torch.nn.Linear(proj_in_size, d_model)
 
-    def forward(self, spk_ids: torch.Tensor = None, spk_feat: torch.Tensor = None, spk_feat_act: bool = True):
+    def forward(self, spk_ids: torch.Tensor = None, spk_feat: torch.Tensor = None):
         """
+            Forward pass of the SpeakerEmbedPrenet module to obtain speaker features.
 
-        Args:
-            spk_ids:
-            spk_feat:
-            spk_feat_act:
+            Args:
+                spk_ids: torch.Tensor
+                    speaker IDs for close-set TTS (optional)
+                spk_feat: torch.Tensor
+                    pretrained speaker embeddings for open-set TTS (optional)
 
-        Returns:
-
+            Returns:
+                tuple: speaker features from lookup table and pretrained embeddings
         """
         # 1. extract the speaker feature from the embedding look-up table
         if self.use_lookup:
@@ -111,25 +116,31 @@ class SpeakerEmbedPrenet(Module):
         else:
             spk_feat = None
 
-        # 3. normalize the speaker feature to make its centroid zero
-        if spk_feat_act:
-            spk_feat_lookup = self.activation(spk_feat_lookup) if spk_feat_lookup is not None else spk_feat_lookup
-            spk_feat = self.activation(spk_feat) if spk_feat is not None else spk_feat
+        # 3. activate speaker embeddings before fusion
+        # process the lookup speaker embeddings by non-linear function softsign
+        spk_feat_lookup = torch.nn.functional.normalize(spk_feat_lookup, dim=-1) if spk_feat_lookup is not None else spk_feat_lookup
+        # normalize the pretrained speaker embeddings to transform it to the unit sphere
+        spk_feat = torch.nn.functional.normalize(spk_feat, dim=-1) if spk_feat is not None else spk_feat
 
         return spk_feat_lookup, spk_feat
 
     def combine_spk_feat(self, spk_feat: torch.Tensor, spk_feat_lookup: torch.Tensor,
                          enc_output: torch.Tensor, dec_input: torch.Tensor = None):
         """
+            Combine speaker features with TTS model's encoder and/or decoder inputs.
 
-        Args:
-            spk_feat: (batch, spk_feat_dim) or (batch, 1, spk_feat_dim)
-            spk_feat_lookup: (batch, spk_feat_dim) or (batch, 1, spk_feat_dim)
-            enc_output: (batch, enc_maxlen, d_model)
-            dec_input: (batch, dec_maxlen, d_model)
+            Args:
+                spk_feat: torch.Tensor
+                    pretrained speaker embeddings for open-set TTS (optional)
+                spk_feat_lookup: torch.Tensor
+                    speaker features from lookup table for close-set TTS (optional)
+                enc_output: torch.Tensor
+                    TTS encoder output
+                dec_input: torch.Tensor
+                    TTS decoder input (optional)
 
-        Returns: (batch, seq_len, d_model)
-
+            Returns:
+                tuple: TTS encoder output and decoder input combined with speaker features
         """
         if spk_feat is not None:
             if spk_feat.dim() == 2:

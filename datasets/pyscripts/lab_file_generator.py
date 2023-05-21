@@ -34,15 +34,15 @@ def save_lab_files(idx2wav_text: List[List[str]], cover_flag: bool):
 
 def proc_subset(idx2wav_path: str, cover_flag: bool, ncpu: int):
     subset_path = os.path.dirname(idx2wav_path)
-    idx2text_path = os.path.join(subset_path, 'idx2asr_text')
+    idx2text_path = os.path.join(subset_path, 'idx2no-punc_text')
     if not os.path.exists(idx2text_path):
-        idx2text_path = os.path.join(subset_path, 'idx2tts_text')
+        idx2text_path = os.path.join(subset_path, 'idx2punc_text')
         assert os.path.exists(idx2text_path), \
             f"Either idx2asr_text or idx2tts_text doesn't exist in {subset_path}!"
         warnings.warn(
-            f"idx2asr_text doesn't exist in {subset_path}, so idx2tts_text will be used. "
+            f"idx2no-punc_text doesn't exist in {subset_path}, so idx2punc_text will be used. "
             f"But the existence of punctuation marks may influence the duration prediction, "
-            f"so we recommend you to stop this job and dump the idx2asr_text if possible for you.")
+            f"so we recommend you to dump the idx2no-punc_text if possible for you.")
 
     print(f'Start to generate .lab files by {idx2wav_path}...')
     idx2wav = load_idx2data_file(idx2wav_path)

@@ -43,6 +43,19 @@ def parse():
 
 
 def calculate_metric(idx2hypo_refer_list: List[str], tgt_metric: str = 'mcd'):
+    """
+        This function calculates a given metric (MCD, MSD, or Log-F0) for each pair of hypothesis-reference audio files.
+
+        Args:
+            idx2hypo_refer_list (List[str]):
+                A list of triples containing the index, the path to the hypothesis audio file, and the path to the reference audio file.
+            tgt_metric (str, optional):
+                The target metric to be calculated. It can be 'mcd', 'msd', or 'log-f0'. Defaults to 'mcd'.
+
+        Returns:
+            output (dict):
+                A dictionary mapping from the index to the calculated metric for each pair of audio files.
+    """
     tgt_metric = tgt_metric.lower()
     assert tgt_metric in ['mcd', 'msd', 'log-f0'], \
         f"tgt_metric must be one of ['mcd', 'msd', 'log-f0'], but got {tgt_metric}!"
@@ -107,6 +120,23 @@ def calculate_metric(idx2hypo_refer_list: List[str], tgt_metric: str = 'mcd'):
 
 def save_results(idx2metric_list: List[List], metric_name: str, save_path: str, vocoder_name: str,
                  desec_sort: True, topn_num: int = 30):
+    """
+        This function saves the results of the calculated metrics into a file.
+
+        Args:
+            idx2metric_list (List[List]):
+                A list of pairs containing the index and the calculated metric.
+            metric_name (str):
+                The name of the calculated metric.
+            save_path (str):
+                The path where to save the results.
+            vocoder_name (str):
+                The name of the vocoder used.
+            desec_sort (bool):
+                If True, the results are sorted in descending order.
+            topn_num (int, optional):
+                The number of top bad cases to record. Defaults to 30.
+    """
     # save the idx2feat file to feat_path as the reference
     np.savetxt(os.path.join(save_path, f'idx2{f"{vocoder_name}_" if vocoder_name is not None else ""}{metric_name}'),
                sorted(idx2metric_list, key=lambda x: x[0]), fmt='%s')
@@ -128,7 +158,26 @@ def save_results(idx2metric_list: List[List], metric_name: str, save_path: str, 
 
 
 def main(hypo_path: str, refer_path: str, metric_list: List[str], result_path: str = None, ncpu: int = 8, topn_num: int = 30):
+    """
+        This is the main function that organizes the calculation of the metrics for the audio files.
+        It first prepares the paths to the audio files, then for each metric in the list, it calculates
+        the metric and saves the results. Finally, it performs a waveform length ratio evaluation.
 
+        Args:
+            hypo_path (str):
+                The path to the hypothesis audio files.
+            refer_path (str):
+                The path to the reference audio files.
+            metric_list (List[str]):
+                The list of metrics to be calculated.
+            result_path (str, optional):
+                The path where to save the results. If not provided, the results are saved in the same directory as
+                the hypothesis audio files.
+            ncpu (int, optional):
+                The number of cores to use for parallel processing. Defaults to 8.
+            topn_num (int, optional):
+                The number of top bad cases to record. Defaults to 30.
+    """
     # --- 1. Argument Preparation stage --- #
     # argument checking
     for i in range(len(metric_list)):

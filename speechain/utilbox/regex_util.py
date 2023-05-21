@@ -31,3 +31,8 @@ regex_square_bracket_large = re.compile(r"\[.*\]")
 # d,e,{f,g,{h,i,j,k}} -> {h,i,j,k}
 # f,g,{h,i,j,k} -> {h,i,j,k}
 regex_brace = re.compile(r"{[^{}]*}")
+
+def has_nested_structure(string):
+    pattern = r"\[.*\[.*\].*\]"
+    match = re.search(pattern, string)
+    return bool(match)

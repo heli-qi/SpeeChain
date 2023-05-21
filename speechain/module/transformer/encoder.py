@@ -30,7 +30,7 @@ class TransformerEncoderLayer(Module):
                     fdfwd_dim: int = 2048,
                     fdfwd_type: str = 'linear',
                     fdfwd_activation: str = 'ReLU',
-                    fdfwd_kernel: int = 9,
+                    fdfwd_kernel: int = 3,
                     fdfwd_dropout: float = 0.1,
                     res_dropout: float = 0.1,
                     layernorm_first: bool = True):
@@ -157,7 +157,7 @@ class TransformerEncoder(Module):
                     fdfwd_dim: int = 2048,
                     fdfwd_type: str = 'linear',
                     fdfwd_activation: str = 'ReLU',
-                    fdfwd_kernel: int = 9,
+                    fdfwd_kernel: int = 3,
                     fdfwd_dropout: float = 0.1,
                     res_dropout: float = 0.1,
                     layernorm_first: bool = True,

@@ -80,9 +80,21 @@ def str2dict(input_str: str) -> Dict or str:
                 proc_dict.update(proc_list[i])
             return proc_dict
 
+    # remove the blanks
+    input_str = input_str.replace(' ', '')
+    # remove the line breaks
+    input_str = input_str.replace('\n', '')
+    # remove the tabs
+    input_str = input_str.replace('\t', '')
+
     # if the input string is not given in the specified format, directly return it because it may be a path.
-    if ':' not in input_str and ',' not in input_str and '{' not in input_str and '}' not in input_str:
-        return input_str
+    if '{' not in input_str and '}' not in input_str:
+        if input_str == '':
+            return dict()
+        if ':' not in input_str:
+            return input_str
+        else:
+            return recur_dict_init(input_str)
 
     # if only a pair of braces is input, return an empty dict
     if input_str == '{}':
@@ -94,12 +106,6 @@ def str2dict(input_str: str) -> Dict or str:
         "please don't surround it by a pair of braces '{}'."
     assert input_str.count('{') == input_str.count('}'), \
         "The number of left braces '{' doesn't match that of right braces '}'."
-    # remove the blanks
-    input_str = input_str.replace(' ', '')
-    # remove the line breaks
-    input_str = input_str.replace('\n', '')
-    # remove the tabs
-    input_str = input_str.replace('\t', '')
 
     # register all the smallest {}-surrounded sub-strings into a nested Dict
     match_dict, match_num = {}, 0
@@ -194,9 +200,16 @@ def str2list(input_str: str) -> List:
             proc_list = unproc_string.split(',')
             return [recur_list_init(ele) for ele in proc_list]
 
-    # directly return a single string element in a one-element list
-    if '[' not in input_str and ']' not in input_str and ',' not in input_str:
-        return [cast_single_string(input_str)]
+    # remove the blanks
+    input_str = input_str.replace(' ', '')
+    # remove the line breaks
+    input_str = input_str.replace('\n', '')
+    # remove the tabs
+    input_str = input_str.replace('\t', '')
+
+    # for the input string in the form of 'X,X,X', directly return a list
+    if '[' not in input_str and ']' not in input_str:
+        return [cast_single_string(s) for s in input_str.split(',')]
 
     # input string checking
     assert input_str.startswith('[') and input_str.endswith(']'), \
@@ -204,12 +217,6 @@ def str2list(input_str: str) -> List:
         "please surround it by a pair of square brackets '[]'."
     assert input_str.count('[') == input_str.count(']'), \
         "The number of left square brackets '[' doesn't match that of right square brackets ']'."
-    # remove the blanks
-    input_str = input_str.replace(' ', '')
-    # remove the line breaks
-    input_str = input_str.replace('\n', '')
-    # remove the tabs
-    input_str = input_str.replace('\t', '')
 
     # register all the smallest []-surrounded sub-strings into a nested Dict
     match_dict, match_num = {}, 0

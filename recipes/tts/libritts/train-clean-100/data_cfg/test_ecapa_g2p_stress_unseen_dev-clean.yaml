@@ -1,0 +1,45 @@
+##############################################################################
+# Tokens: Phoneme by G2P
+# Training: train-clean-100 of 16khz-downsampled LibriTTS
+# Testing: dev-clean of 16khz-downsampled LibriTTS
+# Authors: Heli Qi
+# Description: This configuration is used to replace data_cfg in exp_cfg for tuning the inference hyperparamters on validation set
+# ############################################################################
+
+
+###################################
+# Experiment Parameters and setup #
+###################################
+# if your dumped dataset is outside the toolkit folder, please change dataset_path. There should be a folder named 'libritts' in dataset_path
+dataset_path: datasets/
+
+text_dataset: libritts
+valid_dset: dev-clean
+txt_format: no-punc
+token_num: stress
+
+refer_dataset: libritts
+spk_feat_set: dev-clean
+spk_emb_model: ecapa
+
+
+
+##############################
+# Data Loading Configuration #
+##############################
+text_root: !ref <dataset_path>/<text_dataset>/data
+refer_root: !ref <dataset_path>/<refer_dataset>/data
+
+test:
+    dev-clean_unseen:
+        type: abs.Iterator
+        conf:
+            dataset_type: speech_text.RandomSpkFeatDataset
+            dataset_conf:
+                main_data:
+                    text: !ref <text_root>/g2p/<valid_dset>/<token_num>/<txt_format>/idx2text
+                spk_feat: !ref <refer_root>/wav16000/<spk_feat_set>/idx2<spk_emb_model>_spk_feat
+                use_aver_feat: True
+
+            shuffle: False
+            data_len: !ref <text_root>/g2p/<valid_dset>/<token_num>/<txt_format>/idx2text_len
