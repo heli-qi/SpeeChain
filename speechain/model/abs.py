@@ -7,7 +7,6 @@ import os
 import torch
 import copy
 import numpy as np
-from argparse import Namespace
 
 from typing import Dict, List
 from abc import ABC, abstractmethod
@@ -16,7 +15,6 @@ from contextlib import nullcontext
 
 from speechain.module.abs import Module
 from speechain.module.transformer.pos_enc import PositionalEncoding
-from speechain.module.gan.generator import HifiGANGenerator
 
 from speechain.utilbox.yaml_util import load_yaml
 from speechain.utilbox.md_util import get_list_strings
@@ -59,8 +57,7 @@ class Model(torch.nn.Module, ABC):
         torch.nn.LayerNorm,
         torch.nn.BatchNorm1d,
         torch.nn.BatchNorm2d,
-        PositionalEncoding,
-        HifiGANGenerator
+        PositionalEncoding
     ]
 
     def __init__(self,
