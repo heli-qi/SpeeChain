@@ -44,11 +44,27 @@ class CTCLoss(Criterion):
         # (batch, enc_feat_len, vocab) -> (enc_feat_len, batch, vocab)
         ctc_logits = ctc_logits.transpose(0, 1).log_softmax(dim=-1)
 
-        # remove the <sos/eos> at the beginning (retain the <sos/eos> at the end for CTC-ATT joint decoding)
-        text, text_len = text[:, 1:].squeeze(dim=-1), text_len - 1
+        # remove the <sos/eos> at the beginning and end of each sentence
+        text, text_len = text[:, 1:-1], text_len - 2
+        if len(text.shape) == 1:
+            text = text.unsqueeze(-1)
         text = torch.cat([text[i, :text_len[i]] for i in range(batch)])
 
         # obtain the ctc loss for each data instances in the given batch
         loss = torch.nn.functional.ctc_loss(ctc_logits, text, enc_feat_len, text_len,
                                             blank=self.blank, reduction='none', zero_infinity=self.zero_infinity)
         return loss.mean()
+
+    def recover(self, ctc_text: torch.Tensor, ctc_text_len: torch.Tensor):
+
+        if len(ctc_text.shape) == 3:
+            ctc_text = torch.argmax(ctc_text, dim=-1)
+
+        text = [[] for _ in range(ctc_text.size(0))]
+        for i in range(ctc_text.size(0)):
+            for j in range(ctc_text_len[i]):
+                token = ctc_text[i][j].item()
+                if (j == 0 or token != ctc_text[i][j - 1]) and token != self.blank:
+                    text[i].append(token)
+
+        return text

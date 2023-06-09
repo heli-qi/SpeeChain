@@ -22,6 +22,21 @@ txt_format: no-punc
 ##############################
 data_root: !ref <dataset_path>/<dataset>/data
 test:
+    libritts_dev-clean:
+        type: abs.Iterator
+        conf:
+            dataset_type: speech_text.SpeechTextDataset
+            dataset_conf:
+                main_data:
+                    feat: !ref <data_root>/<wav_format>/dev-clean/idx2wav
+                    text: !ref <data_root>/<wav_format>/dev-clean/idx2<txt_format>_text
+
+            shuffle: False
+            data_len: !ref <data_root>/<wav_format>/dev-clean/idx2wav_len
+            group_info:
+                speaker: !ref <data_root>/<wav_format>/dev-clean/idx2spk
+                gender: !ref <data_root>/<wav_format>/dev-clean/idx2gen
+
     libritts_test-clean:
         type: abs.Iterator
         conf:
@@ -36,18 +51,3 @@ test:
             group_info:
                 speaker: !ref <data_root>/<wav_format>/test-clean/idx2spk
                 gender: !ref <data_root>/<wav_format>/test-clean/idx2gen
-
-    libritts_test-other:
-        type: abs.Iterator
-        conf:
-            dataset_type: speech_text.SpeechTextDataset
-            dataset_conf:
-                main_data:
-                    feat: !ref <data_root>/<wav_format>/test-other/idx2wav
-                    text: !ref <data_root>/<wav_format>/test-other/idx2<txt_format>_text
-
-            shuffle: False
-            data_len: !ref <data_root>/<wav_format>/test-other/idx2wav_len
-            group_info:
-                speaker: !ref <data_root>/<wav_format>/test-other/idx2spk
-                gender: !ref <data_root>/<wav_format>/test-other/idx2gen

@@ -28,6 +28,7 @@ class TransformerDecoderLayer(Module):
     def module_init(self,
                     d_model: int = 512,
                     num_heads: int = 8,
+                    scale_dp_by_head: bool = False,
                     att_dropout: float = 0.1,
                     fdfwd_dim: int = 0,
                     fdfwd_activation: str = 'ReLU',
@@ -62,7 +63,8 @@ class TransformerDecoderLayer(Module):
                     output = LayerNorm(input + Sublayer(input))
         """
         # initialize the self attention layer
-        self.self_att = MultiHeadedAttention(num_heads=num_heads, d_model=d_model, dropout=att_dropout)
+        self.self_att = MultiHeadedAttention(num_heads=num_heads, d_model=d_model, dropout=att_dropout,
+                                             scale_dp_by_head=scale_dp_by_head)
 
         # initialize the encoder-decoder attention layer
         self.encdec_att = MultiHeadedAttention(num_heads=num_heads, d_model=d_model, dropout=att_dropout)
@@ -152,6 +154,7 @@ class TransformerDecoder(Module):
                     d_model: int = 512,
                     num_heads: int = 4,
                     num_layers: int = 8,
+                    scale_dp_by_head: bool = False,
                     fdfwd_dim: int = 2048,
                     fdfwd_activation: str = 'ReLU',
                     fdfwd_dropout: float = 0.1,
@@ -231,6 +234,7 @@ class TransformerDecoder(Module):
         self.trfm_layers = torch.nn.ModuleList([
             TransformerDecoderLayer(d_model=d_model,
                                     num_heads=num_heads,
+                                    scale_dp_by_head=scale_dp_by_head,
                                     att_dropout=att_dropout,
                                     fdfwd_dim=fdfwd_dim,
                                     fdfwd_activation=fdfwd_activation,

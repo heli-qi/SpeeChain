@@ -1,17 +1,17 @@
 ###############################################################################
-# Model: Transformer-ASR (97.01 M)
-# Tokens: BPE 5k trained on train-960 of LibriSpeech
-# Batching: 860 real steps per epoch (17 minutes speech per batch * 4 accum_grad factor = 68 minutes speech per real step)
-# Optimization: 16000 warming-up steps (~19 warming-up epochs) & 0.001 peak LR
+# Model: Transformer-ASR (78.09 M)
+# Tokens: BPE 5k trained on train-clean-460 of LibriSpeech
+# Batching: 1110 steps per epoch (25 minutes speech per batch)
+# Optimization: 16000 warming-up steps (~14 warming-up epochs) & 0.001 peak LR
 # Augmentation: Speech Perturbation + SpecAugment
-# losses: 0.2 Label Smooth + CTC loss
-# Training: train-960 of LibriSpeech
-# Validation: dev of LibriSpeech
+# losses: CE loss (0.2 Label Smooth) + CTC loss
+# Training: train-clean-460 of LibriSpeech
+# Validation: dev-clean of LibriSpeech
 # Testing: test-clean & test-other of LibriSpeech
 # Authors: Heli Qi
 # Required GPUs: 2 × NVIDIA RTX A6000 (49GB)
-# Required Time: up to 38 hours
-# Expected WER performance (test-clean / test-other): ASR-only (3.89% / 9.38%) and ASR-LM (2.88% / 6.66%)
+# Required Time: up to 18 hours
+# Expected WER performance (test-clean / test-other): ASR-only (4.98% / 14.50%) and ASR-LM (3.48% / 9.86%)
 # ############################################################################
 
 
@@ -22,8 +22,8 @@
 # if your dumped dataset is outside the toolkit folder, please change dataset_path. There should be a folder named 'librispeech' in dataset_path
 dataset_path: datasets/
 dataset: librispeech
-train_set: train-960
-valid_set: dev
+train_set: train-clean-460
+valid_set: dev-clean
 
 # waveform-related
 wav_format: wav
@@ -31,12 +31,12 @@ sample_rate: 16000
 
 # tokenizer-related
 txt_format: no-punc
-vocab_set: train-960
+vocab_set: train-clean-460
 token_type: sentencepiece
 token_num: bpe5k
 
 # batch-related
-batch_len: 1.6e7
+batch_len: 2.4e7
 
 # model-related
 ctc_weight: 0.3
@@ -47,6 +47,7 @@ fdfwd_dim: 2048
 dropout: 0.1
 
 # optimizer-related
+peak_lr: 0.001
 warmup_steps: 16000
 
 # running-related
@@ -56,13 +57,14 @@ pin_memory: False
 non_blocking: False
 
 # gradient-related
-accum_grad: 4
+accum_grad: 1
 ft_factor: 1.0
 grad_clip: 5.0
 
 # multi-GPU-related
 ngpu: 2 # please change ngpu based on the situation of your machine
 gpus: null # null means the GPUs with the largest free memory will be used
+ignore_train_exception: True
 
 # training-related
 train: False
@@ -173,8 +175,8 @@ train_cfg:
         ctc_weight: !ref <ctc_weight>
         token_type: !ref <token_type>
         token_path: !ref <data_root>/<token_type>/<vocab_set>/<token_num>/<txt_format>
-        lm_model_cfg: recipes/lm/librispeech/train-960_lm_text/exp/960-bpe5k_transformer_gelu/train_cfg.yaml
-        lm_model_path: recipes/lm/librispeech/train-960_lm_text/exp/960-bpe5k_transformer_gelu/models/5_valid_text_ppl_average.pth
+        lm_model_cfg: recipes/lm/librispeech/train-960_lm_text/exp/460-bpe5k_transformer/train_cfg.yaml
+        lm_model_path: recipes/lm/librispeech/train-960_lm_text/exp/460-bpe5k_transformer/models/5_valid_text_ppl_average.pth
 
     module_conf:
       frontend:
@@ -191,8 +193,8 @@ train_cfg:
       specaug:
         freq_mask_width: 15
         freq_mask_num: 4
-        time_mask_width: 20
-        time_mask_num: 4
+        time_mask_width: 0.05
+        time_mask_num: 5
 
       enc_prenet:
         type: conv2d
@@ -215,7 +217,7 @@ train_cfg:
           emb_scale: false
           d_model: !ref <d_model>
           num_heads: !ref <num_heads>
-          num_layers: 18
+          num_layers: 12
           att_dropout: !ref <dropout>
           fdfwd_dim: !ref <fdfwd_dim>
           fdfwd_activation: GELU
@@ -254,6 +256,7 @@ train_cfg:
     conf:
       optim_type: Adam
       optim_conf:
+        lr: !ref <peak_lr>
         betas:
           - 0.9
           - 0.98

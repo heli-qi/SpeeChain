@@ -175,7 +175,7 @@ done
 
 # --- Argument Initialization --- #
 # There is no official subsets of LJSpeech, so the names are simply set to 'train', 'valid', and 'test' here.
-subsets="train valid test"
+subsets="train-mic1 valid-mic1 test-mic1 train-mic2 valid-mic2 test-mic2"
 # enter extra arguments for vocab_generator.py
 vocab_generate_args=
 # number of tokens in the vocabulary
@@ -203,7 +203,7 @@ fi
   --dataset_name "vctk" \
   --meta_generate_args "--valid_speakers ${valid_speakers} --test_speakers ${test_speakers}" \
   --subsets "${subsets}" \
-  --vocab_src_subsets "train valid test" \
+  --vocab_src_subsets "train-mic1 valid-mic1 test-mic1 train-mic2 valid-mic2 test-mic2" \
   --vocab_generate_args "${vocab_generate_args}" \
   --ncpu "${ncpu}" \
   --ngpu "${ngpu}"

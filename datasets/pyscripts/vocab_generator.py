@@ -14,7 +14,7 @@ from tqdm import tqdm
 from g2p_en import G2p
 from collections import Counter
 
-from speechain.tokenizer.g2p import abnormal_phns
+from speechain.tokenizer.g2p import abnormal_phns, cmu_phn_list
 from speechain.tokenizer.sp import SentencePieceTokenizer
 from speechain.utilbox.type_util import str2bool, str_or_int
 from speechain.utilbox.dump_util import get_readable_number
@@ -158,6 +158,9 @@ def generate_vocab_sentencepiece(save_path: str, text_path: str, txt_format: str
     # --- Vocabulary List Generation --- #
     # skip if 'model' and 'vocab' exist at the same time
     if not os.path.exists(os.path.join(save_path, 'model')) or not os.path.exists(os.path.join(save_path, 'vocab')):
+        # create a temperary file named '{txt_format}_text' by idx2{txt_format}_text for tokenizer initializaton
+        # give an argument that controls whether to place each word as a sentence to avoid tokens containing space
+
         # disable bos and eos. <sos>/<eos> will be added externally, so vocab_size need to be subtracted from 1
         # add <blank> and put <unk> to the end of the vocabulary
         spm.SentencePieceTrainer.train(input=idx2text_path, model_prefix='m',
@@ -204,6 +207,13 @@ def generate_vocab_g2p(save_path: str, text_path: str, txt_format: str, vocab_si
 
             if phn == ' ':
                 phn_list.append('<space>')
+            # punctuation marks
+            elif phn not in cmu_phn_list:
+                # remove the blank before punctuation marks
+                if phn_list[-1] == '<space>':
+                    phn_list[-1] = phn
+                else:
+                    phn_list.append(phn)
             elif vocab_size == 'no-stress' and phn[-1].isdigit():
                 phn_list.append(phn[:-1])
             else:

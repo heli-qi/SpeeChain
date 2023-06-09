@@ -3,6 +3,7 @@
     Affiliation: NAIST
     Date: 2022.11
 """
+import re
 
 
 def en_text_process(input_text: str, txt_format: str) -> str:
@@ -26,10 +27,14 @@ def en_text_process(input_text: str, txt_format: str) -> str:
         Processed sentence string by your specified text format.
 
     """
-    # turn capital letters into their lower cases
+
+    def is_punc(input_char: str):
+        return not (input_char.isalpha() or input_char == ' ')
+
+    # 1st stage: turn capital letters into their lower cases
     input_text = input_text.lower()
 
-    # normalize abnormal non-English symbols into English letters
+    # 2nd stage: convert non-English letters into English counterparts
     input_text = input_text.replace('è', 'e')
     input_text = input_text.replace('é', 'e')
     input_text = input_text.replace('ê', 'e')
@@ -41,15 +46,36 @@ def en_text_process(input_text: str, txt_format: str) -> str:
     input_text = input_text.replace('æ', 'ae')
     input_text = input_text.replace('œ', 'oe')
 
-    # convert all the quotes into half-angle single quotes
-    '’'
+    # 3rd stage: convert all kinds of the quotes into half-angle single quotes '’'
     input_text = input_text.replace('’', '\'')
     input_text = input_text.replace('‘', '\'')
     input_text = input_text.replace('“', '\'')
     input_text = input_text.replace('”', '\'')
     input_text = input_text.replace('"', '\'')
-    input_text = input_text.replace(':\'', ',')
     input_text = input_text.replace('\'\'', '\'')
+
+    # 4th stage: process colons and semicolons
+    input_text = input_text.replace(':\'', ',') # for the colons followed by a quote, turn them into commas
+    input_text = input_text.replace(':', ',')
+    input_text = input_text.replace(';', '.')
+
+    # 5th stage: process double-hyphens and em dashes
+    input_text = input_text.replace('--', '-')
+    input_text = input_text.replace('—', '-')
+    input_text = input_text.replace('¯', '-')
+    input_text = input_text.replace('-', ',')
+    input_text = input_text.replace('/', '.')
+
+    # 7th stage: replace all the punctuation marks other than ',', '.', '\'', '!', '?' by a space
+    _input_text_tmp = []
+    for char in input_text:
+        if not char.isalpha() and char not in [',', '.', '\'', '!', '?']:
+            _input_text_tmp.append(' ')
+            continue
+        _input_text_tmp.append(char)
+    input_text = ''.join(_input_text_tmp)
+
+    # deal with single quotations by different cases
     _input_text_tmp = []
     for idx, char in enumerate(input_text):
         # save all the non-quotation characters
@@ -58,51 +84,56 @@ def en_text_process(input_text: str, txt_format: str) -> str:
         # remove the quotations at the beginning or end
         elif idx == 0 or idx == len(input_text) - 1:
             continue
-        # remove the quotations not surrounded by letters
+        # remove the quotations not surrounded by letters on both sides
         elif not input_text[idx - 1].isalpha() or not input_text[idx + 1].isalpha():
-            if input_text[idx - 1] == ' ' or input_text[idx + 1] == ' ':
-                continue
-            else:
+            # if a quotation is surrounded by a letter on the left and a blank on the right, turn it into a comma
+            if input_text[idx - 1].isalpha() and input_text[idx + 1] == ' ':
+                _input_text_tmp.append(',')
+            # non-letter and non-blank character -> punctuation marks
+            # turn the quotations surrounded by two punctuation marks into a blank
+            elif is_punc(input_text[idx - 1]) and is_punc(input_text[idx + 1]):
                 _input_text_tmp.append(' ')
+            # in other cases, remove it
+            else:
+                continue
         # save the intra-word quotations
         else:
             _input_text_tmp.append(char)
     input_text = ''.join(_input_text_tmp)
 
-    # convert standalone colons and semicolons into commas or periods
-    input_text = input_text.replace(':', ',')
-    input_text = input_text.replace(';', '.')
+    # 8th stage: question and exclamation marks
+    input_text = re.sub('([.,!?]\s*)+!', '!', input_text)  # remove duplicated questions
+    input_text = re.sub('([.,!?]\s*)+\?', '?', input_text)  # remove duplicated exclamations
+    input_text = re.sub('([.,!?]\s*)+\.', '.', input_text)  # remove duplicated periods
+    input_text = re.sub('([.,!?]\s*)+,', ',', input_text)  # remove duplicated commas
 
-    # remove double-hyphens and em dashes
-    input_text = input_text.replace(' -- ', ' ')
-    input_text = input_text.replace(' --', ',')
-    input_text = input_text.replace(' - ', ' ')
-    input_text = input_text.replace(' -', ',')
-    input_text = input_text.replace('--', ' ')
-    input_text = input_text.replace('—', '-')
-    input_text = input_text.replace('-', '')
-
-    # remove all kinds of parentheses
-    input_text = input_text.replace('{', '')
-    input_text = input_text.replace('}', '')
-    input_text = input_text.replace('[', '')
-    input_text = input_text.replace(']', '')
-    input_text = input_text.replace('(', '')
-    input_text = input_text.replace(')', '')
-
-    # exclamation
-    input_text = input_text.replace('!!!', '!')
-    input_text = input_text.replace('!!', '!')
-
-    # remove useless symbols
-    input_text = input_text.replace('¯', '')
-    input_text = input_text.replace('/', ' ')
-
-    # remove the blanks at the beginning and end
-    while input_text.startswith(' '):
+    # remove the blanks and punctuation marks at the beginning
+    while input_text.startswith(' ') or is_punc(input_text[0]):
         input_text = ''.join(input_text[1:])
+    # remove the blanks at the end
     while input_text.endswith(' '):
         input_text = ''.join(input_text[:-1])
+
+    # remove useless blanks
+    _input_text_tmp = []
+    for idx, char in enumerate(input_text):
+        if char == ' ':
+            # remove consecutive blanks and replace them by a single blank
+            if input_text[idx + 1] == ' ':
+                continue
+            # remove the blanks surrounded by letters on the left and punctuations on the right
+            elif _input_text_tmp[-1].isalpha() and is_punc(input_text[idx + 1]):
+                continue
+        elif (is_punc(char) and char != '\'') and idx < len(input_text) - 1:
+            # add a space between punctuation marks on the left and letters on the right
+            if input_text[idx + 1].isalpha():
+                _input_text_tmp.append(f'{char} ')
+                continue
+            # only retain the last one of consecutive punctuation marks
+            elif is_punc(input_text[idx + 1]):
+                continue
+        _input_text_tmp.append(char)
+    input_text = ''.join(_input_text_tmp)
 
     # remain all the punctuation marks
     if txt_format == 'punc':
@@ -235,4 +266,5 @@ def get_readable_memory(raw_number: int or float) -> str:
 
 if __name__ == '__main__':
     en_text_process(
-        "\"'What right have you, any more than the rest, to ask for an exception?'--'It is true.'--'But never mind,' continued Cucumetto, laughing, 'sooner or later your turn will come.' Carlini's teeth clinched convulsively.", 'txt')
+        'Notes of admiration (!), of interrogation (?), of remonstrance, approval, or abuse, come pouring into mr',
+        txt_format='punc')

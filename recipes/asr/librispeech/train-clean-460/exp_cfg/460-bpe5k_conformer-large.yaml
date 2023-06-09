@@ -1,40 +1,41 @@
-###############################################################################
-# Model: Transformer-ASR
+##############################################################################
+# Model: Conformer-ASR small version (13.79M)
 # Tokens: BPE 5k trained on train-clean-100 of LibriSpeech
+# Batching: 241 steps per epoch (25 minutes speech per batch)
+# Optimization: 16000 warming-up steps (~66 warming-up epochs) & 0.001 peak LR
 # Augmentation: Speech Perturbation + SpecAugment
 # losses: 0.2 Label Smooth + CTC loss
-# Training: train-960 of LibriSpeech & train-960 of 16khz-downsampled LibriTTS
+# Training: train-clean-100 of LibriSpeech
 # Validation: dev-clean of LibriSpeech
 # Testing: test-clean & test-other of LibriSpeech
 # Authors: Heli Qi
-# Required GPUs:
-# Required Time:
-# Expected WER performance (test-clean / test-other): ASR-only () and ASR-LM ()
+# Required GPUs: 1 × NVIDIA RTX A5000 (49GB)
+# Required Time: up to 7 hours
+# Expected WER performance (test-clean / test-other): ASR-only (8.99% / 23.39%) and ASR-LM (6.20% / 17.08%)
 # ############################################################################
 
 
 ###################################
 # Experiment Parameters and setup #
 ###################################
+# dataset-related
 # if your dumped dataset is outside the toolkit folder, please change dataset_path. There should be a folder named 'libritts' in dataset_path
 dataset_path: datasets/
-
-# data-related
-train_set: train-960
+dataset: librispeech
+train_set: train-clean-460
 valid_set: dev-clean
 
 # waveform-related
-librispeech_wav_format: wav
-libritts_wav_format: wav16000
+wav_format: wav
 sample_rate: 16000
 
 # tokenizer-related
 txt_format: no-punc
-vocab_subset: train-clean-100
+vocab_subset: train-clean-460
 token_type: sentencepiece
 token_num: bpe5k
 
-# batch-related values
+# batch-related
 batch_len: 1.8e7
 
 # model-related
@@ -51,8 +52,8 @@ warmup_steps: 16000
 # running-related
 seed: 0
 num_workers: 1
-pin_memory: True
-non_blocking: True
+pin_memory: False
+non_blocking: False
 
 # gradient-related
 accum_grad: 1
@@ -60,34 +61,32 @@ ft_factor: 1.0
 grad_clip: 5.0
 
 # multi-GPU-related
-ngpu: 3 # please change ngpu based on the situation of your machine
+ngpu: 2 # please change ngpu based on the situation of your machine
 gpus: null # null means the GPUs with the largest free memory will be used
+#enable_syncbatchnorm: False
 
 # training-related
-train: False
+train: True
 best_model_selection: !tuple (valid, accuracy, max, 10)
-early_stopping_patience: 10
-num_epochs: 100
+early_stopping_patience: 15
+num_epochs: 200
 
 # snapshot-related
 visual_snapshot_number: 3
 visual_snapshot_interval: 5
 
 # testing-related
-test: True
+test: False
 test_model: 10_valid_accuracy_average
 
-# These arguments are shared by data_cfg and train_cfg
-librispeech_data_root: !ref <dataset_path>/librispeech/data
-libritts_data_root: !ref <dataset_path>/libritts/data
+# This argument is shared by data_cfg and train_cfg
+data_root: !ref <dataset_path>/<dataset>/data
 
 
 
 #################################
 # Model Inference Configuration #
 #################################
-# Before evaluating the trained model on test-clean and test-other, we need to find the best softmax temperature on dev-clean.
-# Here the searching range is all the odd number from 1.1 to 1.9.
 infer_cfg:
   shared_args:
     beam_size: 16
@@ -95,9 +94,8 @@ infer_cfg:
     # ASR-only decoding
     - ctc_weight: 0.2
     # ASR-LM decoding
-    - ctc_weight: 0.4
-      lm_weight: 0.4
-
+    - ctc_weight: 0.3
+      lm_weight: 0.6
 
 
 ##############################
@@ -110,17 +108,11 @@ data_cfg:
       dataset_type: speech_text.SpeechTextDataset
       dataset_conf:
         main_data:
-          feat:
-            - !ref <librispeech_data_root>/<librispeech_wav_format>/<train_set>/idx2wav
-            - !ref <libritts_data_root>/<libritts_wav_format>/<train_set>/idx2wav
-          text:
-            - !ref <librispeech_data_root>/<librispeech_wav_format>/<train_set>/idx2<txt_format>_text
-            - !ref <libritts_data_root>/<libritts_wav_format>/<train_set>/idx2<txt_format>_text
+          feat: !ref <data_root>/<wav_format>/<train_set>/idx2wav
+          text: !ref <data_root>/<wav_format>/<train_set>/idx2<txt_format>_text
         use_speed_perturb: True
 
-      data_len:
-        - !ref <librispeech_data_root>/<librispeech_wav_format>/<train_set>/idx2wav_len
-        - !ref <libritts_data_root>/<libritts_wav_format>/<train_set>/idx2wav_len
+      data_len: !ref <data_root>/<wav_format>/<train_set>/idx2wav_len
       shuffle: True
       is_descending: True
       batch_len: !ref <batch_len>
@@ -131,11 +123,11 @@ data_cfg:
       dataset_type: speech_text.SpeechTextDataset
       dataset_conf:
         main_data:
-          feat: !ref <librispeech_data_root>/<librispeech_wav_format>/<valid_set>/idx2wav
-          text: !ref <librispeech_data_root>/<librispeech_wav_format>/<valid_set>/idx2<txt_format>_text
+          feat: !ref <data_root>/<wav_format>/<valid_set>/idx2wav
+          text: !ref <data_root>/<wav_format>/<valid_set>/idx2<txt_format>_text
 
       shuffle: False
-      data_len: !ref <librispeech_data_root>/<librispeech_wav_format>/<valid_set>/idx2wav_len
+      data_len: !ref <data_root>/<wav_format>/<valid_set>/idx2wav_len
 
   test:
     test-clean:
@@ -144,14 +136,14 @@ data_cfg:
         dataset_type: speech_text.SpeechTextDataset
         dataset_conf:
           main_data:
-            feat: !ref <librispeech_data_root>/<librispeech_wav_format>/test-clean/idx2wav
-            text: !ref <librispeech_data_root>/<librispeech_wav_format>/test-clean/idx2<txt_format>_text
+            feat: !ref <data_root>/<wav_format>/test-clean/idx2wav
+            text: !ref <data_root>/<wav_format>/test-clean/idx2<txt_format>_text
 
-        data_len: !ref <librispeech_data_root>/<librispeech_wav_format>/test-clean/idx2wav_len
+        data_len: !ref <data_root>/<wav_format>/test-clean/idx2wav_len
         shuffle: False
         group_info:
-          speaker: !ref <librispeech_data_root>/<librispeech_wav_format>/test-clean/idx2spk
-          gender: !ref <librispeech_data_root>/<librispeech_wav_format>/test-clean/idx2gen
+          speaker: !ref <data_root>/<wav_format>/test-clean/idx2spk
+          gender: !ref <data_root>/<wav_format>/test-clean/idx2gen
 
     test-other:
       type: abs.Iterator
@@ -159,14 +151,14 @@ data_cfg:
         dataset_type: speech_text.SpeechTextDataset
         dataset_conf:
           main_data:
-            feat: !ref <librispeech_data_root>/<librispeech_wav_format>/test-other/idx2wav
-            text: !ref <librispeech_data_root>/<librispeech_wav_format>/test-other/idx2<txt_format>_text
+            feat: !ref <data_root>/<wav_format>/test-other/idx2wav
+            text: !ref <data_root>/<wav_format>/test-other/idx2<txt_format>_text
 
-        data_len: !ref <librispeech_data_root>/<librispeech_wav_format>/test-other/idx2wav_len
+        data_len: !ref <data_root>/<wav_format>/test-other/idx2wav_len
         shuffle: False
         group_info:
-          speaker: !ref <librispeech_data_root>/<librispeech_wav_format>/test-other/idx2spk
-          gender: !ref <librispeech_data_root>/<librispeech_wav_format>/test-other/idx2gen
+          speaker: !ref <data_root>/<wav_format>/test-other/idx2spk
+          gender: !ref <data_root>/<wav_format>/test-other/idx2gen
 
 
 
@@ -180,13 +172,13 @@ train_cfg:
       customize_conf:
         ctc_weight: !ref <ctc_weight>
         token_type: !ref <token_type>
-        token_path: !ref <librispeech_data_root>/<token_type>/<vocab_subset>/<token_num>/<txt_format>
+        token_path: !ref <data_root>/<token_type>/<vocab_subset>/<token_num>/<txt_format>
         lm_model_cfg: recipes/lm/librispeech/lm_text/exp/100-bpe5k_transformer/train_cfg.yaml
         lm_model_path: recipes/lm/librispeech/lm_text/exp/100-bpe5k_transformer/models/5_valid_text_ppl_average.pth
 
     module_conf:
       frontend:
-        type: mel_fbank
+        type: frontend.speech2mel.Speech2MelSpec
         conf:
           sr: !ref <sample_rate>
           preemphasis: 0.97
@@ -199,43 +191,41 @@ train_cfg:
       specaug:
         freq_mask_width: 15
         freq_mask_num: 4
-        time_mask_width: 20
-        time_mask_num: 4
+        time_mask_width: 0.05
+        time_mask_num: 5
 
       enc_prenet:
-        type: conv2d
+        type: prenet.conv2d.Conv2dPrenet
         conf:
           conv_dims:
-            - 64
-            - 64
+            - !ref <d_model>
+            - !ref <d_model>
           conv_kernel: 3
           conv_stride: 2
           conv_batchnorm: true
+          conv_activation: LeakyReLU
           lnr_dims: !ref <d_model>
 
       encoder:
-        type: transformer
+        type: conformer.encoder.ConformerEncoder
         conf:
-          posenc_dropout: !ref <dropout>
-          posenc_scale: false
-          emb_layernorm: true
-          emb_scale: false
           d_model: !ref <d_model>
           num_heads: !ref <num_heads>
           num_layers: 12
           att_dropout: !ref <dropout>
           fdfwd_dim: !ref <fdfwd_dim>
+          fdfwd_activation: GELU
           fdfwd_dropout: !ref <dropout>
           res_dropout: !ref <dropout>
           layernorm_first: true
 
       dec_emb:
-        type: embed
+        type: prenet.embed.EmbedPrenet
         conf:
           embedding_dim: !ref <d_model>
 
       decoder:
-        type: transformer
+        type: transformer.decoder.TransformerDecoder
         conf:
           posenc_dropout: !ref <dropout>
           posenc_scale: false
@@ -246,6 +236,7 @@ train_cfg:
           num_layers: 6
           att_dropout: !ref <dropout>
           fdfwd_dim: !ref <fdfwd_dim>
+          fdfwd_activation: GELU
           fdfwd_dropout: !ref <dropout>
           res_dropout: !ref <dropout>
           layernorm_first: true
@@ -259,6 +250,7 @@ train_cfg:
     conf:
       optim_type: Adam
       optim_conf:
+        lr: 0.002
         betas:
           - 0.9
           - 0.98

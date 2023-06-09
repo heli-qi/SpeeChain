@@ -13,14 +13,13 @@
 # if your dumped dataset is outside the toolkit folder, please change dataset_path. There should be a folder named 'libritts' in dataset_path
 dataset_path: datasets/
 
-text_dataset: librispeech
-valid_dset: dev-clean
-txt_format: no-punc
+text_dataset: libritts
+txt_format: punc
 token_num: stress
 
 refer_dataset: libritts
 train_set: train-clean-100
-spk_emb_model: xvector
+spk_emb_model: ecapa
 
 
 
@@ -31,15 +30,28 @@ text_root: !ref <dataset_path>/<text_dataset>/data
 refer_root: !ref <dataset_path>/<refer_dataset>/data
 
 test:
-    librispeech_dev-clean:
+    dev-clean:
         type: abs.Iterator
         conf:
             dataset_type: speech_text.RandomSpkFeatDataset
             dataset_conf:
                 main_data:
-                    text: !ref <text_root>/g2p/<valid_dset>/<token_num>/<txt_format>/idx2text
+                    text: !ref <text_root>/g2p/dev-clean/<token_num>/<txt_format>/idx2text
                 spk_feat: !ref <refer_root>/wav16000/<train_set>/idx2<spk_emb_model>_spk_feat
                 use_aver_feat: True
 
             shuffle: False
-            data_len: !ref <text_root>/g2p/<valid_dset>/<token_num>/<txt_format>/idx2text_len
+            data_len: !ref <text_root>/g2p/dev-clean/<token_num>/<txt_format>/idx2text_len
+
+    test-clean:
+        type: abs.Iterator
+        conf:
+            dataset_type: speech_text.RandomSpkFeatDataset
+            dataset_conf:
+                main_data:
+                    text: !ref <text_root>/g2p/test-clean/<token_num>/<txt_format>/idx2text
+                spk_feat: !ref <refer_root>/wav16000/<train_set>/idx2<spk_emb_model>_spk_feat
+                use_aver_feat: True
+
+            shuffle: False
+            data_len: !ref <text_root>/g2p/test-clean/<token_num>/<txt_format>/idx2text_len

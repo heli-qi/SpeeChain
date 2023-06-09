@@ -9,6 +9,7 @@ if [ -z "${SPEECHAIN_ROOT}" ];then
 fi
 
 
+
 function print_help_message {
   echo "usage:
   $0 \\ (The arguments in [] are optional while other arguments must be given by your run.sh.)

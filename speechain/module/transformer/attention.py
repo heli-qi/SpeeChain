@@ -25,7 +25,7 @@ class MultiHeadedAttention(Module):
     https://github.com/OpenNMT/OpenNMT-py
     """
 
-    def module_init(self, num_heads: int, d_model: int, dropout: float = 0.1):
+    def module_init(self, num_heads: int, d_model: int, dropout: float = 0.1, scale_dp_by_head: bool = False):
         """
         Create a multi-headed attention layer.
 
@@ -51,19 +51,9 @@ class MultiHeadedAttention(Module):
         self.dropout = nn.Dropout(dropout)
         self.output_layer = nn.Linear(d_model, d_model)
 
-    def forward(self, k: torch.Tensor, v: torch.Tensor, q: torch.Tensor, mask: torch.Tensor = None):
-        """
-        Computes multi-headed attention.
+        self.scale = 1 / math.sqrt(self.head_size) if scale_dp_by_head else 1 / math.sqrt(self.d_model)
 
-        Args:
-            k: keys   [B, M, D] with M being the sentence length.
-            v: values [B, M, D]
-            q: query  [B, M, D]
-            mask: optional mask [B, 1, M]
-
-        Returns:
-
-        """
+    def kvq_forward(self, k: torch.Tensor, v: torch.Tensor, q: torch.Tensor):
 
         batch_size = k.size(0)
 
@@ -77,10 +67,9 @@ class MultiHeadedAttention(Module):
         v = v.view(batch_size, -1, self.num_heads, self.head_size).transpose(1, 2)
         q = q.view(batch_size, -1, self.num_heads, self.head_size).transpose(1, 2)
 
-        # compute scaled attention scores
-        # Note: the scale factor here should be d_model instead of head_size?
-        # origin: q = q / math.sqrt(self.head_size)
-        scores = torch.matmul(q, k.transpose(2, 3)) / math.sqrt(self.d_model)
+        return k, v, q
+
+    def attention_forward(self, v: torch.Tensor, scores: torch.Tensor, mask: torch.Tensor):
 
         # apply the mask (if we have one)
         # we add a dimension for the heads to it below: [B, 1, 1, M]
@@ -96,9 +85,30 @@ class MultiHeadedAttention(Module):
         # back to [B, M, D]
         context = torch.matmul(attention, v)
         context = context.transpose(1, 2).contiguous().view(
-            batch_size, -1, self.num_heads * self.head_size
+            v.size(0), -1, self.num_heads * self.head_size
         )
 
         output = self.output_layer(context)
 
         return output, score_soft
+
+    def forward(self, k: torch.Tensor, v: torch.Tensor, q: torch.Tensor, mask: torch.Tensor = None):
+        """
+        Computes multi-headed attention.
+
+        Args:
+            k: keys   [B, M, D] with M being the sentence length.
+            v: values [B, M, D]
+            q: query  [B, M, D]
+            mask: optional mask [B, 1, M]
+
+        Returns:
+
+        """
+
+        k, v, q = self.kvq_forward(k, v, q)
+
+        # compute scaled attention scores
+        scores = torch.matmul(q, k.transpose(2, 3)) * self.scale
+
+        return self.attention_forward(v, scores, mask)

@@ -6,6 +6,8 @@
 import copy
 import os
 import warnings
+
+import numpy as np
 import torch
 from typing import Dict, Any, List
 from collections import OrderedDict
@@ -449,6 +451,22 @@ class ARASR(Model):
                 )
         return outputs
 
+    def get_ctc_forward_results(self, ctc_logits: torch.Tensor, enc_feat_len: torch.Tensor, text: torch.Tensor, ctc_loss_fn: callable):
+
+        ctc_text_confid = ctc_logits.log_softmax(dim=-1).max(dim=-1)[0].sum(dim=-1)
+        ctc_recover_text = [self.tokenizer.tensor2text(ctc_text) for ctc_text in
+                            ctc_loss_fn.recover(ctc_logits, enc_feat_len)]
+        real_text = [self.tokenizer.tensor2text(t) for t in text]
+        ctc_cer_wer = \
+            [self.error_rate(hypo_text=ctc_recover_text[i], real_text=real_text[i]) for i in range(len(real_text))]
+
+        return dict(
+            ctc_text_confid=ctc_text_confid.clone().detach(),
+            ctc_cer=np.mean([ctc_cer_wer[i][0] for i in range(len(ctc_cer_wer))]),
+            ctc_wer=np.mean([ctc_cer_wer[i][1] for i in range(len(ctc_cer_wer))]),
+            ctc_text=ctc_recover_text
+        )
+
     def criterion_forward(self,
                           logits: torch.Tensor,
                           text: torch.Tensor,
@@ -461,26 +479,9 @@ class ARASR(Model):
                           ilm_loss_fn: CrossEntropy = None,
                           ctc_loss_fn: CTCLoss = None,
                           att_guid_loss_fn: AttentionGuidance = None,
+                          forward_ctc: bool = False,
                           **kwargs) -> (Dict[str, torch.Tensor], Dict[str, torch.Tensor]) or Dict[str, torch.Tensor]:
-        """
 
-        Args:
-            logits:
-            text:
-            text_len:
-            ilm_logits:
-            ctc_logits:
-            enc_feat_len:
-            att:
-            ce_loss_fn:
-            ilm_loss_fn:
-            ctc_loss_fn:
-            att_guid_loss_fn:
-            **kwargs:
-
-        Returns:
-
-        """
         accuracy = self.accuracy(logits=logits, text=text, text_len=text_len)
         metrics = dict(accuracy=accuracy.detach())
 
@@ -499,6 +500,13 @@ class ARASR(Model):
             ctc_loss = ctc_loss_fn(ctc_logits, enc_feat_len, text, text_len)
             loss = (1 - self.ctc_weight) * ce_loss + self.ctc_weight * ctc_loss
             metrics.update(ctc_loss=ctc_loss.clone().detach())
+
+            if forward_ctc:
+                metrics.update(
+                    self.get_ctc_forward_results(
+                        ctc_logits=ctc_logits, enc_feat_len=enc_feat_len, text=text, ctc_loss_fn=ctc_loss_fn)
+                )
+
         # if ctc_loss is not specified, only record ce_loss as loss in the returned Dicts
         else:
             loss = ce_loss
@@ -562,15 +570,17 @@ class ARASR(Model):
 
         # --- snapshot the objective metrics --- #
         vis_logs = []
-        # CER, WER, Confidence, and Length Ratio
+        # CER, WER, Confidence
         materials = dict()
-        for metric in ['cer', 'wer', 'text_confid', 'ilm_text_ppl']:
+        for metric in ['cer', 'wer', 'ctc_cer', 'ctc_wer', 'accuracy', 'text_confid', 'ilm_text_ppl']:
             if metric not in infer_results.keys():
                 continue
 
             # store each target metric into materials
             if metric not in epoch_records[sample_index].keys():
                 epoch_records[sample_index][metric] = []
+            if not isinstance(infer_results[metric]['content'], List):
+                infer_results[metric]['content'] = [infer_results[metric]['content']]
             epoch_records[sample_index][metric].append(infer_results[metric]['content'][0])
             materials[metric] = epoch_records[sample_index][metric]
         # save the visualization log
@@ -599,17 +609,21 @@ class ARASR(Model):
                     plot_type='text', subfolder_names=sample_index
                 )
             )
-        # hypothesis text
-        if 'text' not in epoch_records[sample_index].keys():
-            epoch_records[sample_index]['text'] = []
-        epoch_records[sample_index]['text'].append(infer_results['text']['content'][0])
-        # snapshot the information in the materials
-        vis_logs.append(
-            dict(
-                materials=dict(hypo_text=copy.deepcopy(epoch_records[sample_index]['text'])),
-                plot_type='text', epoch=epoch, x_stride=snapshot_interval, subfolder_names=sample_index
+
+        # teacher-forcing text and CTC-decoding text
+        for text_name in ['text', 'ctc_text']:
+            if text_name not in infer_results.keys():
+                continue
+            if text_name not in epoch_records[sample_index].keys():
+                epoch_records[sample_index][text_name] = []
+            epoch_records[sample_index][text_name].append(infer_results[text_name]['content'][0])
+            # snapshot the information in the materials
+            vis_logs.append(
+                dict(
+                    materials=dict(hypo_text=copy.deepcopy(epoch_records[sample_index][text_name])),
+                    plot_type='text', epoch=epoch, x_stride=snapshot_interval, subfolder_names=sample_index
+                )
             )
-        )
 
         # hypothesis attention matrix
         infer_results['att'] = self.attention_reshape(infer_results['att'])
@@ -715,6 +729,7 @@ class ARASR(Model):
                 torch.save(lm_model_para, os.path.join(self.result_path, 'lm_model.pth'))
                 self.lm.load_state_dict(lm_model_para)
 
+        outputs = dict()
         # --- 1. The 1st Pass: ASR Decoding by Beam Searching --- #
         if not teacher_forcing:
             # copy the input data in advance for data safety
@@ -740,16 +755,21 @@ class ARASR(Model):
 
         # --- 2. The 2nd Pass: ASR Decoding by Teacher Forcing --- #
         if teacher_forcing or return_att:
-            infer_results = self.module_forward(feat=feat, feat_len=feat_len,
-                                                text=text if teacher_forcing else hypo_text,
-                                                text_len=text_len if teacher_forcing else hypo_text_len,
-                                                return_att=return_att, domain=domain)
+            # copy the input data in advance for data safety
+            model_input = copy.deepcopy(dict(feat=feat, feat_len=feat_len,
+                                             text=text if teacher_forcing else hypo_text,
+                                             text_len=text_len if teacher_forcing else hypo_text_len))
+            infer_results = self.module_forward(return_att=return_att, domain=domain, **model_input)
             # return the attention matrices
             if return_att:
                 hypo_att = infer_results['att']
 
             # update the hypothesis text-related data in the teacher forcing mode
             if teacher_forcing:
+                tf_results = self.criterion_forward(text=text, text_len=text_len, forward_ctc=True, **infer_results)
+                for key, content in tf_results.items():
+                    outputs[key] = dict(format='txt', content=content if isinstance(content, List) else to_cpu(content))
+
                 # the last token is meaningless because the text is padded with eos at the end
                 infer_results['logits'] = torch.log_softmax(infer_results['logits'][:, :-1], dim=-1)
                 hypo_text_prob, hypo_text = torch.max(infer_results['logits'], dim=-1)
@@ -767,11 +787,12 @@ class ARASR(Model):
 
         # --- 3. Unsupervised Metrics Calculation (ground-truth text is not involved here) --- #
         # recover the text tensors back to text strings (removing the padding and sos/eos tokens)
-        hypo_text = [self.tokenizer.tensor2text(hypo[(hypo != self.tokenizer.ignore_idx) &
-                                                     (hypo != self.tokenizer.sos_eos_idx)]) for hypo in hypo_text]
+        # hypo_text = [self.tokenizer.tensor2text(hypo[(hypo != self.tokenizer.ignore_idx) &
+        #                                              (hypo != self.tokenizer.sos_eos_idx)]) for hypo in hypo_text]
+        hypo_text = [self.tokenizer.tensor2text(hypo) for hypo in hypo_text]
 
         # in the decoding-only mode, only the hypothesis-related results will be returned
-        outputs = dict(
+        outputs.update(
             text=dict(format='txt', content=hypo_text),
             text_len=dict(format='txt', content=hypo_text_len),
             feat_token_len_ratio=dict(format='txt', content=feat_token_len_ratio),

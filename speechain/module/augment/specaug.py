@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Union
 
 import torch
 
@@ -22,29 +22,14 @@ class SpecAugment(Module):
                     time_warp_window: int = 5,
                     time_warp_mode: str = 'bicubic',
                     freq_mask: bool = True,
-                    freq_mask_width: int or List[int] = 30,
+                    freq_mask_width: Union[int, List[int]] = 30,
                     freq_mask_num: int = 2,
                     time_mask: bool = True,
-                    time_mask_width: int or List[int] = 40,
+                    time_mask_width: Union[int, float, List[int or float]] = 0.05,
                     time_mask_num: int = 2,
                     time_mask_ratio: float = 1.0,
                     feat_norm: bool = True):
-        """
 
-        Args:
-            time_warp:
-            time_warp_window:
-            time_warp_mode:
-            freq_mask:
-            freq_mask_width:
-            freq_mask_num:
-            time_mask:
-            time_mask_width:
-            time_mask_num:
-            time_mask_ratio:
-            feat_norm:
-
-        """
         assert time_warp or freq_mask or time_mask, \
             "You must specify at least one type of augmentation in SpecAugment!"
         self.feat_dim = None
@@ -72,13 +57,12 @@ class SpecAugment(Module):
 
         # time masking arguments
         self.time_mask = time_mask
-        if isinstance(time_mask_width, int):
+        if isinstance(time_mask_width, (int, float)):
             time_mask_width = [0, time_mask_width]
         elif not isinstance(time_mask_width, List):
             raise ValueError
         self.time_mask_width = time_mask_width
         self.time_mask_num = time_mask_num
-        self.time_mask_ratio = time_mask_ratio
 
         # used for deciding masking values
         self.feat_norm = feat_norm
@@ -155,13 +139,18 @@ class SpecAugment(Module):
 
         # time mask generation
         if self.time_mask:
+            time_mask_lower, time_mask_upper = self.time_mask_width
+            if isinstance(time_mask_lower, float):
+                time_mask_lower = int(time_mask_lower * time_minlen)
+            if isinstance(time_mask_upper, float):
+                time_mask_upper = int(time_mask_upper * time_minlen)
+
             # the maximum time masking width cannot be larger than ratio × minimum time sequence length
-            time_mask_width = self.time_mask_width
-            time_mask_width[1] = min(time_mask_width[1], int(self.time_mask_ratio * time_minlen))
+            time_mask_upper = min(time_mask_upper, time_minlen)
 
             # randomly select the time masking length for each masking operation in each utterance
             # (batch_size, 1, time_mask_num), mask_len ∈ {time_mask_width[0], ..., time_mask_width[1]}
-            mask_len = torch.randint(time_mask_width[0], time_mask_width[1] + 1,
+            mask_len = torch.randint(time_mask_lower, time_mask_upper + 1,
                                      size=(batch_size, self.time_mask_num), device=feat.device).unsqueeze(1)
             # randomly select the time masking position for each masking operation in each utterance
             # (batch_size, 1, time_mask_num), mask_pos ∈ {0, ..., time_minlen - mask_len.max - 1}
@@ -195,7 +184,6 @@ class SpecAugment(Module):
 
         if self.time_mask:
             output += f"\ntime_mask_width={self.time_mask_width}, " \
-                      f"time_mask_num={self.time_mask_num}, " \
-                      f"time_mask_ratio={self.time_mask_ratio}"
+                      f"time_mask_num={self.time_mask_num}"
 
         return output

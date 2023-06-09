@@ -1,11 +1,13 @@
 ##############################################################################
-# Model: Transformer-TTS with reduction factor=1
-# Tokens: Phoneme by G2P
-# losses: Default
-# Training: train-clean-100 of LibriTTS
+# Model: FastSpeech2 with ECAPA speaker embedding
+# Tokens: Phoneme by MFA (pretrained model: librispeech_train-clean-100)
+# losses: L1 for mel prediction, L2 for variance prediction
+# Training: train-clean-100 of 22.05khz-LibriTTS
+# Validation: dev-clean of 22.05khz-LibriTTS
+# Testing: test_clean of 22.05khz-LibriTTS
 # Authors: Heli Qi
-# Required GPUs: 4 × GeForce RTX 3090(24GB)
-# Required Time: Unknown
+# Required GPUs: 1 × NVIDIA RTX A6000 (49GB)
+# Required Time: up to 64 hours
 # ############################################################################
 
 
@@ -15,66 +17,70 @@
 # dataset-related
 # if your dumped dataset is outside the toolkit folder, please change dataset_path. There should be a folder named 'libritts' in dataset_path
 dataset_path: datasets/
-dataset: libritts
-train_set: train-clean-460
-valid_set: dev-clean
+dataset: vctk
+train_set: train-mic2
+valid_set: valid-mic2
 
 # waveform-related
-wav_format: wav22050
-sample_rate: 22050
+wav_format: wav16000
+sample_rate: 16000
+hop_length: 256
 
 # tokenizer-related
-txt_format: normal
-token_type: g2p
-token_num: full_tokens
+token_type: mfa
+mfa_model: acoustic=librispeech_train-clean-100_lexicon=librispeech
+token_num: stress
+txt_format: punc
 
 # batch-related
-batch_len: 1e7
+batch_len: 1.8e7
 
 # model-related
 reduction_factor: 1
 spk_emb_model: ecapa
-spk_emb_dim: 192
-norm_type: global
-layer_num: 6
-head_num: 8
-d_model: 512
-fdfwd_dim: 2048
-dropout: 0.5
-trmf_dropout: 0.1
+spk_emb_dim_pretrained: 192
+layer_num: 4
+head_num: 2
+d_model: 384
+fdfwd_dim: 1536
+trmf_dropout: 0.2
+conv_dropout: 0.5
 
 # optimizer-related
-warmup_steps: 16000
+warmup_steps: 6000
 
 # running-related
 seed: 0
-num_workers: 1
+train_num_workers: 10
+valid_num_workers: 5
 pin_memory: True
 non_blocking: True
 
 # gradient-related
-accum_grad: 2
+accum_grad: 1
 ft_factor: 1.0
 grad_clip: 1.0
 
 # multi-GPU-related
-ngpu: 4 # please change ngpu based on the situation of your machine
+ngpu: 1 # please change ngpu based on the situation of your machine
 gpus: null # null means the GPUs with the largest free memory will be used
 
 # training-related
 train: True
-num_epochs: 1000
+num_epochs: 500
+early_stopping_patience: 20
 best_model_selection: !tuple (train, loss, min, 10)
-early_stopping_patience: 10
+last_model_number: 10
 valid_per_epochs: 10
 
 # snapshot-related
 visual_snapshot_number: 3
-visual_snapshot_interval: !ref <valid_per_epochs>
+visual_snapshot_interval: 10
 
 # testing-related
 test: False
 test_model: 10_train_loss_average
+saving_proc_num: 4
 
 # This argument is shared by data_cfg and train_cfg
 data_root: !ref <dataset_path>/<dataset>/data
@@ -92,12 +98,13 @@ data_cfg:
       dataset_conf:
         main_data:
           feat: !ref <data_root>/<wav_format>/<train_set>/idx2wav
-          text: !ref <data_root>/g2p/<train_set>/<token_num>/<txt_format>/idx2text
+          text: !ref <data_root>/<token_type>/<mfa_model>/<train_set>/<token_num>/<txt_format>/idx2text
+          duration: !ref <data_root>/<token_type>/<mfa_model>/<train_set>/<token_num>/<txt_format>/idx2duration
           spk_feat: !ref <data_root>/<wav_format>/<train_set>/idx2<spk_emb_model>_spk_feat
-        data_selection:
-          - min
-          - 0.95
-          - !ref <data_root>/<wav_format>/<train_set>/idx2wav_len
+
+        pitch_conf:
+          hop_length: !ref <hop_length>
+        sample_rate: !ref <sample_rate>
 
       data_len: !ref <data_root>/<wav_format>/<train_set>/idx2wav_len
       shuffle: True
@@ -111,42 +118,31 @@ data_cfg:
       dataset_conf:
         main_data:
           feat: !ref <data_root>/<wav_format>/<valid_set>/idx2wav
-          text: !ref <data_root>/g2p/<valid_set>/<token_num>/<txt_format>/idx2text
+          text: !ref <data_root>/<token_type>/<mfa_model>/<valid_set>/<token_num>/<txt_format>/idx2text
+          duration: !ref <data_root>/<token_type>/<mfa_model>/<valid_set>/<token_num>/<txt_format>/idx2duration
           spk_feat: !ref <data_root>/<wav_format>/<valid_set>/idx2<spk_emb_model>_spk_feat
-        data_selection:
-          - min
-          - 0.95
-          - !ref <data_root>/<wav_format>/<valid_set>/idx2wav_len
+
+        pitch_conf:
+          hop_length: !ref <hop_length>
+        sample_rate: !ref <sample_rate>
 
       shuffle: False
       data_len: !ref <data_root>/<wav_format>/<valid_set>/idx2wav_len
 
   test:
-    test-clean:
+    test:
       type: abs.Iterator
       conf:
         dataset_type: speech_text.RandomSpkFeatDataset
         dataset_conf:
           main_data:
-            feat: !ref <data_root>/<wav_format>/test-clean/idx2wav
-            text: !ref <data_root>/g2p/test-clean/<token_num>/<txt_format>/idx2text
+            text: !ref <data_root>/g2p/test-mic2/<token_num>/<txt_format>/idx2text
+
           spk_feat: !ref <data_root>/<wav_format>/<train_set>/idx2<spk_emb_model>_spk_feat
+          use_aver_feat: True
 
         shuffle: False
-        data_len: !ref <data_root>/<wav_format>/test-clean/idx2wav_len
-
-    test-other:
-      type: abs.Iterator
-      conf:
-        dataset_type: speech_text.RandomSpkFeatDataset
-        dataset_conf:
-          main_data:
-            feat: !ref <data_root>/<wav_format>/test-other/idx2wav
-            text: !ref <data_root>/g2p/test-other/<token_num>/<txt_format>/idx2text
-          spk_feat: !ref <data_root>/<wav_format>/<train_set>/idx2<spk_emb_model>_spk_feat
-
-        shuffle: False
-        data_len: !ref <data_root>/<wav_format>/test-other/idx2wav_len
+        data_len: !ref <data_root>/g2p/test-mic2/<token_num>/<txt_format>/idx2text_len
 
 
 
@@ -155,34 +151,22 @@ data_cfg:
 ####################################
 train_cfg:
   model:
-    model_type: ar_tts.ARTTS
+    model_type: nar_tts.FastSpeech2
     model_conf:
       customize_conf:
+        sample_rate: !ref <sample_rate>
         token_type: !ref <token_type>
-        token_vocab: !ref <data_root>/<token_type>/<train_set>/<token_num>/<txt_format>/vocab
+        token_path: !ref <data_root>/<token_type>/<mfa_model>/<train_set>/<token_num>/<txt_format>
         reduction_factor: !ref <reduction_factor>
-        return_att_head_num: 2
-        return_att_layer_num: 2
 
     module_conf:
       enc_emb:
-        type: emb
+        type: prenet.embed.EmbedPrenet
         conf:
           embedding_dim: !ref <d_model>
 
-      enc_prenet:
-        type: conv1d
-        conf:
-          conv_dims:
-            - !ref <d_model>
-            - !ref <d_model>
-            - !ref <d_model>
-          conv_kernel: 5
-          conv_batchnorm: true
-          lnr_dims: !ref <d_model>
-
       encoder:
-        type: transformer
+        type: transformer.encoder.TransformerEncoder
         conf:
           posenc_dropout: !ref <trmf_dropout>
           posenc_scale: true
@@ -193,16 +177,44 @@ train_cfg:
           num_layers: !ref <layer_num>
           att_dropout: !ref <trmf_dropout>
           fdfwd_dim: !ref <fdfwd_dim>
+          fdfwd_type: conv
+          fdfwd_args:
+            kernel_size: 3
           fdfwd_dropout: !ref <trmf_dropout>
           res_dropout: !ref <trmf_dropout>
           layernorm_first: true
 
-      frontend:
-        type: mel_fbank
+      duration_predictor:
+        type: prenet.var_pred.Conv1dVarPredictor
         conf:
-          sr: 22050
+          conv_dims: !list [256, -1]
+          conv_kernel: 3
+          conv_dropout: !ref <conv_dropout>
+
+      pitch_predictor:
+        type: prenet.var_pred.Conv1dVarPredictor
+        conf:
+          conv_dims: !list [256, -1, -1, -1, -1]
+          conv_kernel: 5
+          conv_dropout: !ref <conv_dropout>
+          conv_emb_kernel: 1
+          conv_emb_dropout: 0.0
+
+      energy_predictor:
+        type: prenet.var_pred.Conv1dVarPredictor
+        conf:
+          conv_dims: !list [256, -1]
+          conv_kernel: 3
+          conv_dropout: !ref <conv_dropout>
+          conv_emb_kernel: 1
+          conv_emb_dropout: 0.0
+
+      feat_frontend:
+        type: frontend.speech2mel.Speech2MelSpec
+        conf:
+          sr: !ref <sample_rate>
           mag_spec: True
-          hop_length: 256
+          hop_length: !ref <hop_length>
           win_length: 1024
           n_mels: 80
           fmin: 0
@@ -210,27 +222,16 @@ train_cfg:
           log_base: null
           clamp: 1e-5
 
-      normalize:
-        norm_type: !ref <norm_type>
-
-      dec_prenet:
-        type: linear
-        conf:
-          lnr_dims:
-            - 256
-            - 256
-            - !ref <d_model>
-          lnr_dropout: !ref <dropout>
-          zero_centered: True
+      feat_normalize: True
+      pitch_normalize: True
+      energy_normalize: True
 
       spk_emb:
-        spk_emb_dim: !ref <spk_emb_dim>
+        spk_emb_dim_pretrained: !ref <spk_emb_dim_pretrained>
         spk_emb_comb: concat
-        spk_emb_scale: false
-        spk_emb_act: Softsign
 
       decoder:
-        type: transformer
+        type: transformer.encoder.TransformerEncoder
         conf:
           posenc_dropout: !ref <trmf_dropout>
           posenc_scale: true
@@ -241,24 +242,22 @@ train_cfg:
           num_layers: !ref <layer_num>
           att_dropout: !ref <trmf_dropout>
           fdfwd_dim: !ref <fdfwd_dim>
+          fdfwd_type: conv
+          fdfwd_args:
+            kernel_size: 3
           fdfwd_dropout: !ref <trmf_dropout>
           res_dropout: !ref <trmf_dropout>
           layernorm_first: true
 
       dec_postnet:
-        type: conv1d
+        type: postnet.conv1d.Conv1dPostnet
         conf:
-          conv_dims: !list [ 512, -1, -1, -1, 0 ]
+          conv_dims: !list [256, -1, -1, -1, 0]
           conv_kernel: 5
           conv_batchnorm: true
           conv_activation: Tanh
-          conv_dropout: !ref <dropout>
+          conv_dropout: !ref <conv_dropout>
 
-    criterion_conf:
-      feat_loss_type: L2
-      stop_pos_weight: 5.0
-      f_beta: 2.0
-      att_guid_sigma: 0.2
 
   optim_sches:
     type: noam.Noamlr

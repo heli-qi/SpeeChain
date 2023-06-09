@@ -7,8 +7,14 @@ from speechain.tokenizer.abs import Tokenizer
 
 
 # some abnormal phonemes G2P may give during decoding
-abnormal_phns = ['...', '. . .', '. . . .', '..', '. ...', '. .', '. . . . . . .', '. . . . . .',
-                 '. . . . . . . .', '. . . . .', '.. ..', '... .', '. . . . . . . . .']
+abnormal_phns = ['...', '. ...', '... .',
+                 '. .','. . .', '. . . .', '. . . . . . .', '. . . . . .', '. . . . . . . .', '. . . . .', '. . . . . . . . .',
+                 '..', '.. ..']
+cmu_phn_list = ['AH', 'AH0', 'AH1', 'AH2', 'IH', 'IH0', 'IH1', 'IH2', 'EH', 'EH0', 'EH1', 'EH2', 'AE', 'AE0', 'AE1', 'AE2',
+                'ER', 'ER0', 'ER1', 'ER2', 'UW', 'UW0', 'UW1', 'UW2', 'IY', 'IY0', 'IY1', 'IY2', 'AA', 'AA0', 'AA1', 'AA2',
+                'AY', 'AY0', 'AY1', 'AY2', 'AO', 'AO0', 'AO1', 'AO2', 'EY', 'EY0', 'EY1', 'EY2', 'OW', 'OW0', 'OW1', 'OW2',
+                'AW', 'AW0', 'AW1', 'AW2', 'UH', 'UH0', 'UH1', 'UH2', 'OY', 'OY0', 'OY1', 'OY2',
+                'T', 'N', 'D', 'S', 'R', 'L', 'DH', 'M', 'K', 'Z', 'W', 'HH', 'P', 'V', 'F', 'B', 'NG', 'G', 'SH', 'Y', 'CH', 'TH', 'JH', 'ZH']
 
 class GraphemeToPhonemeTokenizer(Tokenizer):
     """

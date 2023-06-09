@@ -6,7 +6,6 @@
 import argparse
 import os
 import sys
-import time
 import warnings
 from contextlib import contextmanager
 
@@ -82,7 +81,7 @@ class Runner(object):
             "--config",
             type=str,
             # default=None,
-            default="recipes/tts/vctk/exp_cfg/16khz_ecapa_mfa_fastspeech2.yaml",
+            default="recipes/asr/librispeech/train-clean-100/exp_cfg/100-bpe5k_conformer-medium_lr2e-3.yaml",
             help="The path of the all-in-one experiment configuration file. You can write all the arguments in this "
                  "all-in-one file instead of giving them to `runner.py` by command lines."
         )
@@ -1057,12 +1056,15 @@ class Runner(object):
                                 try:
                                     valid_metrics = model(batch_data=valid_batch)
                                 except Exception as e:
-                                    warnings.warn(f'Rank no.{args.rank} meets error {e}! '
-                                                  f'no.{step} validation step will be skipped!')
-                                    if logger is not None:
-                                        logger.warning(f'Rank no.{args.rank} meets error {e}! '
-                                                       f'no.{step} validation step will be skipped!')
-                                    continue
+                                    if args.ignore_train_exception:
+                                        warnings.warn(f'Rank no.{args.rank} meets error {e}! '
+                                                      f'no.{step} validation step will be skipped!')
+                                        if logger is not None:
+                                            logger.warning(f'Rank no.{args.rank} meets error {e}! '
+                                                           f'no.{step} validation step will be skipped!')
+                                        continue
+                                    else:
+                                        raise e
 
                         # no step log for the validation step
                         if monitor is not None:
@@ -1186,6 +1188,10 @@ class Runner(object):
                 infer_cfg_dict = dict()
                 for cfg in args.infer_cfg['exclu_args']:
                     assert isinstance(cfg, Dict), ""
+                    for cfg_key in cfg.keys():
+                        if cfg_key in args.infer_cfg['shared_args'].keys():
+                            raise ValueError(f"Find a duplicate argument {cfg_key} in both 'shared_args' and 'exclu_args'!")
+
                     cfg.update(args.infer_cfg['shared_args'])
                     cfg = dict(sorted(cfg.items(), key=lambda x: x[0]))
                     infer_cfg_dict['_'.join([f"{key}={value}" for key, value in cfg.items()])] = cfg
@@ -1592,7 +1598,7 @@ class Runner(object):
                 cls.test(args=args, test_model=model_name, iterators=iterators, model=model)
 
         else:
-            raise RuntimeError
+            raise RuntimeError('train and test in args cannot be False at the same time!')
 
         # --- 8. Release Computational Resource --- #
         if args.distributed and args.rank == 0:

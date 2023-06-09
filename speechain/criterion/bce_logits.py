@@ -50,6 +50,8 @@ class BCELogits(Criterion):
 
         """
         batch_size, feat_maxlen = pred.size(0), pred.size(1)
+        if tgt.dtype == torch.bool:
+            tgt = tgt.to(dtype=torch.float32)
 
         # mask production for the target labels
         tgt_mask = make_mask_from_len(tgt_len).squeeze()

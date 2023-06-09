@@ -28,12 +28,12 @@ hop_length: 256
 
 # tokenizer-related
 token_type: mfa
-mfa_model: english_us_arpa
+mfa_model: acoustic=english_us_arpa_lexicon=english_us_arpa
 token_num: stress
 txt_format: no-punc # used for testing by the G2P package
 
 # batch-related
-batch_len: 8e6
+batch_len: 1.5e7
 
 # model-related
 reduction_factor: 1
@@ -45,12 +45,12 @@ conv_dropout: 0.5
 trmf_dropout: 0.2
 
 # optimizer-related
-warmup_steps: 8000
+warmup_steps: 6000
 
 # running-related
 seed: 0
-train_num_workers: 5
-valid_num_workers: 5
+train_num_workers: 8
+valid_num_workers: 4
 pin_memory: True
 non_blocking: True
 
@@ -97,8 +97,8 @@ data_cfg:
       dataset_conf:
         main_data:
           feat: !ref <data_root>/<wav_format>/<train_set>/idx2wav
-          text: !ref <data_root>/<token_type>/<mfa_model>/<train_set>/<token_num>/idx2text
-          duration: !ref <data_root>/<token_type>/<mfa_model>/<train_set>/<token_num>/idx2duration
+          text: !ref <data_root>/<token_type>/<mfa_model>/<train_set>/<token_num>/<txt_format>/idx2text
+          duration: !ref <data_root>/<token_type>/<mfa_model>/<train_set>/<token_num>/<txt_format>/idx2duration
 
         pitch_conf:
           hop_length: !ref <hop_length>
@@ -116,8 +116,8 @@ data_cfg:
       dataset_conf:
         main_data:
           feat: !ref <data_root>/<wav_format>/<valid_set>/idx2wav
-          text: !ref <data_root>/<token_type>/<mfa_model>/<valid_set>/<token_num>/idx2text
-          duration: !ref <data_root>/<token_type>/<mfa_model>/<valid_set>/<token_num>/idx2duration
+          text: !ref <data_root>/<token_type>/<mfa_model>/<valid_set>/<token_num>/<txt_format>/idx2text
+          duration: !ref <data_root>/<token_type>/<mfa_model>/<valid_set>/<token_num>/<txt_format>/idx2duration
 
         pitch_conf:
           hop_length: !ref <hop_length>
@@ -150,17 +150,17 @@ train_cfg:
       customize_conf:
         sample_rate: !ref <sample_rate>
         token_type: !ref <token_type>
-        token_path: !ref <data_root>/<token_type>/<mfa_model>/<train_set>/<token_num>
+        token_path: !ref <data_root>/<token_type>/<mfa_model>/<train_set>/<token_num>/<txt_format>
         reduction_factor: !ref <reduction_factor>
 
     module_conf:
       enc_emb:
-        type: emb
+        type: prenet.embed.EmbedPrenet
         conf:
           embedding_dim: !ref <d_model>
 
       encoder:
-        type: transformer
+        type: transformer.encoder.TransformerEncoder
         conf:
           posenc_dropout: !ref <trmf_dropout>
           posenc_scale: true
@@ -172,20 +172,21 @@ train_cfg:
           att_dropout: !ref <trmf_dropout>
           fdfwd_dim: !ref <fdfwd_dim>
           fdfwd_type: conv
-          fdfwd_kernel: 3
+          fdfwd_args:
+            kernel_size: 3
           fdfwd_dropout: !ref <trmf_dropout>
           res_dropout: !ref <trmf_dropout>
           layernorm_first: true
 
       duration_predictor:
-        type: conv1d
+        type: prenet.var_pred.Conv1dVarPredictor
         conf:
           conv_dims: !list [256, -1]
           conv_kernel: 3
           conv_dropout: !ref <conv_dropout>
 
       pitch_predictor:
-        type: conv1d
+        type: prenet.var_pred.Conv1dVarPredictor
         conf:
           conv_dims: !list [256, -1, -1, -1, -1]
           conv_kernel: 5
@@ -194,7 +195,7 @@ train_cfg:
           conv_emb_dropout: 0.0
 
       energy_predictor:
-        type: conv1d
+        type: prenet.var_pred.Conv1dVarPredictor
         conf:
           conv_dims: !list [256, -1]
           conv_kernel: 3
@@ -203,7 +204,7 @@ train_cfg:
           conv_emb_dropout: 0.0
 
       feat_frontend:
-        type: mel_fbank
+        type: frontend.speech2mel.Speech2MelSpec
         conf:
           sr: !ref <sample_rate>
           mag_spec: True
@@ -220,7 +221,7 @@ train_cfg:
       energy_normalize: True
 
       decoder:
-        type: transformer
+        type: transformer.encoder.TransformerEncoder
         conf:
           posenc_dropout: !ref <trmf_dropout>
           posenc_scale: true
@@ -232,13 +233,14 @@ train_cfg:
           att_dropout: !ref <trmf_dropout>
           fdfwd_dim: !ref <fdfwd_dim>
           fdfwd_type: conv
-          fdfwd_kernel: 3
+          fdfwd_args:
+            kernel_size: 3
           fdfwd_dropout: !ref <trmf_dropout>
           res_dropout: !ref <trmf_dropout>
           layernorm_first: true
 
       dec_postnet:
-        type: conv1d
+        type: postnet.conv1d.Conv1dPostnet
         conf:
           conv_dims: !list [256, -1, -1, -1, 0]
           conv_kernel: 5

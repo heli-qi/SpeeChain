@@ -11,27 +11,13 @@ import torch
 from typing import Dict
 from speechain.module.abs import Module
 from speechain.utilbox.train_util import make_mask_from_len
-
-from speechain.module.prenet.embed import EmbedPrenet
-from speechain.module.prenet.conv1d import Conv1dPrenet
-from speechain.module.transformer.encoder import TransformerEncoder
+from speechain.utilbox.import_util import import_class
 
 
 class TTSEncoder(Module):
     """
 
     """
-    embedding_class_dict = dict(
-        emb=EmbedPrenet
-    )
-
-    prenet_class_dict = dict(
-        conv1d=Conv1dPrenet
-    )
-
-    encoder_class_dict = dict(
-        transformer=TransformerEncoder
-    )
 
     def module_init(self,
                     embedding: Dict,
@@ -51,20 +37,20 @@ class TTSEncoder(Module):
         _prev_output_size = None
 
         # Token embedding layer
-        embedding_class = self.embedding_class_dict[embedding['type']]
+        embedding_class = import_class('speechain.module.' + embedding['type'])
         embedding['conf'] = dict() if 'conf' not in embedding.keys() else embedding['conf']
         self.embedding = embedding_class(vocab_size=vocab_size, **embedding['conf'])
         _prev_output_size = self.embedding.output_size
 
         # TTS Encoder Prenet
         if prenet is not None:
-            prenet_class = self.prenet_class_dict[prenet['type']]
+            prenet_class = import_class('speechain.module.' + prenet['type'])
             prenet['conf'] = dict() if 'conf' not in prenet.keys() else prenet['conf']
             self.prenet = prenet_class(input_size=_prev_output_size, **prenet['conf'])
             _prev_output_size = self.prenet.output_size
 
         # main body of the E2E TTS encoder
-        encoder_class = self.encoder_class_dict[encoder['type']]
+        encoder_class = import_class('speechain.module.' + encoder['type'])
         encoder['conf'] = dict() if 'conf' not in encoder.keys() else encoder['conf']
         self.encoder = encoder_class(input_size=_prev_output_size, **encoder['conf'])
 

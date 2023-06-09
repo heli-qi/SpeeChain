@@ -76,7 +76,7 @@ def read_data_by_path(data_path: str, return_tensor: bool = False, return_sample
             # 3. torchaudio.load(self.src_data[index], channels_first=False, normalize=False)[0]
             data, sample_rate = sf.read(data_path, always_2d=True, dtype='float32')
         else:
-            raise NotImplementedError
+            raise NotImplementedError(f'unknown file extension: {data_ext}!')
 
     if return_tensor:
         data = torch.tensor(data)

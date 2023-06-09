@@ -109,7 +109,7 @@ class Tokenizer(ABC):
         """
         token_list = []
         for idx in tensor.tolist():
-            if idx == self.sos_eos_idx:
+            if idx in [self.sos_eos_idx, self.ignore_idx]:
                 continue
             # the space tokens will be replaced by a blank
             elif self.space_idx is not None and idx == self.space_idx:

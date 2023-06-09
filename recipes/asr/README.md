@@ -18,28 +18,53 @@
 	    <th>WER w. LM</th>  
 	</tr>
 	<tr>
-	    <td rowspan="3">librispeech</td>
-	    <td>train-clean-100</td>
+	    <td rowspan="8">librispeech</td>
+	    <td rowspan="4">train-clean-100</td>
 	    <td>100-bpe5k_transformer-wide_lr2e-3</td>
-	    <td> 8.57% / 22.89% </td>
-	    <td> 5.81% / 16.19% </td>
+	    <td> 8.40% / 21.92% </td>
+	    <td> 5.50% / 15.56% </td>
 	</tr>
+    <tr>
+        <td>100-bpe5k_conformer-small_lr2e-3</td>
+	    <td> 8.50% / 23.50% </td>
+	    <td> 5.45% / 16.74% </td>
+    </tr>
+    <tr>
+        <td>100-bpe5k_conformer-medium_lr2e-3</td>
+	    <td> 7.87% / 21.36% </td>
+	    <td> 5.30% / 15.57% </td>
+    </tr>
+    <tr>
+        <td>100-bpe5k_conformer-large_lr2e-3</td>
+	    <td> 7.30% / 20.24% </td>
+	    <td> 5.33% / 15.15% </td>
+    </tr>
 	<tr>
-	    <td>train-clean-460</td>
-        <td>460-bpe5k_transformer-wide</td>
-	    <td> 4.98% / 14.50% </td>
-        <td> 3.48% / 9.86% </td>
-	</tr>
-	<tr>
-	    <td>train-960</td>
-	    <td></td>
+	    <td rowspan="2">train-clean-460</td>
+        <td>460-bpe5k_transformer-large</td>
 	    <td> % / % </td>
         <td> % / % </td>
 	</tr>
     <tr>
+        <td>460-bpe5k_conformer-large</td>
+	    <td> % / % </td>
+	    <td> % / % </td>
+    </tr>
+	<tr>
+	    <td rowspan="2">train-960</td>
+	    <td>960-bpe5k_transformer-large</td>
+	    <td> % / % </td>
+        <td> % / % </td>
+	</tr>
+    <tr>
+        <td>960-bpe5k_conformer-large</td>
+	    <td> % / % </td>
+        <td> % / % </td>
+    </tr>
+    <tr>
 	    <td rowspan="1">libritts_librispeech</td>
-	    <td>train-960</td>
-	    <td></td>
+	    <td rowspan="1">train-960</td>
+	    <td>960-bpe5k_transformer-large</td>
 	    <td> % / % </td>
 	    <td> % / % </td>
 	</tr>

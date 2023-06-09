@@ -14,36 +14,16 @@ from torch.cuda.amp import autocast
 from typing import Dict
 from speechain.module.abs import Module
 from speechain.utilbox.train_util import make_mask_from_len
+from speechain.utilbox.import_util import import_class
 
-from speechain.module.frontend.speech2linear import Speech2LinearSpec
-from speechain.module.frontend.speech2mel import Speech2MelSpec
 from speechain.module.norm.feat_norm import FeatureNormalization
-from speechain.module.prenet.linear import LinearPrenet
 from speechain.module.prenet.spk_embed import SpeakerEmbedPrenet
-from speechain.module.transformer.decoder import TransformerDecoder
-from speechain.module.postnet.conv1d import Conv1dPostnet
 
 
 class ARTTSDecoder(Module):
     """
         Decoder Module for Autoregressive TTS model.
     """
-    frontend_class_dict = dict(
-        stft_spec=Speech2LinearSpec,
-        mel_fbank=Speech2MelSpec
-    )
-
-    prenet_class_dict = dict(
-        linear=LinearPrenet
-    )
-
-    decoder_class_dict = dict(
-        transformer=TransformerDecoder
-    )
-
-    postnet_class_dict = dict(
-        conv1d=Conv1dPostnet
-    )
 
     def module_init(self,
                     decoder: Dict,
@@ -60,7 +40,7 @@ class ARTTSDecoder(Module):
         # --- Acoustic Feature Extraction Part --- #
         # acoustic feature extraction frontend of the E2E TTS decoder
         if frontend is not None:
-            frontend_class = self.frontend_class_dict[frontend['type']]
+            frontend_class = import_class('speechain.module.' + frontend['type'])
             frontend['conf'] = dict() if 'conf' not in frontend.keys() else frontend['conf']
             self.frontend = frontend_class(**frontend['conf'])
             _prev_output_size = self.frontend.output_size
@@ -79,7 +59,7 @@ class ARTTSDecoder(Module):
         # --- Main Body of TTS Decoder --- #
         # feature embedding layer of the E2E TTS decoder
         if prenet is not None:
-            prenet_class = self.prenet_class_dict[prenet['type']]
+            prenet_class = import_class('speechain.module.' + prenet['type'])
             prenet['conf'] = dict() if 'conf' not in prenet.keys() else prenet['conf']
             self.prenet = prenet_class(input_size=_prev_output_size, **prenet['conf'])
             _prev_output_size = self.prenet.output_size
@@ -96,7 +76,7 @@ class ARTTSDecoder(Module):
             self.spk_emb = SpeakerEmbedPrenet(**spk_emb)
 
         # Initialize decoder
-        decoder_class = self.decoder_class_dict[decoder['type']]
+        decoder_class = import_class('speechain.module.' + decoder['type'])
         decoder['conf'] = dict() if 'conf' not in decoder.keys() else decoder['conf']
         self.decoder = decoder_class(input_size=_prev_output_size, **decoder['conf'])
         _prev_output_size = self.decoder.output_size
@@ -107,7 +87,7 @@ class ARTTSDecoder(Module):
         self.output_size = feat_dim
 
         # Initialize postnet of the decoder
-        postnet_class = self.postnet_class_dict[postnet['type']]
+        postnet_class = import_class('speechain.module.' + postnet['type'])
         postnet['conf'] = dict() if 'conf' not in postnet.keys() else postnet['conf']
         self.postnet = postnet_class(input_size=feat_dim, **postnet['conf'])
 

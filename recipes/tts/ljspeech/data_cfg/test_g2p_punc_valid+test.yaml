@@ -1,6 +1,7 @@
 ##############################################################################
 # Tokens: Phoneme by G2P
-# Testing: valid of LJSpeech
+# Training: train-clean-100 of 16khz-downsampled LibriTTS
+# Testing: dev-clean of 16khz-downsampled LibriTTS
 # Authors: Heli Qi
 # Description: This configuration is used to replace data_cfg in exp_cfg for tuning the inference hyperparamters on validation set
 # ############################################################################
@@ -11,25 +12,37 @@
 ###################################
 # if your dumped dataset is outside the toolkit folder, please change dataset_path. There should be a folder named 'libritts' in dataset_path
 dataset_path: datasets/
-dataset: ljspeech
-valid_set: &valid_set valid
 
-wav_format: wav
-### ------------------------ ###
+text_dataset: ljspeech
+txt_format: punc
+token_num: stress
+
 
 
 ##############################
 # Data Loading Configuration #
 ##############################
-data_root: !ref <dataset_path>/<dataset>/data
+text_root: !ref <dataset_path>/<text_dataset>/data
+
 test:
-    *valid_set :
+    valid:
         type: abs.Iterator
         conf:
             dataset_type: speech_text.SpeechTextDataset
             dataset_conf:
                 main_data:
-                    text: !ref <data_root>/mfa/<valid_set>/idx2text
+                    text: !ref <text_root>/g2p/valid/<token_num>/<txt_format>/idx2text
 
             shuffle: False
-            data_len: !ref <data_root>/<wav_format>/<valid_set>/idx2wav_len
+            data_len: !ref <text_root>/g2p/valid/<token_num>/<txt_format>/idx2text_len
+
+    test:
+        type: abs.Iterator
+        conf:
+            dataset_type: speech_text.SpeechTextDataset
+            dataset_conf:
+                main_data:
+                    text: !ref <text_root>/g2p/test/<token_num>/<txt_format>/idx2text
+
+            shuffle: False
+            data_len: !ref <text_root>/g2p/test/<token_num>/<txt_format>/idx2text_len

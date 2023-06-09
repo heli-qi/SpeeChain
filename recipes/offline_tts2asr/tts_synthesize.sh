@@ -21,12 +21,11 @@ function print_help_message {
       [--gpus GPUS] \\                                       # The GPUs you want to specify. (default: none)
       [--num_workers NUM_WORKERS] \\                         # The name of worker processes for data loading. (default: 1)
       [--resume RESUME] \\                                   # Whether to continue the unfinished evaluation. If true, the data loading strategy should remain the same as the last time. (default: false)
-      [--saving_proc_num SAVING_PROC_NUM] \\                 # The number of daemon processes per GPU used to save synthetic speech data to the disk. (default: 1)
+      [--saving_proc_num SAVING_PROC_NUM] \\                 # The number of daemon processes per GPU used to save synthetic speech data to the disk. (default: 8)
 
       # Group2: Speaker Embedding
       [--rand_spk_emb RAND_SPK_EMB] \\                       # Whether to randomly generate the speaker embedding feature for TTS synthesis. (default: false)
       [--spk_emb_mixup SPK_FEAT_MIXUP] \\                    # Whether to conduct speaker embedding mixup. (default: false)
-      [--same_gender_mixup SAME_GENDER_MIXUP] \\             # Whether to conduct the mixup for the speakers with the same gender. (default: true)
       [--mixup_number MIXUP_NUMBER] \\                       # The number of speaker embedding features used for mixup. (default: 2)
       [--use_aver_feat USE_AVER_FEAT] \\                     # Whether to use the average speaker embedding of each speaker. (default: true)
       [--spk_emb_dataset SPK_EMB_DATASET] \\                 # The dataset where your target speaker embedding features are placed. If not given, this argument will be the same as 'tts_syn_dataset'. (default: none)
@@ -34,7 +33,7 @@ function print_help_message {
       [--spk_emb_model SPK_EMB_MODEL] \\                     # The speaker embedding model you want to use for TTS synthesis. (default: none)
 
       # Group3: Token & Text
-      [--txt_format TXT_FORMAT] \\                           # The text format of the text data. (default: no-punc)
+      [--txt_format TXT_FORMAT] \\                           # The text format of the text data. (default: punc)
       [--token_type TOKEN_TYPE] \\                           # The type of tokens in your target vocabulary. (default: g2p)
       [--token_num TOKEN_NUM] \\                             # The number of tokens in your target vocabulary. (default: stress)
 
@@ -55,18 +54,17 @@ desc_sorting=true
 random_seed=0
 resume=false
 num_workers=1
-saving_proc_num=1
+saving_proc_num=8
 
 rand_spk_emb=false
 spk_emb_mixup=false
-same_gender_mixup=true
 mixup_number=2
 use_aver_feat=true
 spk_emb_dataset=
 spk_emb_subset=
 spk_emb_model=
 
-txt_format=no-punc
+txt_format=punc
 token_type=g2p
 token_num=stress
 
@@ -110,10 +108,6 @@ while getopts ":h-:" optchar; do
         spk_emb_mixup)
           val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
           spk_emb_mixup=${val}
-          ;;
-        same_gender_mixup)
-          val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
-          same_gender_mixup=${val}
           ;;
         mixup_number)
           val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
@@ -256,7 +250,7 @@ args="--train False --test True --attach_model_folder_when_test False --test_res
 
 # automatically initialize the data loading configuration. The contents surrounded by a pair of brackets are optional.
 #  test:{
-#    seed=${random_seed}_desc-sort=${desc_sorting}_n-proc=${saving_proc_num}_ngpu=${ngpu}(_batch-len=${batch_len})(_spk-emb=${spk_emb_dataset}-${spk_emb_subset}-${spk_emb_model})_model=${tts_model_path}:{
+#    seed=${random_seed}_txt_format=${txt_format}_desc-sort=${desc_sorting}_n-proc=${saving_proc_num}_ngpu=${ngpu}(_batch-len=${batch_len})(_spk-emb=${spk_emb_dataset}-${spk_emb_subset}-${spk_emb_model})_model=${tts_model_path}:{
 #      (type:block.BlockIterator,) or (type:abs.Iterator,)
 #      conf:{
 #        (dataset_type:speech_text.SpeechTextDataset,) or (dataset_type:speech_text.RandomSpkFeatDataset,)
@@ -277,7 +271,7 @@ args="--train False --test True --attach_model_folder_when_test False --test_res
 #    }
 #  }
 # the following code does the same job as the configuration above
-data_args="test:{seed=${random_seed}_desc-sort=${desc_sorting}_n-proc=${saving_proc_num}_ngpu=${ngpu}"
+data_args="test:{seed=${random_seed}_txt_format=${txt_format}_desc-sort=${desc_sorting}_n-proc=${saving_proc_num}_ngpu=${ngpu}"
 if [ -n "${batch_len}" ];then
   data_args="${data_args}_batch-len=${batch_len}"
 fi
@@ -293,11 +287,6 @@ elif [ -n "${spk_emb_model}" ];then
   #
   if ${spk_emb_mixup};then
     data_args="${data_args}_mixup=${mixup_number}"
-    if ${same_gender_mixup};then
-      data_args="${data_args}-same-gender"
-    else
-      data_args="${data_args}-diff-gender"
-    fi
   fi
 fi
 data_args="${data_args}_model=${tts_model_path}:{type:"
@@ -334,10 +323,7 @@ fi
 
 # if 'spk_emb_mixup' is set to true, attach 'mixup_number' in 'dataset_conf'
 if ${spk_emb_mixup};then
-  data_args="${data_args},mixup_number:${mixup_number},same_gender:${same_gender_mixup}"
-  if ${same_gender_mixup};then
-    data_args="${data_args},same_gender:${same_gender_mixup}"
-  fi
+  data_args="${data_args},mixup_number:${mixup_number}"
 fi
 
 data_args="${data_args}},shuffle:false,is_descending:${desc_sorting},data_len:${unspoken_idx2text_len}"

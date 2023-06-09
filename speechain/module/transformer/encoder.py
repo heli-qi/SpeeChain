@@ -4,12 +4,14 @@
     Affiliation: NAIST
     Date: 2022.07
 """
-from typing import List
+import torch
+from torch import nn
+from typing import List, Dict, Any
 
 from speechain.module.abs import Module
-from speechain.module.transformer.pos_enc import *
-from speechain.module.transformer.attention import *
-from speechain.module.transformer.feed_forward import *
+from speechain.module.transformer.pos_enc import PositionalEncoding
+from speechain.module.transformer.attention import MultiHeadedAttention
+from speechain.module.transformer.feed_forward import PositionwiseFeedForward
 
 
 class TransformerEncoderLayer(Module):
@@ -26,11 +28,12 @@ class TransformerEncoderLayer(Module):
     def module_init(self,
                     d_model: int = 512,
                     num_heads: int = 8,
+                    scale_dp_by_head: bool = False,
                     att_dropout: float = 0.1,
                     fdfwd_dim: int = 2048,
                     fdfwd_type: str = 'linear',
                     fdfwd_activation: str = 'ReLU',
-                    fdfwd_kernel: int = 3,
+                    fdfwd_args: Dict[str, Any] = {},
                     fdfwd_dropout: float = 0.1,
                     res_dropout: float = 0.1,
                     layernorm_first: bool = True):
@@ -65,11 +68,12 @@ class TransformerEncoderLayer(Module):
 
         """
         # initialize multi-head attention layer
-        self.multihead_att = MultiHeadedAttention(d_model=d_model, num_heads=num_heads, dropout=att_dropout)
+        self.multihead_att = MultiHeadedAttention(d_model=d_model, num_heads=num_heads, dropout=att_dropout,
+                                                  scale_dp_by_head=scale_dp_by_head)
 
         # initialize feedforward layer
         self.feed_forward = PositionwiseFeedForward(d_model=d_model, fdfwd_dim=fdfwd_dim, fdfwd_type=fdfwd_type,
-                                                    fdfwd_activation=fdfwd_activation, fdfwd_kernel=fdfwd_kernel,
+                                                    fdfwd_activation=fdfwd_activation, fdfwd_args=fdfwd_args,
                                                     dropout=fdfwd_dropout)
 
         # initialize residual dropout layer
@@ -149,21 +153,20 @@ class TransformerEncoder(Module):
                     posenc_scale: bool = False,
                     posenc_init_alpha: float = 1.0,
                     emb_layernorm: bool = False,
-                    emb_scale: bool = True,
+                    emb_scale: bool = False,
                     d_model: int = 512,
                     num_heads: int = 4,
                     num_layers: int = 8,
+                    scale_dp_by_head: bool = False,
                     att_dropout: float = 0.1,
                     fdfwd_dim: int = 2048,
                     fdfwd_type: str = 'linear',
                     fdfwd_activation: str = 'ReLU',
-                    fdfwd_kernel: int = 3,
+                    fdfwd_args: Dict[str, Any] = {},
                     fdfwd_dropout: float = 0.1,
                     res_dropout: float = 0.1,
                     layernorm_first: bool = True,
-                    uni_direction: bool = False,
-                    dwsmpl_factors: int or List[int] = None,
-                    dwsmpl_type: str = 'drop'):
+                    uni_direction: bool = False):
         """
 
         Args:
@@ -204,8 +207,6 @@ class TransformerEncoder(Module):
                 The type of the feed-forward layer. 'linear' means the Linear layer while 'conv' means the Conv1d layer.
             fdfwd_activation: str
                 The name of the activation function of feedforward layers. Should be the name of functions in 'torch.nn'.
-            fdfwd_kernel: int
-                The kernal size of the Conv1d feed-forward layer. This argument is not effective if fdfwd_type == 'linear'.
             fdfwd_dropout: float
                 The dropout rate for the Dropout layer after the first linear feedforward layer in each Transformer layer
             res_dropout: float
@@ -213,17 +214,6 @@ class TransformerEncoder(Module):
             uni_direction: bool = False
                 Whether the encoder is unidirectional or not. If True, the attention matrix will be masked into a
                 lower-triangular matrix.
-            dwsmpl_factors: int or List[int]
-                The downsampling factor for each Transformer layer.
-                If only an integer is given, it will be treated as the factor of the last layer and the factors of
-                previous layers will be set to 1.
-                If a list of integers is given but the length is shorter than the number of layers, this list will be
-                padded with several 1 on the front to make sure that the length is equal to the layer number.
-            dwsmpl_type: str
-                The downsampling type of each Transformer layer. It can be either 'drop' or 'concat'.
-                'drop' downsampling means one of two neighbouring time steps will be dropped.
-                'concat' downsampling means the features of two neighbouring time steps will be concatenated to become
-                    a new time step.
             layernorm_first: bool
                 controls whether the LayerNorm layer appears at the beginning or at the end of each Transformer layer.
                     True means the LayerNorm layer appears at the beginning
@@ -237,31 +227,12 @@ class TransformerEncoder(Module):
             d_model = self.input_size
         self.output_size = d_model
 
-        if dwsmpl_factors is not None:
-            assert len(dwsmpl_factors) == num_layers, \
-                "If you want to use Transformer encoder downsampling," \
-                "the length of downsampling must be equal to num_layers!"
-
-            assert dwsmpl_type in ['drop', 'concat'], \
-                f"dwsmpl_type should be one of {['drop', 'concat']}"
-
         # para recording
         self.d_model = d_model
         self.num_layers = num_layers
         self.num_heads = num_heads
         self.layernorm_first = layernorm_first
         self.uni_direction = uni_direction
-        self.dwsmpl_factors = dwsmpl_factors
-        self.dwsmpl_type = dwsmpl_type
-
-        # padding the self.dwsmpl_factors if the length of the given list is shorter than self.num_layers
-        if self.dwsmpl_factors is not None:
-            self.dwsmpl_factors = self.dwsmpl_factors if isinstance(self.dwsmpl_factors, List) else [
-                self.dwsmpl_factors]
-
-            if len(self.dwsmpl_factors) < self.num_layers:
-                _diff = self.num_layers - len(self.dwsmpl_factors)
-                self.dwsmpl_factors = [1 for _ in range(_diff)] + self.dwsmpl_factors
 
         # initialize positional encoding layer
         self.posenc = PositionalEncoding(posenc_type=posenc_type,
@@ -277,11 +248,12 @@ class TransformerEncoder(Module):
         self.trfm_layers = torch.nn.ModuleList([
             TransformerEncoderLayer(d_model=d_model,
                                     num_heads=num_heads,
+                                    scale_dp_by_head=scale_dp_by_head,
                                     att_dropout=att_dropout,
                                     fdfwd_dim=fdfwd_dim,
                                     fdfwd_type=fdfwd_type,
                                     fdfwd_activation=fdfwd_activation,
-                                    fdfwd_kernel=fdfwd_kernel,
+                                    fdfwd_args=fdfwd_args,
                                     fdfwd_dropout=fdfwd_dropout,
                                     res_dropout=res_dropout,
                                     layernorm_first=layernorm_first)
@@ -342,19 +314,6 @@ class TransformerEncoder(Module):
             src, _tmp_attmat = self.trfm_layers[l](src, mask)
             attmat.append(_tmp_attmat)
             hidden.append(src.clone())
-
-            # perform downsampling if given
-            if self.dwsmpl_factors is not None:
-                dwsmpl_factor = self.dwsmpl_factors[l]
-                mask = mask[:, :, dwsmpl_factor - 1::dwsmpl_factor]
-
-                if self.dwsmpl_type == 'drop':
-                    src = src[:, dwsmpl_factor - 1::dwsmpl_factor]
-                elif self.dwsmpl_type == 'concat':
-                    src = src[:, : src.size(1) // dwsmpl_factor * dwsmpl_factor].contiguous()
-                    src = src.view(src.size(0), src.size(1) // dwsmpl_factor, src.size(2) * dwsmpl_factor)
-                else:
-                    raise ValueError(f"dwsmpl_type should be one of {['drop', 'concat']}), but got {self.dwsmpl_type}!")
 
         # go through the final layernorm layer if necessary
         if self.layernorm_first:

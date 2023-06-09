@@ -59,6 +59,7 @@ class Conv1dVarPredictor(Module):
                     conv_dims: int or List[int] = [256, 256],
                     conv_kernel: int = 3,
                     conv_stride: int = 1,
+                    use_gate: bool = False,
                     conv_dropout: float or List[float] = 0.5,
                     use_conv_emb: bool = True,
                     conv_emb_kernel: int = 1,
@@ -147,6 +148,8 @@ class Conv1dVarPredictor(Module):
 
         # --- 2. Linear Part Initialization --- #
         self.linear = torch.nn.Linear(_prev_dim, 1)
+        if use_gate:
+            self.gate_linear = torch.nn.Linear(_prev_dim, 1)
 
         # --- 3. Scalar Embedding Part Initialization --- #
         if use_conv_emb:
@@ -184,10 +187,14 @@ class Conv1dVarPredictor(Module):
 
         # forward the linear layer
         # (batch, feat_maxlen, conv_dim) -> (batch, feat_maxlen, 1) -> (batch, feat_maxlen)
-        feat = self.linear(feat).squeeze(-1)
+        feat_pred = self.linear(feat).squeeze(-1)
 
         # return feat_len for the compatibility with other prenets
-        return feat, feat_len
+        if not hasattr(self, 'gate_linear'):
+            return feat_pred, feat_len
+        else:
+            feat_gate = self.gate_linear(feat).squeeze(-1)
+            return feat_pred, feat_len, feat_gate
 
     def emb_pred_scalar(self, pred_scalar: torch.Tensor):
         """

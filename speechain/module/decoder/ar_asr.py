@@ -8,9 +8,8 @@ import torch
 from typing import Dict
 from speechain.module.abs import Module
 from speechain.utilbox.train_util import make_mask_from_len
+from speechain.utilbox.import_util import import_class
 
-from speechain.module.prenet.embed import EmbedPrenet
-from speechain.module.transformer.decoder import TransformerDecoder
 from speechain.module.postnet.token import TokenPostnet
 
 
@@ -18,13 +17,6 @@ class ARASRDecoder(Module):
     """
 
     """
-    embedding_class_dict = dict(
-        embed=EmbedPrenet
-    )
-
-    decoder_class_dict = dict(
-        transformer=TransformerDecoder
-    )
 
     def module_init(self, embedding: Dict, decoder: Dict, vocab_size: int = None):
         """
@@ -39,13 +31,13 @@ class ARASRDecoder(Module):
         _prev_output_size = None
 
         # embedding layer of the E2E ASR decoder
-        embedding_class = self.embedding_class_dict[embedding['type']]
+        embedding_class = import_class('speechain.module.' + embedding['type'])
         embedding['conf'] = dict() if 'conf' not in embedding.keys() else embedding['conf']
         self.embedding = embedding_class(vocab_size=vocab_size, **embedding['conf'])
         _prev_output_size = self.embedding.output_size
 
         # main body of the E2E ASR decoder
-        decoder_class = self.decoder_class_dict[decoder['type']]
+        decoder_class = import_class('speechain.module.' + decoder['type'])
         decoder['conf'] = dict() if 'conf' not in decoder.keys() else decoder['conf']
         self.decoder = decoder_class(input_size=_prev_output_size, **decoder['conf'])
         _prev_output_size = self.decoder.output_size

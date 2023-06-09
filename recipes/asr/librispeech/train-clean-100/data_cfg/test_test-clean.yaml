@@ -1,8 +1,7 @@
 ##############################################################################
-# Tokens: Phoneme by G2P
-# Testing: valid of LJSpeech
+# Testing: dev-clean of LibriSpeech
 # Authors: Heli Qi
-# Description: This configuration is used to replace data_cfg in exp_cfg for tuning the inference hyperparamters on validation set
+# Description: This configuration is used to replace data_cfg in exp_cfg for tuning the inference hyperparamters on dev-clean
 # ############################################################################
 
 
@@ -11,27 +10,31 @@
 ###################################
 # if your dumped dataset is outside the toolkit folder, please change dataset_path. There should be a folder named 'libritts' in dataset_path
 dataset_path: datasets/
-dataset: ljspeech
-valid_set: &valid_set valid
+dataset: librispeech
+valid_dset: &valid_dset test-clean
 
 wav_format: wav
-txt_format: normal
-token_num: full_tokens
-### ------------------------ ###
+txt_format: no-punc
+
 
 
 ##############################
 # Data Loading Configuration #
 ##############################
 data_root: !ref <dataset_path>/<dataset>/data
+# Note: there must be a blank between the anchor '*valid_dset' and the colon ':'
 test:
-    *valid_set :
+    *valid_dset :
         type: abs.Iterator
         conf:
             dataset_type: speech_text.SpeechTextDataset
             dataset_conf:
                 main_data:
-                    text: !ref <data_root>/g2p/<valid_set>/<token_num>/<txt_format>/idx2text
+                    feat: !ref <data_root>/<wav_format>/<valid_dset>/idx2wav
+                    text: !ref <data_root>/<wav_format>/<valid_dset>/idx2<txt_format>_text
 
             shuffle: False
-            data_len: !ref <data_root>/<wav_format>/<valid_set>/idx2wav_len
+            data_len: !ref <data_root>/<wav_format>/<valid_dset>/idx2wav_len
+            group_info:
+                speaker: !ref <data_root>/<wav_format>/<valid_dset>/idx2spk
+                gender: !ref <data_root>/<wav_format>/<valid_dset>/idx2gen

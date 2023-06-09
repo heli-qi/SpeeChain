@@ -23,7 +23,7 @@ class PositionalEncoding(Module):
                     posenc_type: str = 'mix',
                     d_model: int = 512,
                     emb_scale: bool = False,
-                    emb_layernorm: bool = True,
+                    emb_layernorm: bool = False,
                     posenc_scale: bool = False,
                     init_alpha: float = 1.0,
                     max_len: int = 5000,
@@ -93,7 +93,7 @@ class PositionalEncoding(Module):
             self.alpha = torch.nn.Parameter(torch.tensor(self.init_alpha))
 
         # positional encoding matrix
-        self.update_posenc(max_len, d_model)
+        self.update_posenc(max_len)
 
         # positional encoding Dropout layer
         self.dropout = torch.nn.Dropout(p=dropout)
@@ -105,23 +105,20 @@ class PositionalEncoding(Module):
         if hasattr(self, 'alpha'):
             self.alpha.data = torch.tensor(self.init_alpha)
 
-    def update_posenc(self, max_len: int, d_model: int = None):
+    def update_posenc(self, max_len: int):
         """
 
         Args:
             max_len:
-            d_model:
 
         """
-        if d_model is None:
-            d_model = self.d_model
 
         # positional encoding calculation
         position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
         div_term = torch.exp(
-            torch.arange(0, d_model, 2, dtype=torch.float) * (math.log(10000.0) / d_model)
+            torch.arange(0, self.d_model, 2, dtype=torch.float) * (math.log(10000.0) / self.d_model)
         )
-        posenc = torch.zeros(max_len, d_model)
+        posenc = torch.zeros(max_len, self.d_model)
 
         # 'mix' positional encoding: sine functions and cosine functions mix up with each other
         if self.posenc_type == 'mix':
@@ -130,10 +127,10 @@ class PositionalEncoding(Module):
         # 'sep' positional encoding: sine functions and cosine functions occupy the positional encoding separately
         elif self.posenc_type == 'sep':
             div_term_ext = torch.exp(
-                torch.arange(d_model, d_model * 2, 2, dtype=torch.float) * (math.log(10000.0) / d_model)
+                torch.arange(self.d_model, self.d_model * 2, 2, dtype=torch.float) * (math.log(10000.0) / self.d_model)
             )
-            posenc[:, :int(d_model / 2)] = torch.sin(position / div_term)
-            posenc[:, int(d_model / 2):] = torch.cos(position / div_term_ext)
+            posenc[:, :int(self.d_model / 2)] = torch.sin(position / div_term)
+            posenc[:, int(self.d_model / 2):] = torch.cos(position / div_term_ext)
 
         # posenc = posenc.unsqueeze(0) does not put posenc into the buffer
         # here register_buffer() allows posenc to be automatically put onto GPUs as a buffer member

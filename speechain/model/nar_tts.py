@@ -21,6 +21,8 @@ from speechain.module.encoder.tts import TTSEncoder
 from speechain.module.decoder.nar_tts import FastSpeech2Decoder
 
 from speechain.criterion.least_error import LeastError
+from speechain.criterion.bce_logits import BCELogits
+from speechain.criterion.fbeta_score import FBetaScore
 
 from speechain.utilbox.data_loading_util import parse_path_args
 from speechain.utilbox.tensor_util import to_cpu
@@ -54,6 +56,7 @@ class FastSpeech2(Model):
                     sample_rate: int = 22050,
                     audio_format: str = 'wav',
                     reduction_factor: int = 1,
+                    gate_pos_weight: float = 1.0,
                     return_att_type: List[str] or str = None,
                     return_att_head_num: int = 2,
                     return_att_layer_num: int = 2):
@@ -91,6 +94,7 @@ class FastSpeech2(Model):
         self.sample_rate = sample_rate
         self.audio_format = audio_format.lower()
         self.reduction_factor = reduction_factor
+        self.gate_pos_weight = gate_pos_weight
 
         if return_att_type is None:
             self.return_att_type = ['enc', 'dec']
@@ -170,7 +174,7 @@ class FastSpeech2(Model):
             ['feat_token_len_ratio', 'min', 30],
             ['feat_len', 'max', 30],
             ['feat_len', 'min', 30],
-            ['duration_zero_f1', 'min', 30]
+            ['duration_f1', 'min', 30]
         ]
 
     def criterion_init(self,
@@ -198,6 +202,8 @@ class FastSpeech2(Model):
         if duration_loss is None:
             duration_loss = dict(loss_type='L2')
         self.duration_loss = LeastError(**duration_loss)
+        self.duration_gate_loss = BCELogits(pos_weight=self.gate_pos_weight)
+        self.duration_f1 = FBetaScore()
 
     def module_forward(self,
                        epoch: int = None,
@@ -325,7 +331,7 @@ class FastSpeech2(Model):
         pred_feat_before, pred_feat_after, pred_feat_len, tgt_feat, tgt_feat_len, \
         pred_pitch, tgt_pitch, tgt_pitch_len, \
         pred_energy, tgt_energy, tgt_energy_len, \
-        pred_duration, tgt_duration, tgt_duration_len, \
+        pred_duration, pred_duration_gate, tgt_duration, tgt_duration_len, \
         dec_attmat, dec_hidden = self.decoder(enc_text=enc_text, enc_text_mask=enc_text_mask,
                                               duration=duration, duration_len=duration_len,
                                               feat=feat, feat_len=feat_len, pitch=pitch, pitch_len=pitch_len,
@@ -341,7 +347,8 @@ class FastSpeech2(Model):
             tgt_feat=tgt_feat, tgt_feat_len=tgt_feat_len,
             pred_pitch=pred_pitch, tgt_pitch=tgt_pitch, tgt_pitch_len=tgt_pitch_len,
             pred_energy=pred_energy, tgt_energy=tgt_energy, tgt_energy_len=tgt_energy_len,
-            pred_duration=pred_duration, tgt_duration=tgt_duration, tgt_duration_len=tgt_duration_len,
+            pred_duration=pred_duration, pred_duration_gate=pred_duration_gate,
+            tgt_duration=tgt_duration, tgt_duration_len=tgt_duration_len,
         )
 
         def shrink_attention(input_att_list):
@@ -381,12 +388,14 @@ class FastSpeech2(Model):
                           tgt_energy: torch.Tensor,
                           tgt_energy_len: torch.Tensor,
                           pred_duration: torch.Tensor,
+                          pred_duration_gate: torch.Tensor,
                           tgt_duration: torch.Tensor,
                           tgt_duration_len: torch.Tensor,
                           feat_loss_fn: LeastError = None,
                           pitch_loss_fn: LeastError = None,
                           energy_loss_fn: LeastError = None,
                           duration_loss_fn: LeastError = None,
+                          duration_gate_loss_fn: BCELogits = None,
                           **kwargs) -> \
             (Dict[str, torch.Tensor], Dict[str, torch.Tensor]) or Dict[str, torch.Tensor]:
 
@@ -418,16 +427,35 @@ class FastSpeech2(Model):
         duration_loss = duration_loss_fn(pred=pred_duration, tgt=torch.log(tgt_duration.float() + 1),
                                          tgt_len=tgt_duration_len)
 
-        # combine all losses into the final one
-        loss = feat_loss_before + feat_loss_after + pitch_loss + energy_loss + duration_loss
-        losses = dict(loss=loss)
+        # duration F1 score
+        tgt_duration_gate = tgt_duration == 0
+        duration_f1 = self.duration_f1(pred=self.decoder.proc_duration(torch.exp(pred_duration) - 1) == 0,
+                                       tgt=tgt_duration_gate, tgt_len=tgt_duration_len)
+
+        # calculate duration gate loss if pred_duration_gate is given
+        if pred_duration_gate is not None:
+            if duration_gate_loss_fn is None:
+                duration_gate_loss_fn = self.duration_gate_loss
+            duration_gate_loss = duration_gate_loss_fn(pred=pred_duration_gate, tgt=tgt_duration_gate,
+                                                       tgt_len=tgt_duration_len)
+        else:
+            duration_gate_loss = None
+
         # .clone() here prevents the trainable variables from value modification
-        metrics = dict(loss=loss.clone().detach(),
-                       feat_loss_before=feat_loss_before.clone().detach(),
+        metrics = dict(feat_loss_before=feat_loss_before.clone().detach(),
                        feat_loss_after=feat_loss_after.clone().detach(),
                        pitch_loss=pitch_loss.clone().detach(),
                        energy_loss=energy_loss.clone().detach(),
-                       duration_loss=duration_loss.clone().detach())
+                       duration_loss=duration_loss.clone().detach(),
+                       duration_f1=duration_f1.clone().detach())
+
+        # combine all losses into the final one
+        loss = feat_loss_before + feat_loss_after + pitch_loss + energy_loss + duration_loss
+        if duration_gate_loss is not None:
+            loss += duration_gate_loss
+            metrics.update(duration_gate_loss=duration_gate_loss.clone().detach())
+        losses = dict(loss=loss)
+        metrics.update(loss=loss.clone().detach())
 
         if self.training:
             return losses, metrics
@@ -627,10 +655,16 @@ class FastSpeech2(Model):
         # return_wav in infer_conf has the higher priority and will not be passed to self.module_forward()
         if 'return_wav' in infer_conf.keys():
             return_wav = infer_conf.pop('return_wav')
+        # if teacher_forcing is set, return_wav is default to False
+        elif teacher_forcing:
+            return_wav = False
+
         # return_feat in infer_conf has the higher priority and will not be passed to self.module_forward()
         if 'return_feat' in infer_conf.keys():
             return_feat = infer_conf.pop('return_feat')
-        assert return_wav or return_feat, "return_wav and return_feat cannot be False at the same time."
+
+        if not teacher_forcing:
+            assert return_wav or return_feat, "return_wav and return_feat cannot be False at the same time."
 
         # return_sr in infer_conf has the higher priority and will not be passed to self.module_forward()
         return_sr = None
@@ -818,10 +852,10 @@ class FastSpeech2(Model):
                                           for p_a in to_cpu(pitch_alpha)]))
 
         # record the speaker ID used as the reference
-        if spk_ids is not None:
-            outputs.update(
-                ref_spk=dict(format='txt', content=spk_ids)
-            )
+        outputs.update(
+            ref_spk=dict(format='txt',
+                         content=spk_ids if spk_ids is not None else ['single_speaker' for _ in range(text.size(0))])
+        )
         # record the speaker embedding ID used as the reference
         if spk_feat_ids is not None:
             outputs.update(

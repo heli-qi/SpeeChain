@@ -26,8 +26,10 @@ def parse():
                         help="The path where you place the dumped data.")
     parser.add_argument('--save_path', type=str, default=None,
                         help="The path where you want to save the duration metadata files. If not given, the files will be saved to {data_path}/mfa. (default: None)")
-    parser.add_argument('--pretrained_model_name', type=str, required=True,
+    parser.add_argument('--save_folder_name', type=str, required=True,
                         help="The name of the pretrained model you have used to get the .TextGrid files.")
+    parser.add_argument('--retain_punc', type=str2bool, default=False,
+                        help="Whether to retain the punctuation marks in the phoneme sequences. (default: False)")
     parser.add_argument('--retain_stress', type=str2bool, default=True,
                         help="Whether to retain the stress indicators at the end of each vowel phonemes. (default: True)")
     parser.add_argument('--dataset_name', type=str, required=True,
@@ -74,7 +76,7 @@ def convert_phns_to_vocab(phn_list: List[str]):
     return ["<blank>"] + phn_list + ['<unk>', '<sos/eos>']
 
 
-def dump_subset_metadata(dataset_path: str, save_path: str, subset_name: str, retain_stress: bool,
+def dump_subset_metadata(dataset_path: str, save_path: str, subset_name: str, retain_punc: bool, retain_stress: bool,
                          idx2text: Dict, idx2duration: Dict):
     """
         Save the subset-specific idx2text and idx2duration dictionaries as metadata files.
@@ -94,12 +96,12 @@ def dump_subset_metadata(dataset_path: str, save_path: str, subset_name: str, re
                 The dictionary mapping file indices to phoneme durations.
     """
 
-
     # get the subset-specific idx2text and idx2duration Dicts
     subset_indices = list(load_idx2data_file(os.path.join(dataset_path, subset_name, 'idx2wav')).keys())
     subset_idx2text = {index: idx2text[index] for index in subset_indices if index in idx2text.keys()}
     subset_idx2duration = {index: idx2duration[index] for index in subset_indices if index in idx2duration.keys()}
-    subset_path = os.path.join(save_path, subset_name, 'stress' if retain_stress else 'no-stress')
+    subset_path = os.path.join(save_path, subset_name, 'stress' if retain_stress else 'no-stress',
+                               'punc' if retain_punc else 'no-punc')
 
     # --- idx2text & idx2text_len Saving --- #
     os.makedirs(subset_path, exist_ok=True)
@@ -129,7 +131,7 @@ def dump_subset_metadata(dataset_path: str, save_path: str, subset_name: str, re
     np.savetxt(duration_path, [[idx, str(duration)] for idx, duration in subset_idx2duration.items()], fmt="%s")
     print(f"The duration of tokenized text has been successfully saved to {duration_path}.")
 
-def cal_duration_by_tg(tg_file_list: List[str], retain_stress: bool):
+def cal_duration_by_tg(tg_file_list: List[str], idx2punc_text: Dict[str, str], retain_stress: bool):
     """
         Calculate the phoneme duration for each TextGrid file and return idx2text and idx2duration dictionaries.
 
@@ -151,7 +153,9 @@ def cal_duration_by_tg(tg_file_list: List[str], retain_stress: bool):
         idx2text[file_name], idx2duration[file_name] = [], []
 
         text_grid = tg.TextGrid.fromFile(tg_file)
-        word_boundary_dict = {round(word.maxTime, 2): True if word.mark not in ['sp', '', 'sil'] else False
+        # whether a time point is a word boundary that divide two words
+        # 'sp' and 'sil' are treated as words here (which are meant to represent short silence)
+        word_boundary_dict = {round(word.maxTime, 2): True if word.mark != '' else False
                               for word in text_grid.tiers[0].intervals}
         for phn in text_grid.tiers[1].intervals:
             # ensure the accuracy of the float numbers for data storage
@@ -173,10 +177,11 @@ def cal_duration_by_tg(tg_file_list: List[str], retain_stress: bool):
                 if len(idx2text[file_name]) == 0 or idx2text[file_name][-1] != '<space>':
                     idx2text[file_name].append('<space>')
                     idx2duration[file_name].append(phn_duration)
-                # for the repeated space tokens, combine them together
+                # for the repeated space tokens, add them into a large space
                 else:
                     idx2duration[file_name][-1] += phn_duration
 
+            # add a 0-duration space when meeting a word boundary
             if phn_boundary in word_boundary_dict.keys() and word_boundary_dict[phn_boundary]:
                 idx2text[file_name].append('<space>')
                 idx2duration[file_name].append(round(0, 2))
@@ -185,6 +190,45 @@ def cal_duration_by_tg(tg_file_list: List[str], retain_stress: bool):
         if len(idx2text[file_name]) == 1 and idx2text[file_name][0] == '<space>':
             idx2text.pop(file_name)
             idx2duration.pop(file_name)
+        # add punctuation marks in phoneme sequence with 0 duration
+        else:
+            punc_text = idx2punc_text[file_name] if idx2punc_text is not None else None
+            if punc_text is not None:
+                word_list = punc_text.split(' ')
+
+                _tmp_text, _tmp_duration = [], []
+                curr_phn_idx = 0
+                if idx2text[file_name][curr_phn_idx] == '<space>':
+                    _tmp_text.append(idx2text[file_name][curr_phn_idx])
+                    _tmp_duration.append(idx2duration[file_name][curr_phn_idx])
+                    curr_phn_idx += 1
+
+                for word in word_list:
+                    try:
+                        while idx2text[file_name][curr_phn_idx] != '<space>':
+                            _tmp_text.append(idx2text[file_name][curr_phn_idx])
+                            _tmp_duration.append(idx2duration[file_name][curr_phn_idx])
+
+                            curr_phn_idx += 1
+                            if curr_phn_idx == len(idx2text[file_name]):
+                                break
+                    except IndexError:
+                        raise IndexError(f"file_name={file_name}")
+
+                    if not word[-1].isalpha():
+                        _tmp_text.append(word[-1])
+                        _tmp_duration.append(round(0, 2))
+
+                    try:
+                        if idx2text[file_name][curr_phn_idx] == '<space>' and curr_phn_idx < len(idx2text[file_name]):
+                            _tmp_text.append(idx2text[file_name][curr_phn_idx])
+                            _tmp_duration.append(idx2duration[file_name][curr_phn_idx])
+                            curr_phn_idx += 1
+                    except IndexError:
+                        raise IndexError(f"file_name={file_name}")
+
+                idx2text[file_name] = _tmp_text
+                idx2duration[file_name] = _tmp_duration
 
     return idx2text, idx2duration
 
@@ -204,61 +248,68 @@ def combine_subsets(subset_path_list: List[str], new_subset_name: str, save_path
         This function computes the intersection of directories from the input subsets, merges their metadata,
         calculates the phoneme vocabulary, and saves the new combined metadata into the specified save path.
     """
-    # Get directory content for each subset path
-    dir_content_list = [os.listdir(subset_path) for subset_path in subset_path_list]
+    def get_folder_intersection(dir_path_list: List[str]):
+        # Get directory content for each subset path
+        dir_content_list = [os.listdir(dir_path) for dir_path in dir_path_list]
 
-    # Calculate the intersection of directories
-    exclu_folder_set = set(dir_content_list[0])
-    for lst in dir_content_list[1:]:
-        exclu_folder_set.intersection_update(set(lst))
-    exclu_folder_list = list(exclu_folder_set)
+        # Calculate the intersection of directories
+        exclu_folder_set = set(dir_content_list[0])
+        for lst in dir_content_list[1:]:
+            exclu_folder_set.intersection_update(set(lst))
+
+        return list(exclu_folder_set)
 
     # Initialize metadata dictionary
-    meta_data_dict = {folder: {'idx2duration': {}, 'idx2text': {}, 'idx2text_len': {}} for folder in exclu_folder_list}
+    meta_data_dict = {first_level_folder:
+                          {second_level_folder: {'idx2duration': {}, 'idx2text': {}, 'idx2text_len': {}}
+                           for second_level_folder in get_folder_intersection([os.path.join(subset_path, first_level_folder) for subset_path in subset_path_list])}
+                      for first_level_folder in get_folder_intersection(subset_path_list)}
 
     # Merge metadata from all subsets
-    for folder in exclu_folder_list:
-        for subset_path in subset_path_list:
-            curr_metadata_path = os.path.join(subset_path, folder)
+    for first_level_folder in meta_data_dict.keys():
+        for second_level_folder in meta_data_dict[first_level_folder].keys():
+            for subset_path in subset_path_list:
+                curr_metadata_path = os.path.join(subset_path, first_level_folder, second_level_folder)
 
-            for metadata in os.listdir(curr_metadata_path):
-                if not metadata.startswith('idx2'):
-                    continue
-                meta_data_dict[folder][metadata].update(load_idx2data_file(os.path.join(curr_metadata_path, metadata)))
+                for metadata in os.listdir(curr_metadata_path):
+                    if not metadata.startswith('idx2'):
+                        continue
+                    meta_data_dict[first_level_folder][second_level_folder][metadata].update(load_idx2data_file(os.path.join(curr_metadata_path, metadata)))
 
-        # Calculate the phoneme vocabulary
-        subset_phns = []
-        for text in meta_data_dict[folder]['idx2text'].values():
-            subset_phns += [phoneme[1:-1] for phoneme in text[1:-1].split(', ')]
-        meta_data_dict[folder]['vocab'] = convert_phns_to_vocab(subset_phns)
+            # Calculate the phoneme vocabulary
+            subset_phns = []
+            for text in meta_data_dict[first_level_folder][second_level_folder]['idx2text'].values():
+                subset_phns += [phoneme[1:-1] for phoneme in text[1:-1].split(', ')]
+            meta_data_dict[first_level_folder][second_level_folder]['vocab'] = convert_phns_to_vocab(subset_phns)
 
     # Save the new combined metadata
     new_subset_path = os.path.join(save_path, new_subset_name)
-    for folder in meta_data_dict.keys():
-        folder_path = os.path.join(new_subset_path, folder)
-        os.makedirs(folder_path, exist_ok=True)
+    for first_level_folder in meta_data_dict.keys():
+        for second_level_folder in meta_data_dict[first_level_folder].keys():
+            folder_path = os.path.join(new_subset_path, first_level_folder, second_level_folder)
+            os.makedirs(folder_path, exist_ok=True)
 
-        for metadata in meta_data_dict[folder].keys():
-            metadata_path = os.path.join(folder_path, metadata)
+            for metadata in meta_data_dict[first_level_folder][second_level_folder].keys():
+                metadata_path = os.path.join(folder_path, metadata)
 
-            if isinstance(meta_data_dict[folder][metadata], Dict):
-                np.savetxt(metadata_path, [[idx, str(m_d)] for idx, m_d in meta_data_dict[folder][metadata].items()],
-                           fmt="%s")
-            else:
-                np.savetxt(metadata_path, meta_data_dict[folder][metadata], fmt="%s")
+                if isinstance(meta_data_dict[first_level_folder][second_level_folder][metadata], Dict):
+                    np.savetxt(metadata_path, [[idx, str(m_d)] for idx, m_d in meta_data_dict[first_level_folder][second_level_folder][metadata].items()],
+                               fmt="%s")
+                else:
+                    np.savetxt(metadata_path, meta_data_dict[first_level_folder][second_level_folder][metadata], fmt="%s")
 
-            print(f"{metadata} has successfully been saved to {metadata_path}!")
+                print(f"{metadata} has successfully been saved to {metadata_path}!")
 
 
-def main(data_path: str, pretrained_model_name: str, retain_stress: bool, dataset_name: str, subset_name: str = None,
-         save_path: str = None, ncpu: int = 8):
+def main(data_path: str, save_folder_name: str, dataset_name: str, subset_name: str = None,
+         retain_punc: bool = False, retain_stress: bool = True, save_path: str = None, ncpu: int = 8):
     """
         Main function to process TextGrid files and save metadata files for a given dataset and subset.
 
         Args:
             data_path (str):
                 The path where you placed the dumped data.
-            pretrained_model_name (str):
+            save_folder_name (str):
                 The name of the pretrained model you have used to get the .TextGrid files.
             retain_stress: bool
                 Whether to retain the stress indicators at the end of each vowel phonemes.
@@ -275,19 +326,32 @@ def main(data_path: str, pretrained_model_name: str, retain_stress: bool, datase
 
     data_path = parse_path_args(data_path)
     if save_path is None:
-        save_path = os.path.join(data_path, 'mfa', pretrained_model_name)
+        save_path = os.path.join(data_path, 'mfa', save_folder_name)
 
     # initialize the textgrid information and calculate the duration (in seconds)
-    textgrid_path = os.path.join(data_path, 'mfa', pretrained_model_name, 'TextGrid')
+    textgrid_path = os.path.join(data_path, 'mfa', save_folder_name, 'TextGrid')
     if subset_name is not None:
         textgrid_path = os.path.join(textgrid_path, subset_name)
+
     print(f'Start to summarize all the .TextGrid files in {textgrid_path}......')
     tg_file_list = search_file_in_subfolder(textgrid_path, tgt_match_fn=lambda x: x.endswith('.TextGrid'))
     if len(tg_file_list) == 0:
         raise RuntimeError(f".TextGrid files have not been successfully saved to {textgrid_path}!")
-    func_args = [tg_file_list[i::ncpu] for i in range(ncpu)]
-    cal_duration_by_tg_func = partial(cal_duration_by_tg, retain_stress=retain_stress)
 
+    if retain_punc:
+        if subset_name is None:
+            _search_path = os.path.join(data_path, 'wav')
+        else:
+            _search_path = os.path.join(data_path, 'wav', subset_name)
+
+        idx2punc_text = load_idx2data_file(
+            search_file_in_subfolder(_search_path, tgt_match_fn=lambda x: x == 'idx2punc_text'))
+        assert len(idx2punc_text) > 0
+    else:
+        idx2punc_text = None
+
+    func_args = [tg_file_list[i::ncpu] for i in range(ncpu)]
+    cal_duration_by_tg_func = partial(cal_duration_by_tg, idx2punc_text=idx2punc_text, retain_stress=retain_stress)
     # start the executing jobs
     with Pool(ncpu) as executor:
         text_duration_results = executor.map(cal_duration_by_tg_func, func_args)
@@ -307,10 +371,12 @@ def main(data_path: str, pretrained_model_name: str, retain_stress: bool, datase
             if os.path.isfile(os.path.join(textgrid_path, file_name)):
                 continue
             dump_subset_metadata(dataset_path=dataset_path, save_path=save_path, subset_name=file_name,
-                                 retain_stress=retain_stress, idx2text=idx2text, idx2duration=idx2duration)
+                                 retain_punc=retain_punc, retain_stress=retain_stress, idx2text=idx2text,
+                                 idx2duration=idx2duration)
     else:
         dump_subset_metadata(dataset_path=dataset_path, save_path=save_path, subset_name=subset_name,
-                             retain_stress=retain_stress, idx2text=idx2text, idx2duration=idx2duration)
+                             retain_punc=retain_punc, retain_stress=retain_stress, idx2text=idx2text,
+                             idx2duration=idx2duration)
 
     # post-processing: combine specific subsets into a larger one
     if dataset_name == 'libritts':

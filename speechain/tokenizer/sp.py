@@ -5,6 +5,7 @@
 """
 import os
 import shutil
+from typing import List
 
 import torch
 import sentencepiece as spm
@@ -55,7 +56,7 @@ class SentencePieceTokenizer(Tokenizer):
             except shutil.SameFileError:
                 pass
 
-    def tensor2text(self, tensor: torch.LongTensor):
+    def tensor2text(self, tensor: torch.LongTensor or List):
         """
 
         Args:
@@ -64,7 +65,9 @@ class SentencePieceTokenizer(Tokenizer):
         Returns:
 
         """
-        text = self.sp_model.decode_ids(tensor.tolist())
+        if isinstance(tensor, torch.Tensor):
+            tensor = tensor.tolist()
+        text = self.sp_model.decode_ids([t for t in tensor if t not in [self.sos_eos_idx, self.ignore_idx]])
         return text
 
     def text2tensor(self, text: str, no_sos: bool = False, no_eos: bool = False, return_tensor: bool = True):

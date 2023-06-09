@@ -78,7 +78,7 @@ class LibriSpeechMetaGenerator(SpeechTextMetaGenerator):
                             en_text_process(chp_text[i][1], txt_format=txt_format)
 
                 # speech & speaker data
-                else:
+                elif file.endswith('.flac'):
                     idx2data['idx2wav'][file.split('.')[0]] = os.path.abspath(file_path)
                     idx2data['idx2spk'][file.split('.')[0]] = spk
         return idx2data

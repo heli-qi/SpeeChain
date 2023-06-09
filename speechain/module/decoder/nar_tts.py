@@ -10,37 +10,17 @@ from torch.cuda.amp import autocast
 from typing import Dict
 
 from speechain.module.abs import Module
-from speechain.module.frontend.speech2linear import Speech2LinearSpec
-from speechain.module.frontend.speech2mel import Speech2MelSpec
 from speechain.module.norm.feat_norm import FeatureNormalization
 from speechain.module.prenet.spk_embed import SpeakerEmbedPrenet
-from speechain.module.postnet.conv1d import Conv1dPostnet
-from speechain.module.transformer.encoder import TransformerEncoder
-from speechain.module.prenet.var_pred import Conv1dVarPredictor
 
 from speechain.utilbox.train_util import make_len_from_mask, make_mask_from_len
+from speechain.utilbox.import_util import import_class
 
 
 class FastSpeech2Decoder(Module):
     """
         Decoder Module for Non-Autoregressive FastSpeech2 model.
     """
-    feat_frontend_class_dict = dict(
-        stft_spec=Speech2LinearSpec,
-        mel_fbank=Speech2MelSpec
-    )
-
-    var_pred_class_dict = dict(
-        conv1d=Conv1dVarPredictor
-    )
-
-    decoder_class_dict = dict(
-        transformer=TransformerEncoder
-    )
-
-    postnet_class_dict = dict(
-        conv1d=Conv1dPostnet
-    )
 
     def module_init(self,
                     decoder: Dict,
@@ -71,21 +51,21 @@ class FastSpeech2Decoder(Module):
 
         # --- 2. Variance Predictors Part --- #
         # duration predictor initialization
-        duration_predictor_class = self.var_pred_class_dict[duration_predictor['type']]
+        duration_predictor_class = import_class('speechain.module.' + duration_predictor['type'])
         duration_predictor['conf'] = dict() if 'conf' not in duration_predictor.keys() else duration_predictor['conf']
         # the conv1d embedding layer of duration predictor is automatically turned off
         duration_predictor['conf']['use_conv_emb'] = False
         self.duration_predictor = duration_predictor_class(input_size=self.input_size, **duration_predictor['conf'])
 
         # pitch predictor initialization
-        pitch_predictor_class = self.var_pred_class_dict[pitch_predictor['type']]
+        pitch_predictor_class = import_class('speechain.module.' + pitch_predictor['type'])
         pitch_predictor['conf'] = dict() if 'conf' not in pitch_predictor.keys() else pitch_predictor['conf']
         # the conv1d embedding layer of pitch predictor is automatically turned on
         pitch_predictor['conf']['use_conv_emb'] = True
         self.pitch_predictor = pitch_predictor_class(input_size=self.input_size, **pitch_predictor['conf'])
 
         # energy predictor initialization
-        energy_predictor_class = self.var_pred_class_dict[energy_predictor['type']]
+        energy_predictor_class = import_class('speechain.module.' + energy_predictor['type'])
         energy_predictor['conf'] = dict() if 'conf' not in energy_predictor.keys() else energy_predictor['conf']
         # the conv1d embedding layer of energy predictor is automatically turned on
         energy_predictor['conf']['use_conv_emb'] = True
@@ -94,7 +74,7 @@ class FastSpeech2Decoder(Module):
         # --- 3. Acoustic Feature, Energy, & Pitch Extraction Part --- #
         # acoustic feature extraction frontend of the E2E TTS decoder
         if feat_frontend is not None:
-            feat_frontend_class = self.feat_frontend_class_dict[feat_frontend['type']]
+            feat_frontend_class = import_class('speechain.module.' + feat_frontend['type'])
             feat_frontend['conf'] = dict() if 'conf' not in feat_frontend.keys() else feat_frontend['conf']
             # feature frontend is automatically set to return frame-wise energy
             feat_frontend['conf']['return_energy'] = True
@@ -122,7 +102,7 @@ class FastSpeech2Decoder(Module):
 
         # --- 4. Mel-Spectrogram Decoder Part --- #
         # Initialize decoder
-        decoder_class = self.decoder_class_dict[decoder['type']]
+        decoder_class = import_class('speechain.module.' + decoder['type'])
         decoder['conf'] = dict() if 'conf' not in decoder.keys() else decoder['conf']
         self.decoder = decoder_class(input_size=self.input_size, **decoder['conf'])
 
@@ -130,7 +110,7 @@ class FastSpeech2Decoder(Module):
         self.feat_pred = torch.nn.Linear(in_features=self.decoder.output_size, out_features=feat_dim)
 
         # Initialize postnet of the decoder
-        postnet_class = self.postnet_class_dict[postnet['type']]
+        postnet_class = import_class('speechain.module.' + postnet['type'])
         postnet['conf'] = dict() if 'conf' not in postnet.keys() else postnet['conf']
         self.postnet = postnet_class(input_size=feat_dim, **postnet['conf'])
 
@@ -290,7 +270,17 @@ class FastSpeech2Decoder(Module):
 
         # --- 3. Duration Prediction --- #
         # note: pred_duration here is in the log domain!
-        pred_duration, enc_text_len = self.duration_predictor(enc_text, make_len_from_mask(enc_text_mask))
+        pred_duration_outputs = self.duration_predictor(enc_text, make_len_from_mask(enc_text_mask))
+        # without duration gate predictions
+        if len(pred_duration_outputs) == 2:
+            pred_duration, enc_text_len = pred_duration_outputs
+            pred_duration_gate = None
+        # with duration gate predictions
+        elif len(pred_duration_outputs) == 3:
+            pred_duration, enc_text_len, pred_duration_gate = pred_duration_outputs
+        else:
+            raise RuntimeError
+
         # do teacher-forcing if ground-truth duration is given
         if duration is not None:
             # turn the duration from the second to the frame number
@@ -301,6 +291,9 @@ class FastSpeech2Decoder(Module):
             used_duration_len = duration_len
         # do self-decoding by the predicted duration
         else:
+            # mask the predicted duration by gate predictions if available
+            if pred_duration_gate is not None:
+                pred_duration[pred_duration_gate > 0] = 0.0
             # use the exp-converted predicted duration
             used_duration = self.proc_duration(
                 duration=torch.exp(pred_duration) - 1,
@@ -374,4 +367,4 @@ class FastSpeech2Decoder(Module):
         # the returned duration is used_duration (the actual one used for length regulation)
         return pred_feat_before, pred_feat_after, make_len_from_mask(dec_feat_mask), feat, feat_len,\
                pred_pitch, pitch, pitch_len, pred_energy, energy, energy_len,\
-               pred_duration, used_duration, used_duration_len, dec_attmat, dec_hidden
+               pred_duration, pred_duration_gate, used_duration, used_duration_len, dec_attmat, dec_hidden

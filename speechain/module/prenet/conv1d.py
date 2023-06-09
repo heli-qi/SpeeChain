@@ -33,7 +33,7 @@ class Conv1dEv(torch.nn.Module):
     """
     def __init__(self, in_channels: int, out_channels: int, kernel_size: int,
                  stride: int = 1, dilation: int = 1, padding_mode: str = 'same',
-                 bias: bool = True, use_weight_norm: bool = False):
+                 bias: bool = True, use_weight_norm: bool = False, groups: int = 1):
         """
             Initializes the Conv1dEv module with the specified parameters.
 
@@ -85,12 +85,12 @@ class Conv1dEv(torch.nn.Module):
 
         self.conv_lyr = torch.nn.Conv1d(
             in_channels=in_channels, out_channels=out_channels,
-            kernel_size=kernel_size, stride=stride, dilation=dilation, padding=padding, bias=bias
+            kernel_size=kernel_size, stride=stride, dilation=dilation, padding=padding, bias=bias, groups=groups
         )
         if use_weight_norm:
             self.conv_lyr = weight_norm(self.conv_lyr)
 
-    def forward(self, feat):
+    def forward(self, feat: torch.Tensor):
         """
         Performs a forward pass through the convolutional layer.
 

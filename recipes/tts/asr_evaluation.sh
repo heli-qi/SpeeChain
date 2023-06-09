@@ -15,7 +15,7 @@ function print_help_message {
 
       # Group1: ASR Decoding Environment
       [--batch_len BATCH_LEN] \\                            # The total length of all the synthetic utterances in a single batch to conduct batch-level ASR decoding. We recommend you to set 'batch_len' up to {1000 * beam number * total GBs of your GPUs}. (default: none)
-      [--ngpu NGPU] \\                                      # The number of GPUs you want to use. If not given, ngpu in {asr_model_path}/exp_cfg.yaml will be used. (default: none)
+      [--ngpu NGPU] \\                                      # The number of GPUs you want to use. If not given, ngpu in {asr_model_path}/exp_cfg.yaml will be used. (default: 1)
       [--gpus GPUS] \\                                      # The GPUs you want to specify. If not given, gpus in {asr_model_path}/exp_cfg.yaml will be used. (default: none)
       [--num_workers NUM_WORKERS] \\                        # The name of worker processes for data loading. If not given, num_workers in {asr_model_path}/exp_cfg.yaml will be used. (default: none)
       [--resume RESUME] \\                                  # Whether to continue the unfinished evaluation. If true, the data loading strategy should remain the same as the last time. (default: false)
@@ -25,16 +25,15 @@ function print_help_message {
       [--filter_ratio FILTER_RATIO] \\                      # How many shorter utterances you want to retain. (default: 0.95)
 
       # Group3: Main Arguments for ASR Evaluation
-      [--vocoder VOCODER] \\                                # The vocoder you used to generate the waveforms. (default: gl)
       [--asr_infer_cfg ASR_INFER_CFG] \\                    # The configuration for ASR inference. If not given, infer_cfg in {asr_model_path}/exp_cfg.yaml will be used. (default: none)
       --asr_model_path ASR_MODEL_PATH \\                    # The path of the ASR model you want to use. There must be 'models/', 'exp_cfg.yaml', and 'train_cfg.yaml' in your specified folder.
-      --tts_result_path TTS_RESULT_PATH \\                  # The path where you want to place the evaluation results. The metadata files named 'idx2{vocoder}_wav' and 'idx2{vocoder}_wav_len' in your given 'tts_result_path' will be used for ASR evaluation.
+      --tts_result_path TTS_RESULT_PATH \\                  # The path where you want to place the evaluation results. The metadata files named 'idx2wav' and 'idx2wav_len' in your given 'tts_result_path' will be used for ASR evaluation.
       --asr_refer_idx2text ASR_REFER_IDX2TEXT \\            # The idx2text file of the ground-truth text data." >&2
   exit 1
 }
 
-ngpu=
-gpus=
+ngpu=1
+gpus=none
 batch_len=
 resume=false
 num_workers=
@@ -42,7 +41,6 @@ num_workers=
 long_filter=false
 filter_ratio=0.95
 
-vocoder=gl
 asr_infer_cfg=
 asr_model_path=
 tts_result_path=
@@ -90,10 +88,6 @@ while getopts ":h-:" optchar; do
         gpus)
           val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
           gpus=${val}
-          ;;
-        vocoder)
-          val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
-          vocoder=${val}
           ;;
         batch_len)
           val="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
@@ -155,31 +149,31 @@ args="--train False --test True --train_result_path ${asr_model_path} --attach_c
 
 # automatically initialize the data loading configuration. The contents surrounded by a pair of brackets are optional.
 #  test:{
-#    ${vocoder}_${asr_model_path}:{
+#    ${asr_model_path}:{
 #      (type:block.BlockIterator,) or (type:abs.Iterator,)
 #      conf:{
 #        dataset_type:speech_text.SpeechTextDataset,
 #        dataset_conf:{
 #          main_data:{
-#            feat:${tts_result_path}/idx2${vocoder}_wav,
+#            feat:${tts_result_path}/idx2wav,
 #            text:${asr_refer_idx2text}
 #          },
-#          (data_selection:[min,${filter_ratio},${tts_result_path}/idx2${vocoder}_wav_len])
+#          (data_selection:[min,${filter_ratio},${tts_result_path}/idx2wav_len])
 #        },
 #        shuffle:false,
-#        data_len:${tts_result_path}/idx2${vocoder}_wav_len,
+#        data_len:${tts_result_path}/idx2wav_len,
 #        (batch_len:${batch_len},)
 #        (group_info:{speaker:${tts_result_path}/idx2ref_spk})
 #      }
 #    }
 #  }
 # the following code does the same job as the configuration above
-data_args="test:{vocoder=${vocoder}"
+data_args="test:{model=${asr_model_path}"
 # if 'long_filter' is true, attach filter_ratio into the folder name
 if ${long_filter};then
   data_args="${data_args}_long-filter=${filter_ratio}"
 fi
-data_args="${data_args}_model=${asr_model_path}:{"
+data_args="${data_args}:{"
 
 # if 'batch_len' is given, block.BlockIterator will be used as the iterator; else, use abs.Iterator
 if [ -n "${batch_len}" ];then
@@ -187,12 +181,12 @@ if [ -n "${batch_len}" ];then
 else
   data_args="${data_args}type:abs.Iterator,"
 fi
-data_args="${data_args}conf:{dataset_type:speech_text.SpeechTextDataset,dataset_conf:{main_data:{feat:${tts_result_path}/idx2${vocoder}_wav,text:${asr_refer_idx2text}}"
+data_args="${data_args}conf:{dataset_type:speech_text.SpeechTextDataset,dataset_conf:{main_data:{feat:${tts_result_path}/idx2wav,text:${asr_refer_idx2text}}"
 # if 'long_filter' is set to true, attach 'data_selection' in 'dataset_conf'
 if ${long_filter};then
-  data_args="${data_args},data_selection:[min,${filter_ratio},${tts_result_path}/idx2${vocoder}_wav_len]"
+  data_args="${data_args},data_selection:[min,${filter_ratio},${tts_result_path}/idx2wav_len]"
 fi
-data_args="${data_args}},shuffle:false,data_len:${tts_result_path}/idx2${vocoder}_wav_len"
+data_args="${data_args}},shuffle:false,data_len:${tts_result_path}/idx2wav_len"
 # if 'batch_len' is given, attach 'batch_len'
 if [ -n "${batch_len}" ];then
   data_args="${data_args},batch_len:${batch_len}"
@@ -201,16 +195,8 @@ fi
 # include idx2ref_spk into group_info to evaluate the speaker-wise performance
 data_args="${data_args},group_info:{speaker:${tts_result_path}/idx2ref_spk}}}}"
 #
-args="${args} --data_cfg ${data_args}"
+args="${args} --data_cfg ${data_args} --gpus ${gpus} --ngpu ${ngpu}"
 
-#
-if [ -n "${gpus}" ];then
-  args="${args} --gpus ${gpus}"
-fi
-#
-if [ -n "${ngpu}" ];then
-  args="${args} --ngpu ${ngpu}"
-fi
 #
 if [ -n "${num_workers}" ];then
   args="${args} --num_workers ${num_workers}"

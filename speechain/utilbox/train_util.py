@@ -15,13 +15,16 @@ from speechain.criterion.abs import Criterion
 class Identity(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        pass
 
     def forward(self, input):
         return input
 
     def __repr__(self):
         return self.__class__.__name__ + '()'
+
+
+def swish_activation(x: torch.Tensor):
+    return x * torch.sigmoid(x)
 
 
 def make_mask_from_len(data_len: torch.Tensor, max_len: int = None,

@@ -13,7 +13,8 @@ from speechain.model.lm import LM
 from speechain.infer_func.ctc_decoding import CTCPrefixScorer
 from speechain.utilbox.train_util import make_len_from_mask
 
-eps = 1e-10
+eps = 1e-20
+minus_inf = -1e20
 
 
 class BeamHypotheses(object):
@@ -122,7 +123,6 @@ def beam_searching(enc_feat: torch.Tensor,
                    ctc_weight: float = 0.0,
                    ctc_decode_fn = None,
                    ctc_temperature: float = 1.0,
-                   partial_ctc_score: bool = False,
                    lm_weight: float = 0.2,
                    lm_temperature: float = 1.0,
                    lm_decode_fn: LM = None,
@@ -231,7 +231,7 @@ def beam_searching(enc_feat: torch.Tensor,
     enc_feat = enc_feat.unsqueeze(1).contiguous()
     # (batch_size, 1, feat_maxlen , edim) -> (batch_size, beam_size, feat_maxlen, edim)
     enc_feat = enc_feat.repeat(1, beam_size, 1, 1)
-    # (batch_size, beam_size, feat_maxlen, edim) -> (batch_size × beam_size, frame, edim)
+    # (batch_size, beam_size, feat_maxlen, edim) -> (batch_size × beam_size, feat_maxlen, edim)
     enc_feat = enc_feat.view(-1, enc_feat.size(2), enc_feat.size(3)).contiguous()
 
     # (batch_size, 1, feat_maxlen) -> (batch_size, 1, 1, feat_maxlen)
@@ -243,9 +243,11 @@ def beam_searching(enc_feat: torch.Tensor,
 
     # --- 3. CTC Initialization --- #
     if ctc_decode_fn is not None and ctc_weight > 0:
+        ctc_logits = ctc_decode_fn(enc_feat)
+        # CTC should not have any predictions on the sos_eos token
+        ctc_logits[:, :, sos_eos] = minus_inf
         ctc_scorer = CTCPrefixScorer(
-            x=torch.log_softmax(ctc_decode_fn(enc_feat)  / ctc_temperature, dim=-1),
-            enc_lens=make_len_from_mask(enc_feat_mask),
+            x=torch.log_softmax(ctc_logits / ctc_temperature, dim=-1), enc_lens=make_len_from_mask(enc_feat_mask),
             batch_size=batch_size, beam_size=beam_size, blank_index=padding_idx, eos_index=sos_eos
         )
     else:
@@ -258,7 +260,11 @@ def beam_searching(enc_feat: torch.Tensor,
     # Done flags for all sentences in the batch
     done = [False for _ in range(batch_size)]
     # scores of all beam containers (batch_size × beam_size,)
-    beam_scores = torch.zeros((batch_size * beam_size,), dtype=torch.float, device=cuda_device)
+    beam_scores = torch.empty((batch_size * beam_size,), dtype=torch.float, device=cuda_device)
+    beam_scores.fill_(float("-inf"))
+    # keep only the first to make sure no redundancy.
+    beam_scores.index_fill_(0, torch.arange(batch_size, device=cuda_device) * beam_size, 0.0)
+
     # start tokens for all sentences in a batch (batch_size × beam_size, 1)
     hypo_text = torch.full((batch_size * beam_size, 1), sos_eos, dtype=torch.long, device=cuda_device)
     hypo_text_len = torch.ones((batch_size * beam_size,), dtype=torch.long, device=cuda_device)
@@ -276,17 +282,9 @@ def beam_searching(enc_feat: torch.Tensor,
         # --- 5.2. CTC Scorer Forward --- #
         if ctc_scorer is not None:
             # block blank token
-            next_token_scores[:, padding_idx] = ctc_scorer.minus_inf
-            if ctc_weight != 1.0 and partial_ctc_score:
-                # pruning vocab for ctc_scorer
-                _, ctc_candidates = next_token_scores.topk(
-                    beam_size * 2, dim=-1
-                )
-            else:
-                ctc_candidates = None
-
+            next_token_scores[:, padding_idx] = minus_inf
             ctc_token_scores, ctc_memory = ctc_scorer.forward_step(
-                g=hypo_text[:, 1:], state=ctc_memory, candidates=ctc_candidates
+                g=hypo_text[:, 1:], state=ctc_memory
             )
             next_token_scores = (1 - ctc_weight) * next_token_scores + ctc_weight * ctc_token_scores
 
@@ -329,8 +327,8 @@ def beam_searching(enc_feat: torch.Tensor,
         #   1. for different tokens of each beam in the first time step
         #   2. when meeting an eos token, complement the beams with the rest predictions
         assert beam_size + 1 <= vocab_size, "beam_size cannot be larger than vocab_size - 1 (exclude <sos/eos>)!"
-        next_scores, next_tokens = torch.topk(next_scores, beam_size * (beam_size + 1), dim=1, largest=True,
-                                              sorted=True)
+        # next_scores, next_tokens = torch.topk(next_scores, beam_size * (beam_size + 1), dim=1, largest=True, sorted=True)
+        next_scores, next_tokens = torch.topk(next_scores, 2 * beam_size, dim=1, largest=True, sorted=True)
 
         # batch-level beam results for all sentence, each element is a tri-tuple (score, token_id, effective_beam_id)
         next_batch_beam = []
@@ -380,15 +378,16 @@ def beam_searching(enc_feat: torch.Tensor,
                     )
                 # add the predictions into the temporary results.
                 else:
-                    # make sure that different tokens are selected for different beams in the first time step
-                    add_flag = True
-                    if hypo_text_len.max() == 1 and len(next_sent_beam) != 0:
-                        for item in next_sent_beam:
-                            if item[1] == token_id or item[2] == effective_beam_id:
-                                add_flag = False
-                                break
-                    if add_flag:
-                        next_sent_beam.append((beam_token_score, token_id, effective_beam_id))
+                    # # make sure that different tokens are selected for different beams in the first time step
+                    # add_flag = True
+                    # if hypo_text_len.max() == 1 and len(next_sent_beam) != 0:
+                    #     for item in next_sent_beam:
+                    #         if item[1] == token_id or item[2] == effective_beam_id:
+                    #             add_flag = False
+                    #             break
+                    # if add_flag:
+                    #     next_sent_beam.append((beam_token_score, token_id, effective_beam_id))
+                    next_sent_beam.append((beam_token_score, token_id, effective_beam_id))
 
                 # only get beam_size predictions from beam_size * beam_size candidates
                 if len(next_sent_beam) == beam_size:
@@ -439,10 +438,10 @@ def beam_searching(enc_feat: torch.Tensor,
     hypo_text_len = hypo_text_len.new(batch_size * sent_per_beam)
     hypo_text_list = []
     hypo_text_confid = []
-    # looping each sentence
+    # looping each sentence in the current batch
     for i, hypotheses in enumerate(generated_hyps):
         sorted_hyps = sorted(hypotheses.beams, key=lambda x: x[0])
-        # looping each beam
+        # looping each beam for the given sentence
         for j in range(sent_per_beam):
             effective_batch_idx = sent_per_beam * i + j
             _hypo = sorted_hyps.pop()

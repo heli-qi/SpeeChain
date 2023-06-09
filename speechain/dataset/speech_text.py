@@ -12,7 +12,7 @@ import random
 
 import torchaudio
 from g2p_en import G2p
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Union
 from functools import partial
 from speechain.tokenizer.g2p import abnormal_phns
 
@@ -435,8 +435,6 @@ class RandomSpkFeatDataset(SpeechTextDataset):
                         spk_feat: List[str] or str = None,
                         use_aver_feat: bool = True,
                         mixup_number: int = 1,
-                        same_gender_mixup: bool = True,
-                        tgt_gender: str = None,
                         **super_conf):
 
         super(RandomSpkFeatDataset, self).dataset_init_fn(**super_conf)
@@ -445,7 +443,6 @@ class RandomSpkFeatDataset(SpeechTextDataset):
         assert isinstance(mixup_number, int) and mixup_number >= 1, \
             f"mixup_number must be a positive integer, but got {mixup_number}!"
         self.mixup_number = mixup_number
-        self.same_gender_mixup = same_gender_mixup
 
         # List[str] or str -> List[str]
         if not isinstance(spk_feat, List):
@@ -468,21 +465,6 @@ class RandomSpkFeatDataset(SpeechTextDataset):
             self.spk2aver_spk_feat = load_idx2data_file(
                 [os.path.join(m_d, f'spk2aver_{s_e_m}_spk_feat') for m_d, s_e_m in zip(metadata_dir, spk_emb_model)])
 
-        # load the gender information
-        idx2gender = load_idx2data_file([os.path.join(m_d, 'idx2gen') for m_d in metadata_dir])
-        self.spk2gender = {
-            spk_id: [idx2gender[spk_feat_id] for spk_feat_id in idx2gender.keys()
-                     if self.idx2spk[spk_feat_id] == spk_id][0] for spk_id in self.spk_ids_list}
-
-        # filter out the reference speech with the opposite gender
-        if tgt_gender is not None:
-            assert tgt_gender in ['M', 'F'], f"Your input tgt_gender must be one of 'M' or 'F', but got {tgt_gender}!"
-            self.spk2gender = {spk: gender for spk, gender in self.spk2gender.items() if gender == tgt_gender}
-            self.spk2spk_feat = {spk: spk_feat for spk, spk_feat in self.spk2spk_feat.items() if spk in self.spk2gender.keys()}
-            if hasattr(self, 'spk2aver_spk_feat'):
-                self.spk2aver_spk_feat = {spk: aver_spk_feat for spk, aver_spk_feat in self.spk2aver_spk_feat.items()
-                                          if spk in self.spk2gender.keys()}
-
     def extract_main_data_fn(self, main_data: Dict[str, str]) -> Dict[str, Any] or None:
         """
         This hook function randomly pick up a speaker embedding feature from the given spk_feat file as the reference.
@@ -502,21 +484,11 @@ class RandomSpkFeatDataset(SpeechTextDataset):
         if main_data is None:
             return main_data
 
-        # used for the same gender mixup
-        ref_gender = None
         chosen_spk_feat_ids, chosen_spk_ids = [], []
         while len(chosen_spk_feat_ids) < self.mixup_number:
             random_spk_id, self.spk2freq = get_min_indices_by_freq(
                 self.spk2freq,  freq_weights=len(main_data['text']) if 'text' in main_data.keys() else None)
             random_spk_id = random_spk_id[0]
-            if self.same_gender_mixup:
-                curr_gender = self.spk2gender[random_spk_id]
-                # record the current gender as the reference gender
-                if ref_gender is None:
-                    ref_gender = curr_gender
-                # go to the next one if the current gender is different from the reference gender
-                elif curr_gender != ref_gender:
-                    continue
 
             # randomly pick up a speaker embedding feature vector
             spk_feat = self.spk2spk_feat[random_spk_id]

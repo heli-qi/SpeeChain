@@ -76,8 +76,8 @@ class VCTKMetaGenerator(SpeechTextMetaGenerator):
         # --- 1. Text Data Reading and Recording --- #
         # Create an empty dictionary for storing metadata and loop over subsets ('train', 'valid', 'test')
         meta_dict = dict()
-        for subset in ['train', 'valid', 'test']:
-            meta_dict[subset] = dict(idx2wav=dict(), idx2spk=dict(), idx2age=dict(), idx2gen=dict(), idx2acc=dict(), idx2mic=dict())
+        for subset in ['train-mic1', 'valid-mic1', 'test-mic1', 'train-mic2', 'valid-mic2', 'test-mic2']:
+            meta_dict[subset] = dict(idx2wav=dict(), idx2spk=dict(), idx2age=dict(), idx2gen=dict(), idx2acc=dict())
             meta_dict[subset][f'idx2{txt_format}_text'] = dict()
 
         # Read speaker information file and process it into separate dictionaries for age, gender, accent per speaker.
@@ -124,33 +124,30 @@ class VCTKMetaGenerator(SpeechTextMetaGenerator):
         # Update meta_dict for each sentence based on whether the speaker belongs to validation, test or training set.
         # loop each sentence
         for idx in idx2wav.keys():
-            spk = idx2spk[idx].split('_')[0]
+            spk, mic = idx2spk[idx].split('_')
             if spk in valid_speakers:
-                meta_dict['valid']['idx2wav'][idx] = idx2wav[idx]
-                meta_dict['valid'][f'idx2{txt_format}_text'][idx] = idx2text[idx]
-                meta_dict['valid']['idx2spk'][idx] = idx2spk[idx]
-                meta_dict['valid']['idx2gen'][idx] = idx2gender[idx]
-                meta_dict['valid']['idx2age'][idx] = idx2age[idx]
-                meta_dict['valid']['idx2acc'][idx] = idx2accent[idx]
-                meta_dict['valid']['idx2mic'][idx] = idx2mic[idx]
+                meta_dict[f'valid-{mic}']['idx2wav'][idx] = idx2wav[idx]
+                meta_dict[f'valid-{mic}'][f'idx2{txt_format}_text'][idx] = idx2text[idx]
+                meta_dict[f'valid-{mic}']['idx2spk'][idx] = idx2spk[idx]
+                meta_dict[f'valid-{mic}']['idx2gen'][idx] = idx2gender[idx]
+                meta_dict[f'valid-{mic}']['idx2age'][idx] = idx2age[idx]
+                meta_dict[f'valid-{mic}']['idx2acc'][idx] = idx2accent[idx]
 
             elif spk in test_speakers:
-                meta_dict['test']['idx2wav'][idx] = idx2wav[idx]
-                meta_dict['test'][f'idx2{txt_format}_text'][idx] = idx2text[idx]
-                meta_dict['test']['idx2spk'][idx] = idx2spk[idx]
-                meta_dict['test']['idx2gen'][idx] = idx2gender[idx]
-                meta_dict['test']['idx2age'][idx] = idx2age[idx]
-                meta_dict['test']['idx2acc'][idx] = idx2accent[idx]
-                meta_dict['test']['idx2mic'][idx] = idx2mic[idx]
+                meta_dict[f'test-{mic}']['idx2wav'][idx] = idx2wav[idx]
+                meta_dict[f'test-{mic}'][f'idx2{txt_format}_text'][idx] = idx2text[idx]
+                meta_dict[f'test-{mic}']['idx2spk'][idx] = idx2spk[idx]
+                meta_dict[f'test-{mic}']['idx2gen'][idx] = idx2gender[idx]
+                meta_dict[f'test-{mic}']['idx2age'][idx] = idx2age[idx]
+                meta_dict[f'test-{mic}']['idx2acc'][idx] = idx2accent[idx]
 
             else:
-                meta_dict['train']['idx2wav'][idx] = idx2wav[idx]
-                meta_dict['train'][f'idx2{txt_format}_text'][idx] = idx2text[idx]
-                meta_dict['train']['idx2spk'][idx] = idx2spk[idx]
-                meta_dict['train']['idx2gen'][idx] = idx2gender[idx]
-                meta_dict['train']['idx2age'][idx] = idx2age[idx]
-                meta_dict['train']['idx2acc'][idx] = idx2accent[idx]
-                meta_dict['train']['idx2mic'][idx] = idx2mic[idx]
+                meta_dict[f'train-{mic}']['idx2wav'][idx] = idx2wav[idx]
+                meta_dict[f'train-{mic}'][f'idx2{txt_format}_text'][idx] = idx2text[idx]
+                meta_dict[f'train-{mic}']['idx2spk'][idx] = idx2spk[idx]
+                meta_dict[f'train-{mic}']['idx2gen'][idx] = idx2gender[idx]
+                meta_dict[f'train-{mic}']['idx2age'][idx] = idx2age[idx]
+                meta_dict[f'train-{mic}']['idx2acc'][idx] = idx2accent[idx]
 
         # --- 3. Sort Up Collected Statistical Information --- #
         # Sort data by indices and collect unique speaker list for each subset

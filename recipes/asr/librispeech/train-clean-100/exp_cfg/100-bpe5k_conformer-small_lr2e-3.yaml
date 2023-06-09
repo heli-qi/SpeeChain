@@ -1,17 +1,17 @@
 ##############################################################################
-# Model: Transformer-ASR (78.09 M)
+# Model: Conformer-ASR small version (13.79M)
 # Tokens: BPE 5k trained on train-clean-100 of LibriSpeech
 # Batching: 241 steps per epoch (25 minutes speech per batch)
 # Optimization: 16000 warming-up steps (~66 warming-up epochs) & 0.002 peak LR
 # Augmentation: Speech Perturbation + SpecAugment
-# losses: CE loss (0.2 Label Smooth) + CTC loss
+# losses: 0.2 Label Smooth + CTC loss
 # Training: train-clean-100 of LibriSpeech
 # Validation: dev-clean of LibriSpeech
 # Testing: test-clean & test-other of LibriSpeech
 # Authors: Heli Qi
-# Required GPUs: 2 × NVIDIA RTX A6000 (49GB)
-# Required Time: up to 10 hours
-# Expected WER performance (test-clean / test-other): ASR-only (8.57% / 22.89%) and ASR-LM (5.81% / 16.19%)
+# Required GPUs: 1 × NVIDIA RTX A5000 (49GB)
+# Required Time: up to 21 hours
+# Expected WER performance (test-clean / test-other): ASR-only (8.50% / 23.50%) and ASR-LM (5.45% / 16.74%)
 # ############################################################################
 
 
@@ -41,9 +41,9 @@ batch_len: 2.4e7
 # model-related
 ctc_weight: 0.3
 label_smoothing: 0.2
-d_model: 512
-num_heads: 8
-fdfwd_dim: 2048
+d_model: 144
+num_heads: 4
+fdfwd_dim: 1024
 dropout: 0.1
 
 # optimizer-related
@@ -61,13 +61,13 @@ ft_factor: 1.0
 grad_clip: 5.0
 
 # multi-GPU-related
-ngpu: 2 # please change ngpu based on the situation of your machine
+ngpu: 1 # please change ngpu based on the situation of your machine
 gpus: null # null means the GPUs with the largest free memory will be used
 
 # training-related
-train: False
+train: True
 best_model_selection: !tuple (valid, accuracy, max, 10)
-early_stopping_patience: 15
+early_stopping_patience: 20
 num_epochs: 200
 
 # snapshot-related
@@ -75,7 +75,7 @@ visual_snapshot_number: 3
 visual_snapshot_interval: 5
 
 # testing-related
-test: True
+test: False
 test_model: 10_valid_accuracy_average
 
 # This argument is shared by data_cfg and train_cfg
@@ -95,6 +95,7 @@ infer_cfg:
     # ASR-LM decoding
     - ctc_weight: 0.3
       lm_weight: 0.6
+
 
 
 ##############################
@@ -172,12 +173,12 @@ train_cfg:
         ctc_weight: !ref <ctc_weight>
         token_type: !ref <token_type>
         token_path: !ref <data_root>/<token_type>/<vocab_subset>/<token_num>/<txt_format>
-        lm_model_cfg: recipes/lm/librispeech/lm_text/exp/100-bpe5k_transformer_gelu/train_cfg.yaml
-        lm_model_path: recipes/lm/librispeech/lm_text/exp/100-bpe5k_transformer_gelu/models/5_valid_text_ppl_average.pth
+        lm_model_cfg: recipes/lm/librispeech/lm_text/exp/100-bpe5k_transformer/train_cfg.yaml
+        lm_model_path: recipes/lm/librispeech/lm_text/exp/100-bpe5k_transformer/models/5_valid_text_ppl_average.pth
 
     module_conf:
       frontend:
-        type: mel_fbank
+        type: frontend.speech2mel.Speech2MelSpec
         conf:
           sr: !ref <sample_rate>
           preemphasis: 0.97
@@ -190,11 +191,11 @@ train_cfg:
       specaug:
         freq_mask_width: 15
         freq_mask_num: 4
-        time_mask_width: 20
-        time_mask_num: 4
+        time_mask_width: 0.05
+        time_mask_num: 5
 
       enc_prenet:
-        type: conv2d
+        type: prenet.conv2d.Conv2dPrenet
         conf:
           conv_dims:
             - !ref <d_model>
@@ -206,12 +207,10 @@ train_cfg:
           lnr_dims: !ref <d_model>
 
       encoder:
-        type: transformer
+        type: conformer.encoder.ConformerEncoder
         conf:
           posenc_dropout: !ref <dropout>
-          posenc_scale: false
-          emb_layernorm: false
-          emb_scale: false
+          emb_scale: False
           d_model: !ref <d_model>
           num_heads: !ref <num_heads>
           num_layers: 12
@@ -223,16 +222,16 @@ train_cfg:
           layernorm_first: true
 
       dec_emb:
-        type: embed
+        type: prenet.embed.EmbedPrenet
         conf:
           embedding_dim: !ref <d_model>
 
       decoder:
-        type: transformer
+        type: transformer.decoder.TransformerDecoder
         conf:
           posenc_dropout: !ref <dropout>
           posenc_scale: false
-          emb_layernorm: false
+          emb_layernorm: true
           emb_scale: false
           d_model: !ref <d_model>
           num_heads: !ref <num_heads>

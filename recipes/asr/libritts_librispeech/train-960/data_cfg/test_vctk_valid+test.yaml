@@ -10,7 +10,7 @@
 ###################################
 # if your dumped dataset is outside the toolkit folder, please change dataset_path. There should be a folder named 'libritts' in dataset_path
 dataset_path: datasets/
-dataset: libritts
+dataset: vctk
 
 wav_format: wav16000
 txt_format: no-punc
@@ -22,17 +22,32 @@ txt_format: no-punc
 ##############################
 data_root: !ref <dataset_path>/<dataset>/data
 test:
-    libritts_dev-clean:
+    vctk_valid-mic2:
         type: abs.Iterator
         conf:
             dataset_type: speech_text.SpeechTextDataset
             dataset_conf:
                 main_data:
-                    feat: !ref <data_root>/<wav_format>/dev-clean/idx2wav
-                    text: !ref <data_root>/<wav_format>/dev-clean/idx2<txt_format>_text
+                    feat: !ref <data_root>/<wav_format>/valid-mic2/idx2wav
+                    text: !ref <data_root>/<wav_format>/valid-mic2/idx2<txt_format>_text
 
             shuffle: False
-            data_len: !ref <data_root>/<wav_format>/dev-clean/idx2wav_len
+            data_len: !ref <data_root>/<wav_format>/valid-mic2/idx2wav_len
             group_info:
-                speaker: !ref <data_root>/<wav_format>/dev-clean/idx2spk
-                gender: !ref <data_root>/<wav_format>/dev-clean/idx2gen
+                speaker: !ref <data_root>/<wav_format>/valid-mic2/idx2spk
+                gender: !ref <data_root>/<wav_format>/valid-mic2/idx2gen
+
+    vctk_test-mic2:
+        type: abs.Iterator
+        conf:
+            dataset_type: speech_text.SpeechTextDataset
+            dataset_conf:
+                main_data:
+                    feat: !ref <data_root>/<wav_format>/test-mic2/idx2wav
+                    text: !ref <data_root>/<wav_format>/test-mic2/idx2<txt_format>_text
+
+            shuffle: False
+            data_len: !ref <data_root>/<wav_format>/test-mic2/idx2wav_len
+            group_info:
+                speaker: !ref <data_root>/<wav_format>/test-mic2/idx2spk
+                gender: !ref <data_root>/<wav_format>/test-mic2/idx2gen

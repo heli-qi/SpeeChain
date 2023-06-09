@@ -8,31 +8,16 @@ from torch.cuda.amp import autocast
 from typing import Dict
 from speechain.module.abs import Module
 from speechain.utilbox.train_util import make_mask_from_len
+from speechain.utilbox.import_util import import_class
 
-from speechain.module.frontend.speech2mel import Speech2MelSpec
 from speechain.module.norm.feat_norm import FeatureNormalization
 from speechain.module.augment.specaug import SpecAugment
-from speechain.module.prenet.conv2d import Conv2dPrenet
-from speechain.module.transformer.encoder import TransformerEncoder
-from speechain.module.conformer.encoder import ConformerEncoder
 
 
 class ASREncoder(Module):
     """
 
     """
-    frontend_class_dict = dict(
-        mel_fbank=Speech2MelSpec
-    )
-
-    prenet_class_dict = dict(
-        conv2d=Conv2dPrenet
-    )
-
-    encoder_class_dict = dict(
-        transformer=TransformerEncoder,
-        conformer=ConformerEncoder
-    )
 
     def module_init(self,
                     encoder: Dict,
@@ -55,7 +40,7 @@ class ASREncoder(Module):
 
         # acoustic feature extraction frontend of the E2E ASR encoder
         if frontend is not None:
-            frontend_class = self.frontend_class_dict[frontend['type']]
+            frontend_class = import_class('speechain.module.' + frontend['type'])
             frontend['conf'] = dict() if 'conf' not in frontend.keys() else frontend['conf']
             self.frontend = frontend_class(**frontend['conf'])
             _prev_output_size = self.frontend.output_size
@@ -76,13 +61,13 @@ class ASREncoder(Module):
 
         # feature embedding layer of the E2E ASR encoder
         if prenet is not None:
-            prenet_class = self.prenet_class_dict[prenet['type']]
+            prenet_class = import_class('speechain.module.' + prenet['type'])
             prenet['conf'] = dict() if 'conf' not in prenet.keys() else prenet['conf']
             self.prenet = prenet_class(input_size=_prev_output_size, **prenet['conf'])
             _prev_output_size = self.prenet.output_size
 
         # main body of the E2E ASR encoder
-        encoder_class = self.encoder_class_dict[encoder['type']]
+        encoder_class = import_class('speechain.module.' + encoder['type'])
         encoder['conf'] = dict() if 'conf' not in encoder.keys() else encoder['conf']
         self.encoder = encoder_class(input_size=_prev_output_size, **encoder['conf'])
         self.output_size = self.encoder.output_size

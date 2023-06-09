@@ -1341,6 +1341,9 @@ class TestMonitor(Monitor):
                 if name not in self.step_info.keys():
                     self.step_info[name] = dict()
 
+                if not isinstance(result['content'], List):
+                    result['content'] = [result['content']]
+
                 for index, content in zip(test_index, result['content']):
                     # for the List-type element, turn it into its string format
                     if isinstance(content, List):
@@ -1362,7 +1365,7 @@ class TestMonitor(Monitor):
                 )
 
         # monitor the approximate size of the queue to be more memory-friendly
-        while self.data_saving_logs_queue.qsize() > 3 * self.saving_proc_num:
+        while self.data_saving_logs_queue.qsize() > 5 * self.saving_proc_num:
             self.logger.warning(
                 f"There has been more than {3 * self.saving_proc_num} batches in data_saving_logs_queue, "
                 f"so the data generation is paused for 30 seconds.")

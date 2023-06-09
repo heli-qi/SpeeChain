@@ -94,9 +94,11 @@ class LJSpeechMetaGenerator(SpeechTextMetaGenerator):
         # loop each wav file in the 'wavs'
         for wav_file in os.listdir(wav_path):
             file_path = os.path.join(wav_path, wav_file)
-            file_name = wav_file.split('.')[0]
+            if not file_path.endswith('.wav'):
+                continue
 
             # record the wav file to different subsets by their section number
+            file_name = wav_file.split('.')[0]
             sec_num = int(file_name.split('-')[0].replace('LJ', ''))
             if sec_num in valid_section:
                 meta_dict['valid']['idx2wav'][file_name] = os.path.abspath(file_path)
