@@ -12,7 +12,6 @@ Anytime when you encounter problems when using our toolkit, please don't hesitat
 1. [**Machine Speech Chain**](https://github.com/ahclab/SpeeChain#machine-speech-chain)
 2. [**Toolkit Characteristics**](https://github.com/ahclab/SpeeChain#toolkit-characteristics)
 3. [**Get a Quick Start**](https://github.com/ahclab/SpeeChain#get-a-quick-start)
-4. [**Contribution**](https://github.com/ahclab/SpeeChain#contribution)
 
 
 ## Machine Speech Chain
