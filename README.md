@@ -64,12 +64,3 @@ If either one is empty, please manually add them into your `~/.bashrc` by `expor
 7. Read the [handbook](https://github.com/ahclab/SpeeChain/blob/main/handbook.md#speechain-handbook) and start your journey in SpeeChain!
 
 👆[Back to the table of contents](https://github.com/ahclab/SpeeChain#table-of-contents)
-
-## Contribution
-* Previous Contributors
-  1. **[Sashi Novitasari](https://scholar.google.com/citations?user=nkkik34AAAAJ)**
-* Current Developers
-  1. **[Heli Qi](https://scholar.google.com/citations?user=CH-rTXsAAAAJ)** 
-
-For those who are interested in cooperating with us, please feel free to email to _qi.heli.qi9@is.naist.jp_ while cc to _s-nakamura@is.naist.jp_.  
-👆[Back to the table of contents](https://github.com/ahclab/SpeeChain#table-of-contents)
